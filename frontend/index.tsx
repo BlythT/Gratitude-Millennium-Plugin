@@ -1,5 +1,4 @@
-import { Millennium, IconsModule, definePlugin, Field, DialogButton } from '@steambrew/client';
-import { PluginSettings } from './settings';
+import { Millennium, IconsModule, definePlugin, Field, DialogButton, callable } from '@steambrew/client';
 
 class classname {
 	static method(country: string, age: number) {
@@ -19,7 +18,7 @@ function windowCreated(context: any) {
 }
 
 // Declare a function that exists on the backend
-// const backendMethod = callable<[{ message: string; status: boolean; count: number }], boolean>('Backend.receive_frontend_message');
+const backendMethod = callable<[{ message: string; status: boolean; count: number }], boolean>('test_frontend_message_callback');
 
 const SettingsContent = () => {
 	return (
@@ -36,17 +35,14 @@ const SettingsContent = () => {
 };
 
 export default definePlugin(() => {
-	PluginSettings.numberTextInput += 1;
-	console.log(PluginSettings.numberTextInput);
-
 	// Call the backend method
-	// backendMethod({
-	// 	message: 'Hello World From Frontend!',
-	// 	status: true,
-	// 	count: 69,
-	// }).then((message) => {
-	// 	console.log('Result from callServerMethod:', message);
-	// });
+	backendMethod({
+		message: 'Hello World From Frontend!',
+		status: true,
+		count: 69,
+	}).then((message: any) => {
+		console.log('Result from backendMethod:', message);
+	});
 
 	Millennium.AddWindowCreateHook(windowCreated);
 
