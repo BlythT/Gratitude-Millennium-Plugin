@@ -1,5 +1,9 @@
 > [!CAUTION]
-> This plugin example and other related documentation is not yet finished. You will not receive support for development until everything is ready. This plugin template may not be fully functional, and critical portions of it may be outdated. Once this example is ready, this message will be removed
+> This plugin example does not work on the stable version of Millennium. (Written on October 26, 2025 — by the time you’re reading this, stable support might have been released. If we forgot to update this note, please let us know.)
+>
+> Millennium is currently transitioning from Python plugins to Lua plugins. Lua plugin support is available only in the alpha and beta channels — you can find these builds on Millennium’s releases page.
+>
+> While regular users on the stable channel won’t be able to run your plugin yet, we chose to provide a Lua example early to save you from writing an entire plugin in Python only to have to port it to Lua later.
 
 ## Plugin Template
 
