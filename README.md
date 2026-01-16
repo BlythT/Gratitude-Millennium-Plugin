@@ -1,10 +1,3 @@
-> [!CAUTION]
-> This plugin example does not work on the stable version of Millennium. (Written on October 26, 2025 — by the time you’re reading this, stable support might have been released. If we forgot to update this note, please let us know.)
->
-> Millennium is currently transitioning from Python plugins to Lua plugins. Lua plugin support is available only in the alpha and beta channels — you can find these builds on Millennium’s releases page.
->
-> While regular users on the stable channel won’t be able to run your plugin yet, we chose to provide a Lua example early to save you from writing an entire plugin in Python only to have to port it to Lua later.
-
 ## Plugin Template
 
 A plugin template for Millennium providing a basic boilerplate to help get started. You'll need a decent understanding in python, and typescript (superset of javascript)
