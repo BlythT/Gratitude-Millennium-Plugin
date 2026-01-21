@@ -1,5 +1,6 @@
 import { Millennium, IconsModule, definePlugin, Field, DialogButton, TextField, callable, Spinner } from '@steambrew/client';
-import { log, logError } from '../lib/logger';
+import { log, logError } from './lib/logger';
+import { setupObserver } from './injection/observer';
 
 // Declare a function that exists on the backend
 const getGameLicense = callable<[{ gameName: string }], string>('GetGameLicense');
@@ -85,20 +86,40 @@ const SettingsContent = () => {
 	);
 };
 
-function windowCreatedHook(context: any) {
-	// Only handle main Steam windows (Desktop or Big Picture)
-	if (!context.m_strName?.startsWith('SP ')) return;
-
-	const doc = context.m_popup?.document;
-	if (!doc?.body) return;
-	log('Window created:', context.m_strName);
-}
+let currentDocument: Document | undefined;
 
 export default definePlugin(() => {
-	Millennium.AddWindowCreateHook(windowCreatedHook);
+	log('Defining Gratitude plugin');
+	Millennium.AddWindowCreateHook?.((context: any) => {
+		log('WindowCreateHook triggered for window:', context.m_strName);
+		// Only handle main Steam windows (Desktop or Big Picture)
+		if (!context.m_strName?.startsWith('SP ')) {
+			log('Ignoring non-main window:', context.m_strName);
+			return;
+		}
+
+		const doc = context.m_popup?.document;
+		if (!doc?.body) {
+			log('No document body found for window:', context.m_strName);
+			return;
+		}
+		log('Window created:', context.m_strName);
+
+		// Clean up old document if switching modes
+		if (currentDocument && currentDocument !== doc) {
+			log('Mode switch detected, cleaning up old document');
+			// TODO: test this
+			// removeExistingDisplay(currentDocument);
+			// disconnectObserver();
+			// resetState();
+		}
+
+		currentDocument = doc;
+		setupObserver(doc);
+	});
 
 	return {
-		title: 'My Plugin',
+		title: 'Gratitude',
 		icon: <IconsModule.Settings />,
 		content: <SettingsContent />,
 	};

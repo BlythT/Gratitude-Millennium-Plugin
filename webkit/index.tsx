@@ -1,5 +1,5 @@
 import { callable } from '@steambrew/webkit';
-import { log, logError } from '../lib/logger';
+import { log, logError } from './lib/logger';
 
 const setGameLicenseData = callable<[{ licenseData: string }], void>('SetGameLicenseData');
 

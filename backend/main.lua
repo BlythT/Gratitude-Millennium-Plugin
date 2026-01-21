@@ -15,7 +15,7 @@ GameLicenseCache = {}
 -- Function to be called from frontend to set license data
 function SetGameLicenseData(licenseData)
     -- licenseData is a JSON string, []{date, item, acquisition}
-    logger:info("SetGameLicenseData called with license data: " .. licenseData)
+    logger:info("SetGameLicenseData called with data length: " .. tostring(#licenseData))
 
     local decodedData = json.decode(licenseData)
     if decodedData then
@@ -90,7 +90,6 @@ end
 -- Called when the Steam UI has fully loaded.
 local function on_frontend_loaded()
     logger:info("Frontend loaded")
-    logger:info(result)
 end
 
 return {
