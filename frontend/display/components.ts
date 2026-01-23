@@ -1,18 +1,10 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import type { licenseData } from '../types';
 import { log } from '../lib/logger';
+import confetti from 'canvas-confetti';
 
 function createDisplayId(gameName: string): string {
   return 'gratitude-' + gameName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-}
-
-function formatTime(hours: number | null | undefined): string {
-  if (!hours || hours === 0) return '--';
-  if (hours < 1) {
-    const mins = Math.round(hours * 60);
-    return `${mins}m`;
-  }
-  return `${hours}h`;
 }
 
 // TODO: add settings menu to change icon from default
@@ -29,12 +21,55 @@ const reactIconsIO5GiftIconFilledSharpSVG = `<svg stroke="rgba(255, 255, 255, 0.
 const reactIconsIO5GiftIconFilledSVG = `<svg stroke="rgba(255, 255, 255, 0.4)" fill="rgba(255, 255, 255, 0.4)" stroke-width="0" viewBox="0 0 512 512" height="30" width="30" xmlns="http://www.w3.org/2000/svg"><path fill="none" d="M200 144h40v-40a40 40 0 1 0-40 40zm152-40a40 40 0 0 0-80 0v40h40a40 40 0 0 0 40-40z"></path><path d="M80 416a64 64 0 0 0 64 64h92a4 4 0 0 0 4-4V292a4 4 0 0 0-4-4H88a8 8 0 0 0-8 8zm160-164V144h32v108a4 4 0 0 0 4 4h140a47.93 47.93 0 0 0 16-2.75A48.09 48.09 0 0 0 464 208v-16a48 48 0 0 0-48-48h-40.54a2 2 0 0 1-1.7-3A72 72 0 0 0 256 58.82 72 72 0 0 0 138.24 141a2 2 0 0 1-1.7 3H96a48 48 0 0 0-48 48v16a48.09 48.09 0 0 0 32 45.25A47.93 47.93 0 0 0 96 256h140a4 4 0 0 0 4-4zm32-148a40 40 0 1 1 40 40h-40zm-74.86-39.9A40 40 0 0 1 240 104v40h-40a40 40 0 0 1-2.86-79.89zM276 480h92a64 64 0 0 0 64-64V296a8 8 0 0 0-8-8H276a4 4 0 0 0-4 4v184a4 4 0 0 0 4 4z"></path></svg>`
 const reactIconsHi2GiftIconFilledSVG = `<svg stroke="rgba(255, 255, 255, 0.4)" fill="rgba(255, 255, 255, 0.4)" stroke-width="0" viewBox="0 0 24 24" aria-hidden="true" height="30" width="30" xmlns="http://www.w3.org/2000/svg"><path d="M11.25 3v4.046a3 3 0 0 0-4.277 4.204H1.5v-6A2.25 2.25 0 0 1 3.75 3h7.5ZM12.75 3v4.011a3 3 0 0 1 4.239 4.239H22.5v-6A2.25 2.25 0 0 0 20.25 3h-7.5ZM22.5 12.75h-8.983a4.125 4.125 0 0 0 4.108 3.75.75.75 0 0 1 0 1.5 5.623 5.623 0 0 1-4.875-2.817V21h7.5a2.25 2.25 0 0 0 2.25-2.25v-6ZM11.25 21v-5.817A5.623 5.623 0 0 1 6.375 18a.75.75 0 0 1 0-1.5 4.126 4.126 0 0 0 4.108-3.75H1.5v6A2.25 2.25 0 0 0 3.75 21h7.5Z"></path><path d="M11.085 10.354c.03.297.038.575.036.805a7.484 7.484 0 0 1-.805-.036c-.833-.084-1.677-.325-2.195-.843a1.5 1.5 0 0 1 2.122-2.12c.517.517.759 1.36.842 2.194ZM12.877 10.354c-.03.297-.038.575-.036.805.23.002.508-.006.805-.036.833-.084 1.677-.325 2.195-.843A1.5 1.5 0 0 0 13.72 8.16c-.518.518-.76 1.362-.843 2.194Z"></path></svg>`
 
-
 function createGiftIcon(doc: Document): HTMLElement {
   const iconDiv = doc.createElement('div');
   iconDiv.className = '_1tIg-QIrwMNtCm7NcYADyi k-QNT9kzOEOvG0U_kGmwr';
-  iconDiv.innerHTML = reactIconsIO5GiftIconFilledSVG;
+  iconDiv.style.cursor = 'pointer';
+  iconDiv.innerHTML = reactIconsIO5GiftIconFilledSharpSVG;
+
+  // Easter egg: click behavior to trigger confetti
+  iconDiv.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    fireConfetti(doc);
+
+    iconDiv.style.transform = 'scale(1.2)';
+    setTimeout(() => iconDiv.style.transform = 'scale(1)', 100);
+  });
+
   return iconDiv;
+}
+
+function fireConfetti(doc: Document) {
+  log("fired confetti!");
+  
+  const canvas = doc.createElement('canvas');
+  canvas.style.position = 'fixed';
+  canvas.style.inset = '0';
+  canvas.style.width = '100vw';
+  canvas.style.height = '100vh';
+  canvas.style.zIndex = '99999';
+  canvas.style.pointerEvents = 'none';
+  doc.body.appendChild(canvas);
+
+  const myConfetti = confetti.create(canvas, {
+    resize: true,
+    useWorker: true
+  });
+
+  myConfetti({
+    particleCount: 150,
+    spread: 70,
+    origin: { y: 0.6 },
+  });
+
+  // Cleanup
+  setTimeout(() => {
+    if (canvas.parentElement) {
+      doc.body.removeChild(canvas);
+    }
+  }, 5000);
 }
 
 function createContentContainer(doc: Document, data?: licenseData): HTMLElement {
@@ -87,7 +122,7 @@ export function createDisplay(
 
   // Add icons and content
   const icon = createGiftIcon(doc);
-  container.appendChild(icon)
+  container.appendChild(icon);
   container.appendChild(createContentContainer(doc, data));
 
   log('Created display container:', container);
