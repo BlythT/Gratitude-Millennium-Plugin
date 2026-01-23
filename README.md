@@ -62,4 +62,8 @@ A: Not yet; once I've polished this up further, I will submit it for review to b
 A: Unfortunately not. Outside of the original gift message and email, Steam does not store the "sender" information in a way the client can retrieve, so I cannot display it.
 
 ## Acknowledgments
+
 A special thanks to **[HLTB for Millennium](https://github.com/jcdoll/hltb-millennium-plugin)** for executing another plugin which places game-specific tooltips: it made a great study/starting out point, especially for the observer and injection logic.
+
+This project uses the **IoGiftSharp** icon from **[Ionicons](https://ionic.io/ionicons)** via **[react-icons](https://react-icons.github.io/react-icons/)**.  
+Ionicons and react-icons are licensed under the **MIT License**.
