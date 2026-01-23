@@ -30,8 +30,9 @@ This is an early release with one known temporary limitation:
 > **Millennium is required.** This plugin will only work if you have the Millennium framework installed. If you haven't, visit [steambrew.app](https://steambrew.app/) first.
 
 1.  **Download the Plugin:**
-    * Navigate to the **Releases** section on the right and download the latest `.zip`.
-    * *Or*, click the green **Code** button at the top of the repository and select **Download ZIP**.
+    * Click the **Releases** section on the right side of this repository.
+    * Under the latest version, look for the **Assets** dropdown.
+    * Download the file named `gratitude-for-millenium-<version>.zip`.
 2.  **Locate Plugins Directory:**
     * Go to your Steam installation folder (often `C:\Program Files (x86)\Steam\plugins`). 
     * *Note: This folder is only created after Millennium has been installed and run for the first time.*
