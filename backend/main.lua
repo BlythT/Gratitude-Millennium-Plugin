@@ -2,13 +2,6 @@ local logger = require("logger")
 local millennium = require("millennium")
 local json = require("json")
 
-function test_frontend_message_callback(message, status, count)
-    logger:info("test_frontend_message_callback called")
-    logger:info("Received args: " .. table.concat({message, tostring(status), tostring(count)}, ", "))
-
-    return "Response from backend"
-end
-
 -- Global cache for license data (indexed by game name)
 GameLicenseCache = {}
 

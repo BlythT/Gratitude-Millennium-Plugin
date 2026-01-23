@@ -5,13 +5,16 @@ import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR }
 import { callable } from '@steambrew/client';
 
 const getGameLicense = callable<[{ gameName: string }], string>('GetGameLicense');
+const getGameLicenseData = callable<[], string>('GetGameLicenseData');
 
 let observer: MutationObserver | null = null;
 let isProcessing = false;
+let gameDataCache = new Map<string, any>(); // In-memory cache to avoid IPC calls
 
 export function resetState(): void {
   log('Resetting state');
   isProcessing = false;
+  gameDataCache.clear();
   if (observer) {
     observer.disconnect();
     observer = null;
@@ -66,18 +69,11 @@ async function handleGamePage(doc: Document): Promise<void> {
   const gameName = detectGameName(doc);
   const container = detectTooltipContainer(doc);
   
-  // Exit early if no game detected or no container
-  if (!gameName) {
-    log('No game name detected, exiting');
-    return;
-  }
-  
-  if (!container) {
-    log('No container found, exiting');
+  if (!gameName || !container) {
+    log('Missing game name or container, exiting');
     return;
   }
 
-  // Skip if display already exists for this game - DOM is source of truth
   if (getExistingDisplay(doc, gameName)) {
     log('Display already exists for:', gameName);
     return;
@@ -87,41 +83,47 @@ async function handleGamePage(doc: Document): Promise<void> {
   isProcessing = true;
 
   try {
-    log('Fetching license data for:', gameName);
-    const cached = await getGameLicense({ gameName });
-    log('Received cached data:', cached ? 'yes' : 'no');
-    
-    const data = cached ? JSON.parse(cached) : null;
-    log('Parsed data:', data);
+    // Check if the specific game is missing from memory
+    if (!gameDataCache.has(gameName)) {
+      log('Cache miss for:', gameName, '- Fetching full license data');
+      
+      // Fetch the entire cache object from the backend
+      const fullCacheJson = await getGameLicenseData();
+      
+      if (fullCacheJson) {
+        const fullCacheMap = JSON.parse(fullCacheJson);
+        
+        // Hydrate the in-memory cache with all entries
+        Object.entries(fullCacheMap).forEach(([name, data]) => {
+          gameDataCache.set(name, data);
+        });
+        log('Memory cache hydrated with', Object.keys(fullCacheMap).length, 'entries');
+      }
+    }
 
-    // Only display if we have data
+    // Retrieve data from the now-hydrated cache
+    const data = gameDataCache.get(gameName);
+    log('Data for current game:', data ? 'Found' : 'Not found');
+
     if (!data) {
-      log('No data available, skipping display creation');
+      log('No data available after sync, skipping display');
       return;
     }
 
-    // Check if game changed while fetching
+    // Verify game hasn't changed during the async await
     const currentGame = detectGameName(doc);
-    log('Current game after fetch:', currentGame);
-    
     if (currentGame !== gameName) {
-      log('Game changed during fetch from', gameName, 'to', currentGame, '- skipping display');
+      log('Game changed during fetch, skipping display');
       return;
     }
 
-    // Create display with unique ID - no need to remove old one
-    log('Creating new display with data:', data.game_name || data.searched_name);
     const display = createDisplay(doc, gameName, data);
-    
-    // Only append if display was created (e.g., game is a gift)
     if (display) {
       container.appendChild(display);
-      log('Display successfully created and appended');
-    } else {
-      log('Display not created (not a gift or no qualifying data)');
+      log('Display created and appended');
     }
   } catch (error) {
-    log('Error handling game page for', gameName, ':', error);
+    log('Error handling game page:', error);
   } finally {
     isProcessing = false;
     log('Processing complete for:', gameName);
@@ -138,9 +140,21 @@ export function setupObserver(doc: Document): void {
   }
 
   log('Creating new MutationObserver');
+  
+  // Debounce handler to avoid processing on every tiny DOM change
+  let debounceTimer: NodeJS.Timeout | null = null;
+  
   observer = new MutationObserver(() => {
-    log('MutationObserver triggered');
-    handleGamePage(doc);
+    // Clear existing timer
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    
+    // Wait 100ms of inactivity before processing
+    debounceTimer = setTimeout(() => {
+      log('MutationObserver triggered (debounced)');
+      handleGamePage(doc);
+    }, 100);
   });
 
   log('Starting to observe document body');
