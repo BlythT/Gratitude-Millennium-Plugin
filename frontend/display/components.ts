@@ -118,7 +118,7 @@ export function createDisplay(
   // Main container matching Achievements structure with unique ID per game
   const container = doc.createElement('div');
   container.id = createDisplayId(gameName);
-  container.className = '_1kiZKVbDe-9Ikootk57kpA UAhWiMg9Q2VPsQQBj_ikT';
+  container.className = '_1kiZKVbDe-9Ikootk57kpA';
 
   // Add icons and content
   const icon = createGiftIcon(doc);

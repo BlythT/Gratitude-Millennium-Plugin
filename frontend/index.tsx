@@ -61,21 +61,30 @@ const SettingsContent = () => {
 	}, []);
 
 	if (isLoading) {
-		return <Spinner />;
+		return (
+			<Field
+				label="Gift History"
+				description="Gift History not initialized! Please visit the Store page and come back."
+				bottomSeparator="standard"
+			/>
+		);
 	}
 
 	return (
 		<>
-			<Field 
-				label="Cache Status" 
+			<Field
+				label="Cache Status"
 				description={`${entryCount} game license ${entryCount === 1 ? 'entry' : 'entries'} cached`}
 				bottomSeparator="standard"
 			/>
 			<Field label="Cache Management" bottomSeparator="standard">
-				<DialogButton onClick={handleClearCache}>
+				<DialogButton onClick={handleClearCache} style={{ padding: '.25em .5em' }}>
 					Clear Cache
 				</DialogButton>
 			</Field>
+			<Field label="Missing something?"
+			description="Newly gifted games might not be detected: try visiting the store or restarting steam before checking your library"
+			bottomSeparator="standard" />
 		</>
 	);
 };
