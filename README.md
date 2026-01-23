@@ -44,6 +44,7 @@
 5.  **Enable the Plugin:**
     * Go to **Steam** → **Millennium** → **Plugins** in the menu bar.
     * Find **Gratitude** in the list and toggle it on.
+    * "Save Changes"
 6.  **Initialize Gift History Cache:**
     * Visit the Steam Store page once to fetch and cache your gift history.
 
