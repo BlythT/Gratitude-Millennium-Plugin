@@ -1,0 +1,45 @@
+name: Release Plugin
+
+on:
+  release:
+    types: [published] # Runs when you click 'Publish Release'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Package Release
+        run: |
+          mkdir -p gratitude
+          cp -r .millennium gratitude/
+          cp -r backend gratitude/
+          cp plugin.json gratitude/
+          cp LICENSE gratitude/
+          cp README.md gratitude/
+          # Uses the tag name associated with the release for the filename
+          zip -r gratitude-for-millenium-${{ github.event.release.tag_name }}.zip gratitude
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: gratitude-for-millenium-${{ github.event.release.tag_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
