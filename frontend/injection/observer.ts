@@ -39,19 +39,19 @@ export function detectGameName(doc: Document): string | null {
 export function detectTooltipContainer(doc: Document): HTMLElement | null {
   log('Looking for tooltip container with selector:', SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR);
   const tooltipContainers = doc.querySelectorAll(SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR);
-  
+
   log('Found', tooltipContainers.length, 'tooltip containers');
-  
+
   if (tooltipContainers.length === 0) {
     log('No tooltip containers found');
     return null;
   }
 
   const tooltipContainer = tooltipContainers[tooltipContainers.length - 1];
-  
+
   log('Container type:', typeof tooltipContainer, 'nodeType:', tooltipContainer?.nodeType);
   log('Container constructor:', tooltipContainer?.constructor?.name);
-  
+
   // Check if it's an Element (nodeType 1) instead of strict HTMLElement check
   if (!tooltipContainer || tooltipContainer.nodeType !== 1) {
     log('Tooltip container is not a valid element node');
@@ -62,9 +62,24 @@ export function detectTooltipContainer(doc: Document): HTMLElement | null {
   return tooltipContainer as HTMLElement;
 }
 
+function insertDisplayDeterministically(
+  container: HTMLElement,
+  display: HTMLElement
+): boolean {
+  // The container for the "Time Played" tooltip.
+  const anchor = container.querySelector(
+    '._1kiZKVbDe-9Ikootk57kpA._1aKegVl9_lSdNAyWYZQlr9'
+  );
+
+  if (!anchor) return false;
+
+  anchor.after(display);
+  return true;
+}
+
 async function handleGamePage(doc: Document): Promise<void> {
   log('handleGamePage called');
-  
+
   // Prevent concurrent processing
   if (isProcessing) {
     log('Already processing, skipping');
@@ -73,7 +88,7 @@ async function handleGamePage(doc: Document): Promise<void> {
 
   const gameName = detectGameName(doc);
   const container = detectTooltipContainer(doc);
-  
+
   if (!gameName || !container) {
     log('Missing game name or container, exiting');
     return;
@@ -91,13 +106,13 @@ async function handleGamePage(doc: Document): Promise<void> {
     // Check if the specific game is missing from memory
     if (!gameDataCache.has(gameName)) {
       log('Cache miss for:', gameName, '- Fetching full license data');
-      
+
       // Fetch the entire cache object from the backend
       const fullCacheJson = await getGameLicenseData();
-      
+
       if (fullCacheJson) {
         const fullCacheMap = JSON.parse(fullCacheJson);
-        
+
         // Hydrate the in-memory cache with all entries
         Object.entries(fullCacheMap).forEach(([name, data]) => {
           gameDataCache.set(name, data);
@@ -123,10 +138,14 @@ async function handleGamePage(doc: Document): Promise<void> {
     }
 
     const display = createDisplay(doc, gameName, data);
-    if (display) {
-      container.appendChild(display);
-      log('Display created and appended');
+    if (!display) return;
+
+    if (!insertDisplayDeterministically(container, display)) {
+      log('Anchor not ready yet, waiting for next mutation');
+      return;
     }
+
+    log('Display inserted')
   } catch (error) {
     log('Error handling game page:', error);
   } finally {
@@ -137,7 +156,7 @@ async function handleGamePage(doc: Document): Promise<void> {
 
 export function setupObserver(doc: Document): void {
   log('setupObserver called');
-  
+
   // Clean up existing observer
   if (observer) {
     log('Disconnecting existing observer');
@@ -145,16 +164,16 @@ export function setupObserver(doc: Document): void {
   }
 
   log('Creating new MutationObserver');
-  
+
   // Debounce handler to avoid processing on every tiny DOM change
   let debounceTimer: NodeJS.Timeout | null = null;
-  
+
   observer = new MutationObserver(() => {
     // Clear existing timer
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
-    
+
     // Wait 100ms of inactivity before processing
     debounceTimer = setTimeout(() => {
       log('MutationObserver triggered (debounced)');
