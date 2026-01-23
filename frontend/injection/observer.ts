@@ -4,7 +4,6 @@ import { createDisplay, getExistingDisplay } from '../display/components';
 import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR } from '../types';
 import { callable } from '@steambrew/client';
 
-const getGameLicense = callable<[{ gameName: string }], string>('GetGameLicense');
 const getGameLicenseData = callable<[], string>('GetGameLicenseData');
 
 let observer: MutationObserver | null = null;
@@ -19,6 +18,12 @@ export function resetState(): void {
     observer.disconnect();
     observer = null;
   }
+}
+
+// Clear the frontend's in-memory cache
+export function clearFrontendCache(): void {
+  log('Clearing frontend cache');
+  gameDataCache.clear();
 }
 
 // Detect game name from document

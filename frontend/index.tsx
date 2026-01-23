@@ -1,20 +1,19 @@
-import { Millennium, IconsModule, definePlugin, Field, DialogButton, TextField, callable, Spinner } from '@steambrew/client';
+import { Millennium, IconsModule, definePlugin, Field, DialogButton, callable, Spinner } from '@steambrew/client';
 import { log, logError } from './lib/logger';
-import { setupObserver } from './injection/observer';
+import { setupObserver, clearFrontendCache } from './injection/observer';
 
-// Declare a function that exists on the backend
-const getGameLicense = callable<[{ gameName: string }], string>('GetGameLicense');
+// Declare backend functions
 const isGameLicenseCachePopulated = callable<[], boolean>('IsGameLicenseCachePopulated');
-const getGameLicenseData = callable<[], string>('GetGameLicenseData');
+const getCacheEntryCount = callable<[], number>('GetCacheEntryCount');
+const clearCache = callable<[], boolean>('ClearCache');
 
 import { useState, useEffect } from 'react';
 
 const SettingsContent = () => {
-	const [gameName, setGameName] = useState('');
-	const [gameLicense, setGameLicense] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
+	const [entryCount, setEntryCount] = useState(0);
 
-	const checkChache = async () => {
+	const checkCache = async () => {
 		return await isGameLicenseCachePopulated().then((populated) => {
 			log('Response from IsGameLicenseCachePopulated:', populated);
 			return populated;
@@ -24,12 +23,35 @@ const SettingsContent = () => {
 		});
 	};
 
+	const updateEntryCount = async () => {
+		try {
+			const count = await getCacheEntryCount();
+			setEntryCount(count);
+		} catch (error) {
+			logError('Error fetching cache entry count:', error);
+		}
+	};
+
+	const handleClearCache = async () => {
+		try {
+			const success = await clearCache();
+			if (success) {
+				log('Cache cleared successfully');
+				clearFrontendCache(); // Clear the in-memory cache
+				setEntryCount(0);
+			}
+		} catch (error) {
+			logError('Error clearing cache:', error);
+		}
+	};
+
 	// Polling to check if cache is populated
 	useEffect(() => {
 		const pollCacheStatus = async () => {
-			const result = await checkChache();
+			const result = await checkCache();
 			if (result) {
 				setIsLoading(false);
+				await updateEntryCount();
 			} else {
 				setTimeout(pollCacheStatus, 1000); // Poll every second
 			}
@@ -44,43 +66,15 @@ const SettingsContent = () => {
 
 	return (
 		<>
-			<Field label="Plugin Settings" description="This is a description of the plugin settings." icon={<IconsModule.Settings />} bottomSeparator="standard" focusable>
-				<DialogButton
-					onClick={() => {
-						log('Button clicked: Fetching license data from backend...');
-						getGameLicenseData().then((data) => {
-							log('Received license data from backend:', data);
-						}).catch((error) => {
-							logError('Error fetching license data from backend:', error);
-						});
-					}}
-				>
-					List all
+			<Field 
+				label="Cache Status" 
+				description={`${entryCount} game license ${entryCount === 1 ? 'entry' : 'entries'} cached`}
+				bottomSeparator="standard"
+			/>
+			<Field label="Cache Management" bottomSeparator="standard">
+				<DialogButton onClick={handleClearCache}>
+					Clear Cache
 				</DialogButton>
-			</Field>
-			<Field>
-				<TextField
-					label="Game Name"
-					onChange={(e) => setGameName(e.currentTarget.value)}
-				/>
-				<DialogButton
-					onClick={() => {
-						log('Button clicked: Fetching license for game:', gameName);
-						getGameLicense({ gameName }).then((license) => {
-							log(`Received license for ${gameName}:`, license);
-							setGameLicense(license);
-						}).catch((error) => {
-							logError(`Error fetching license for ${gameName}:`, error);
-						});
-					}}
-				>
-					Click Me
-				</DialogButton>
-			</Field>
-			<Field label="Game License Data" description="License data for the specified game." bottomSeparator="standard">
-				<>
-					{gameLicense !== null ? gameLicense : "No data fetched yet."}
-				</>
 			</Field>
 		</>
 	);
