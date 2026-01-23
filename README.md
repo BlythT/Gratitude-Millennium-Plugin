@@ -8,6 +8,14 @@
 
 ---
 
+## ⚠️ Early Access Note
+This is an early release with one known temporary limitation:  
+
+* **Store Sync:** Currently, you **must visit the Steam Store** at least once after starting Steam for the plugin to fetch your gift history. If indicators aren't showing up, simply click the "Store" tab and then return to your Library.  
+* **Status:** I am actively working on a fix for this to automate the data fetch in the next release!  
+
+---
+
 ## 🛠 Installation
 
 > [!IMPORTANT]
