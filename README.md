@@ -3,8 +3,16 @@
 **Gratitude** is a [Millennium](https://steambrew.app/) plugin for your Steam Library that adds a helpful indicator to games you have been gifted.
 
 ## Screenshots
-![Zoomed out screenshot](assets/big.png)
-![Screenshot of just Gratitude's Tooltip](assets/small.png)
+
+<p align="center">
+  <img src="assets/big.png" width="80%" alt="Full UI Integration">
+  <br>
+  <em>The plugin integrates seamlessly with the existing Steam game header.</em>
+</p>
+
+<p align="center">
+  <img src="assets/small.png" width="40%" alt="Tooltip Detail">
+</p>
 
 ---
 
