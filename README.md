@@ -49,7 +49,7 @@ A: Using Millennium to customize your client is safe. As noted on the [Official 
 > "As the official skin support (for VGUI) has been removed... it was unofficially replaced by Millennium for Steam... an open source patcher that allows skins/themes after April 27th 2023."
 
 **Q: Can I find this in the [Millennium Plugins Browser](https://steambrew.app/plugins)?**  
-A: Not yet; once I've polished this up further, I will submit it for review to be added to the official store.  
+A: Not yet; once I've polished this up further, I will submit it for review to be added.  
 
 **Q: Can it show who gifted me the game?**  
 A: Unfortunately not. Outside of the original gift message and email, Steam does not store the "sender" information in a way the client can retrieve, so I cannot display it.
