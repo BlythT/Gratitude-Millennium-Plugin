@@ -6,11 +6,15 @@ local io = require("io")
 -- Global cache for license data (indexed by game name)
 GameLicenseCache = {}
 
--- Path to the cache file
-local CACHE_FILE_PATH = millennium.steam_path() .. "/config/gratitude_license_cache.json"
+-- Path to the cache file (primary)
+local CACHE_FILE_PATH = millennium.steam_path() .. "/plugins/gratitude/gratitude_license_cache.json"
+-- Fallback path in case folder is renamed
+local CACHE_FILE_PATH_FALLBACK = millennium.steam_path() .. "/plugins/gratitude_license_cache.json"
 
--- Path to the consent file
-local CONSENT_FILE_PATH = millennium.steam_path() .. "/config/gratitude_consent.json"
+-- Path to the consent file (primary)
+local CONSENT_FILE_PATH = millennium.steam_path() .. "/plugins/gratitude/gratitude_consent.json"
+-- Fallback path in case folder is renamed
+local CONSENT_FILE_PATH_FALLBACK = millennium.steam_path() .. "/plugins/gratitude_consent.json"
 
 -- Consent state
 local consentState = {
@@ -23,6 +27,25 @@ local function table_size(t)
     local count = 0
     for _ in pairs(t) do count = count + 1 end
     return count
+end
+
+-- Helper function to try opening a file, with fallback path
+-- While the folder from the release zip is "gratitude", some users may rename it
+-- The fallback will work no matter what the folder is renamed to.
+local function open_file_with_fallback(primary_path, fallback_path, mode)
+    local file, err = io.open(primary_path, mode)
+    if file then
+        return file, primary_path
+    end
+    
+    -- If opening primary path failed, try fallback
+    file, err = io.open(fallback_path, mode)
+    if file then
+        logger:info("Using fallback path: " .. fallback_path)
+        return file, fallback_path
+    end
+    
+    return nil, primary_path, err
 end
 
 -- Save cache to file
@@ -52,7 +75,7 @@ end
 local function load_cache_from_file()
     logger:info("Loading cache from file: " .. CACHE_FILE_PATH)
     
-    local file, err = io.open(CACHE_FILE_PATH, "r")
+    local file, path, err = open_file_with_fallback(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK, "r")
     if not file then
         logger:info("Cache file doesn't exist yet (first run or no data cached)")
         return false
@@ -67,7 +90,7 @@ local function load_cache_from_file()
             GameLicenseCache = decoded
             local count = 0
             for _ in pairs(GameLicenseCache) do count = count + 1 end
-            logger:info("Cache loaded successfully with " .. tostring(count) .. " entries")
+            logger:info("Cache loaded successfully from " .. path .. " with " .. tostring(count) .. " entries")
             return true
         else
             logger:error("Failed to decode cache file JSON")
@@ -190,7 +213,7 @@ end
 local function load_consent_from_file()
     logger:info("Loading consent state from file: " .. CONSENT_FILE_PATH)
     
-    local file, err = io.open(CONSENT_FILE_PATH, "r")
+    local file, path, err = open_file_with_fallback(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK, "r")
     if not file then
         logger:info("Consent file doesn't exist yet (user hasn't answered)")
         return false
@@ -203,7 +226,7 @@ local function load_consent_from_file()
         local decoded = json.decode(content)
         if decoded then
             consentState = decoded
-            logger:info("Consent state loaded: allowed=" .. tostring(consentState.allowed))
+            logger:info("Consent state loaded from " .. path .. ": allowed=" .. tostring(consentState.allowed))
             return true
         else
             logger:error("Failed to decode consent file JSON")
