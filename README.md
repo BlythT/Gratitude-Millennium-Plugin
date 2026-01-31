@@ -16,15 +16,6 @@
 
 ---
 
-## ⚠️ Setup Requirement
-**First-time setup:** You must visit the Steam Store page at least once after installing the plugin to initialize your gift history cache. 
-
-* Simply click the "Store" tab in Steam, wait for the page to load, then return to your Library.
-* This only needs to be done once - your gift history will be cached locally and persist across Steam restarts.
-* If indicators aren't showing up (e.g. you have recieved a new gift since you last visited the store), simply visit the store again. If all else fails, restart steam.
-
----
-
 ## 🛠 Installation
 
 > [!IMPORTANT]
@@ -45,8 +36,6 @@
     * Go to **Steam** → **Millennium** → **Plugins** in the menu bar.
     * Find **Gratitude** in the list and toggle it on.
     * "Save Changes"
-6.  **Initialize Gift History Cache:**
-    * Visit the Steam Store page once to fetch and cache your gift history.
 
 ---
 
@@ -54,6 +43,9 @@
 **Q: Is Millennium allowed by Valve? (Will I get banned?)**   
 A: Using Millennium to customize your client is safe. As noted on the [Official Valve Software Wiki](https://developer.valvesoftware.com/wiki/Steam_Skins):   
 > "As the official skin support (for VGUI) has been removed... it was unofficially replaced by Millennium for Steam... an open source patcher that allows skins/themes after April 27th 2023."
+
+**Q: Why isn't the gift display loading or isn't showing for a game I was just gifted?**  
+A: Visit the Steam Store in your client, then go back! (This plugin stores your game license data but can only do so when you visit the store).
 
 **Q: Can I find this in the [Millennium Plugins Browser](https://steambrew.app/plugins)?**  
 A: Not yet; once I've polished this up further, I will submit it for review to be added.  
