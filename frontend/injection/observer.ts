@@ -122,7 +122,7 @@ async function handleGamePage(doc: Document): Promise<void> {
 
   try {
     // Check if the specific game is missing from memory
-    if (!gameDataCache.has(gameName)) {
+    if (!fuzzyMatch(gameDataCache, gameName)) {
       log('Cache miss for:', gameName, '- Fetching full license data');
 
       // Fetch the entire cache object from the backend
@@ -140,7 +140,7 @@ async function handleGamePage(doc: Document): Promise<void> {
     }
 
     // Retrieve data from the now-hydrated cache
-    const data = gameDataCache.get(gameName);
+    const data = fuzzyMatch(gameDataCache, gameName);
     log('Data for current game:', data ? 'Found' : 'Not found');
 
     if (!data) {
@@ -210,6 +210,49 @@ export function setupObserver(doc: Document): void {
   // Initial check
   log('Running initial game page check');
   handleGamePage(doc);
+}
+
+/**
+ * Fuzzy matches a game name in the map using bidirectional prefix matching.
+ * Handles cases where licenses have suffixes like " - Gift" or " - Closed Beta Access".
+ * Returns the longest match, with a minimum length requirement except when the game name
+ * is an exact prefix of a map key (e.g., "Dota 2" matching "Dota 2 - Gift").
+ * 
+ * @param map - The map to search in
+ * @param gameName - The game name to search for
+ * @param minMatchLength - Minimum character length for reverse matches (default: 5)
+ * @returns The matching value, or null if no match found
+ */
+function fuzzyMatch(map: Map<string, any>, gameName: string, minMatchLength: number = 5): any | null {
+  // First try exact match
+  if (map.has(gameName)) {
+    return map.get(gameName);
+  }
+
+  // Then try prefix matches, preferring longer keys (more specific)
+  const matches: Array<{ key: string; value: any }> = [];
+  
+  for (const [key, value] of map.entries()) {
+    // Game name is prefix of key (e.g., "Dota 2" matches "Dota 2 - Gift")
+    // This should always match regardless of length as some examples are short names with long suffixes
+    // e.g. "Deadlock" matches "Deadlock - Closed Beta Access"
+    if (key.startsWith(gameName)) {
+      matches.push({ key, value });
+    }
+    // Key is prefix of game name (e.g., "Bad North" matches "Bad North: Jotunn Edition")
+    // This requires minimum length to avoid spurious short matches
+    else if (gameName.startsWith(key) && key.length >= minMatchLength) {
+      matches.push({ key, value });
+    }
+  }
+
+  // Return the longest matching key (most specific)
+  if (matches.length > 0) {
+    matches.sort((a, b) => b.key.length - a.key.length);
+    return matches[0].value;
+  }
+
+  return null;
 }
 
 export function disconnectObserver(): void {
