@@ -1,10 +1,11 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import { log } from '../lib/logger';
-import { createDisplay, getExistingDisplay } from '../display/components';
+import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
 import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR } from '../types';
 import { callable } from '@steambrew/client';
 
 const getGameLicenseData = callable<[], string>('GetGameLicenseData');
+const isGameLicenseCachePopulated = callable<[], boolean>('IsGameLicenseCachePopulated');
 
 let observer: MutationObserver | null = null;
 let isProcessing = false;
@@ -65,13 +66,16 @@ export function detectTooltipContainer(doc: Document): HTMLElement | null {
   return tooltipContainer as HTMLElement;
 }
 
-function insertDisplayDeterministically(
+function insertDisplayAfter(
   container: HTMLElement,
-  display: HTMLElement
+  display: HTMLElement,
+  className?: string
 ): boolean {
+  log('Inserting display after anchor with class:', className);
+
   // The container for the "Time Played" tooltip.
   const anchor = container.querySelector(
-    '._1kiZKVbDe-9Ikootk57kpA._1aKegVl9_lSdNAyWYZQlr9'
+    className
   );
 
   if (!anchor) return false;
@@ -121,6 +125,27 @@ async function handleGamePage(doc: Document): Promise<void> {
   isProcessing = true;
 
   try {
+      log('Checking if cache is populated');
+      const cachePopulated = await isGameLicenseCachePopulated();
+      log('Cache populated:', cachePopulated);
+
+    // If cache is not populated, show missing data display for all games
+    if (!cachePopulated) {
+      log('Cache not populated, creating missing data display');
+      const display = createMissingDataDisplay(doc, gameName);
+      if (display) {
+        if (insertDisplayAfter(container, display, '._1kiZKVbDe-9Ikootk57kpA._1aKegVl9_lSdNAyWYZQlr9')) {
+          log('Inserted missing data display for:', gameName);
+        } else {
+          log('Anchor not ready yet for missing data display, waiting for next mutation');
+        }
+      }
+
+      isProcessing = false;
+      log('Processing complete for:', gameName);
+      return;
+    }
+
     // Check if the specific game is missing from memory
     if (!fuzzyMatch(gameDataCache, gameName)) {
       log('Cache miss for:', gameName, '- Fetching full license data');
@@ -143,8 +168,11 @@ async function handleGamePage(doc: Document): Promise<void> {
     const data = fuzzyMatch(gameDataCache, gameName);
     log('Data for current game:', data ? 'Found' : 'Not found');
 
+    // If no data found, silently skip (don't show missing data display)
     if (!data) {
-      log('No data available after sync, skipping display');
+      log('No data available for this specific game, skipping display');
+      isProcessing = false;
+      log('Processing complete for:', gameName);
       return;
     }
 
@@ -158,7 +186,7 @@ async function handleGamePage(doc: Document): Promise<void> {
     const display = createDisplay(doc, gameName, data);
     if (!display) return;
 
-    if (!insertDisplayDeterministically(container, display)) {
+    if (!insertDisplayAfter(container, display, '._1kiZKVbDe-9Ikootk57kpA._1aKegVl9_lSdNAyWYZQlr9')) {
       log('Anchor not ready yet, waiting for next mutation');
       return;
     }
