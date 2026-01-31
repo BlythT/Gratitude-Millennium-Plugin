@@ -9,11 +9,14 @@ const getGameLicenseData = callable<[], string>('GetGameLicenseData');
 let observer: MutationObserver | null = null;
 let isProcessing = false;
 let gameDataCache = new Map<string, any>(); // In-memory cache to avoid IPC calls
+let onMainContentReady: ((doc: Document) => void) | null = null;
+let mainContentDetected = false;
 
 export function resetState(): void {
   log('Resetting state');
   isProcessing = false;
   gameDataCache.clear();
+  mainContentDetected = false;
   if (observer) {
     observer.disconnect();
     observer = null;
@@ -77,8 +80,23 @@ function insertDisplayDeterministically(
   return true;
 }
 
+// Register callback for when main content container is ready
+export function onMainContentReady_Register(callback: (doc: Document) => void): void {
+  onMainContentReady = callback;
+  log('Main content ready callback registered');
+}
+
 async function handleGamePage(doc: Document): Promise<void> {
   log('handleGamePage called');
+
+  // Check if main content is ready and trigger callback
+  if (!mainContentDetected && doc.querySelector('[class*="_3Z7VQ1IMk4E3HsHvrkLNgo"]')) {
+    log('Main content container detected, triggering callback');
+    mainContentDetected = true;
+    if (onMainContentReady) {
+      onMainContentReady(doc);
+    }
+  }
 
   // Prevent concurrent processing
   if (isProcessing) {

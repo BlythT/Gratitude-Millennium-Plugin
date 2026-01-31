@@ -1,13 +1,14 @@
-import { Millennium, IconsModule, definePlugin, Field, DialogButton, callable, Spinner } from '@steambrew/client';
+import { IconsModule, definePlugin, Field, DialogButton, callable } from '@steambrew/client';
 import { log, logError } from './lib/logger';
-import { setupObserver, clearFrontendCache } from './injection/observer';
+import { setupObserver, clearFrontendCache, onMainContentReady_Register } from './injection/observer';
+import { useState, useEffect } from 'react';
+import { showConsentModal } from './components/ConsentModal';
 
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[], boolean>('IsGameLicenseCachePopulated');
 const getCacheEntryCount = callable<[], number>('GetCacheEntryCount');
 const clearCache = callable<[], boolean>('ClearCache');
-
-import { useState, useEffect } from 'react';
+const hasUserConsented = callable<[], boolean>('HasUserConsented');
 
 const SettingsContent = () => {
 	const [isLoading, setIsLoading] = useState(true);
@@ -83,43 +84,75 @@ const SettingsContent = () => {
 				</DialogButton>
 			</Field>
 			<Field label="Missing something?"
-			description="Newly gifted games might not be detected: try visiting the store or restarting steam before checking your library"
-			bottomSeparator="standard" />
+				description="Newly gifted games might not be detected: try visiting the store or restarting steam before checking your library"
+				bottomSeparator="standard" />
 		</>
 	);
 };
 
-let currentDocument: Document | undefined;
+let consentModalShown = false;
+
+// Popup callback to handle main window initialization
+async function onPopupCreation(popup: any) {
+	if (!popup) {
+		return;
+	}
+
+	const isMainWindow = popup.m_strName === 'SP Desktop_uid0';
+	
+	if (isMainWindow) {
+		
+		// Register callback to show consent modal when main content loads
+		onMainContentReady_Register(async () => {
+			if (!consentModalShown) {
+				consentModalShown = true;
+				try {
+					// Check if user has already consented
+					const userConsented = await hasUserConsented();
+					if (!userConsented) {
+						showConsentModal();
+					}
+				} catch (error) {
+					logError('Error checking consent:', error);
+				}
+			}
+		});
+
+		// Set up observer for library patching
+		const doc = popup.m_popup?.document;
+		if (doc?.body) {
+			setupObserver(doc);
+		}
+	}
+}
+
+// Initialize: check for existing main window and register callback for new ones
+function initializePopupHandling() {
+	// @ts-ignore - g_PopupManager exists on window but isn't typed
+	const g_PopupManager = window.g_PopupManager;
+	
+	if (!g_PopupManager) {
+		logError('g_PopupManager not available');
+		return;
+	}
+
+	// Handle existing main window if already loaded
+	const existingMainWindow = g_PopupManager.GetExistingPopup?.('SP Desktop_uid0');
+	if (existingMainWindow) {
+		onPopupCreation(existingMainWindow);
+	}
+
+	// Register callback for newly created popups
+	if (typeof g_PopupManager.AddPopupCreatedCallback === 'function') {
+		g_PopupManager.AddPopupCreatedCallback(onPopupCreation);
+	} else {
+		logError('AddPopupCreatedCallback is not a function');
+	}
+}
 
 export default definePlugin(() => {
-	log('Defining Gratitude plugin');
-	Millennium.AddWindowCreateHook?.((context: any) => {
-		log('WindowCreateHook triggered for window:', context.m_strName);
-		// Only handle main Steam windows (Desktop or Big Picture)
-		if (!context.m_strName?.startsWith('SP ')) {
-			log('Ignoring non-main window:', context.m_strName);
-			return;
-		}
-
-		const doc = context.m_popup?.document;
-		if (!doc?.body) {
-			log('No document body found for window:', context.m_strName);
-			return;
-		}
-		log('Window created:', context.m_strName);
-
-		// Clean up old document if switching modes
-		if (currentDocument && currentDocument !== doc) {
-			log('Mode switch detected, cleaning up old document');
-			// TODO: test this
-			// removeExistingDisplay(currentDocument);
-			// disconnectObserver();
-			// resetState();
-		}
-
-		currentDocument = doc;
-		setupObserver(doc);
-	});
+	// Initialize popup handling with g_PopupManager for proper startup flow
+	initializePopupHandling();
 
 	return {
 		title: 'Gratitude',

@@ -9,6 +9,15 @@ GameLicenseCache = {}
 -- Path to the cache file
 local CACHE_FILE_PATH = millennium.steam_path() .. "/config/gratitude_license_cache.json"
 
+-- Path to the consent file
+local CONSENT_FILE_PATH = millennium.steam_path() .. "/config/gratitude_consent.json"
+
+-- Consent state
+local consentState = {
+    allowed = false,
+    timestamp = nil
+}
+
 -- Helper function to count table entries
 local function table_size(t)
     local count = 0
@@ -18,6 +27,11 @@ end
 
 -- Save cache to file
 local function save_cache_to_file()
+    if not consentState.allowed then
+        logger:info("User has not given consent, skipping cache save")
+        return false
+    end
+
     logger:info("Saving cache to file: " .. CACHE_FILE_PATH)
 
     local file, err = io.open(CACHE_FILE_PATH, "w")
@@ -154,12 +168,75 @@ function ClearCache()
     return true
 end
 
+-- Save consent state to file
+local function save_consent_to_file()
+    logger:info("Saving consent state to file: " .. CONSENT_FILE_PATH)
+
+    local file, err = io.open(CONSENT_FILE_PATH, "w")
+    if not file then
+        logger:error("Failed to open consent file for writing: " .. tostring(err))
+        return false
+    end
+    
+    local encoded = json.encode(consentState)
+    file:write(encoded)
+    file:close()
+    
+    logger:info("Consent state saved successfully")
+    return true
+end
+
+-- Load consent state from file
+local function load_consent_from_file()
+    logger:info("Loading consent state from file: " .. CONSENT_FILE_PATH)
+    
+    local file, err = io.open(CONSENT_FILE_PATH, "r")
+    if not file then
+        logger:info("Consent file doesn't exist yet (user hasn't answered)")
+        return false
+    end
+    
+    local content = file:read("*all")
+    file:close()
+    
+    if content and #content > 0 then
+        local decoded = json.decode(content)
+        if decoded then
+            consentState = decoded
+            logger:info("Consent state loaded: allowed=" .. tostring(consentState.allowed))
+            return true
+        else
+            logger:error("Failed to decode consent file JSON")
+        end
+    end
+    
+    return false
+end
+
+-- Store user consent decision (called from frontend)
+function SetConsent(allowed)
+    logger:info("SetConsent called with allowed=" .. tostring(allowed))
+    consentState.allowed = allowed
+    consentState.timestamp = os.time()
+    save_consent_to_file()
+    return true
+end
+
+-- Check if user has already given consent
+function HasUserConsented()
+    logger:info("HasUserConsented called, returning: " .. tostring(consentState.allowed))
+    return consentState.allowed
+end
+
 local function on_load()
     print("Gratitude plugin loaded")
     logger:info("Comparing millennium version: " .. millennium.cmp_version(millennium.version(), "2.29.3"))
 
     -- Load cached data from file on startup
     load_cache_from_file()
+    
+    -- Load consent state from file on startup
+    load_consent_from_file()
 
     logger:info("Gratitude plugin loaded with Millennium version " .. millennium.version())
     millennium.ready()
@@ -170,8 +247,9 @@ end
 local function on_unload()
     logger:info("Plugin unloaded")
 
-    -- Save cache one last time before unloading
+    -- Save cache and consent one last time before unloading
     save_cache_to_file()
+    save_consent_to_file()
 end
 
 -- Called when the Steam UI has fully loaded.
