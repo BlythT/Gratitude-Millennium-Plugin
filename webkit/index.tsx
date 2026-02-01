@@ -1,7 +1,8 @@
 import { callable } from '@steambrew/webkit';
 import { log, logError } from './lib/logger';
+import { getCurrentAccountID } from './lib/steamid';
 
-const setGameLicenseData = callable<[{ licenseData: string }], void>('SetGameLicenseData');
+const setGameLicenseData = callable<[{ steamUserID: string; licenseData: string }], void>('SetGameLicenseData');
 
 type LicenseData = {
 	date: string;
@@ -24,9 +25,18 @@ export default async function WebkitMain() {
 				log("Found account_table")
 				const data = parseLicenseTable(table);
 
+				log("getting steam user id");
+				const steamUserID = getCurrentAccountID();
+				if (!steamUserID || steamUserID === '') {
+					log("Steam User ID is empty or null");
+					logError("Could not get current Steam User ID.");
+					return;
+				}
+				log("Steam User ID:", steamUserID);
+
 				log("Parsed License Data:", data);
 				log("Sending data to backend...");
-				setGameLicenseData({ licenseData: JSON.stringify(data) }).then(() => {
+				setGameLicenseData({ steamUserID: steamUserID, licenseData: JSON.stringify(data) }).then(() => {
 					log("Data sent to backend successfully.");
 				}).catch((error) => {
 					logError("Error sending data to backend:", error);

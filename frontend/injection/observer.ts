@@ -1,33 +1,26 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
-import { log } from '../lib/logger';
+import { log } from '../../lib/logger';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
 import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR } from '../types';
 import { callable } from '@steambrew/client';
+import { getCurrentAccountID } from '../../lib/steamid';
 
-const getGameLicenseData = callable<[], string>('GetGameLicenseData');
-const isGameLicenseCachePopulated = callable<[], boolean>('IsGameLicenseCachePopulated');
+const getGameLicenseData = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
+const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
 
 let observer: MutationObserver | null = null;
 let isProcessing = false;
-let gameDataCache = new Map<string, any>(); // In-memory cache to avoid IPC calls
 let onMainContentReady: ((doc: Document) => void) | null = null;
 let mainContentDetected = false;
 
 export function resetState(): void {
   log('Resetting state');
   isProcessing = false;
-  gameDataCache.clear();
   mainContentDetected = false;
   if (observer) {
     observer.disconnect();
     observer = null;
   }
-}
-
-// Clear the frontend's in-memory cache
-export function clearFrontendCache(): void {
-  log('Clearing frontend cache');
-  gameDataCache.clear();
 }
 
 // Detect game name from document
@@ -121,12 +114,19 @@ async function handleGamePage(doc: Document): Promise<void> {
     return;
   }
 
+  // Get current Steam ID
+  const steamID = getCurrentAccountID();
+  if (!steamID) {
+    log('Steam ID not available, skipping');
+    return;
+  }
+
   log('Starting to process game:', gameName);
   isProcessing = true;
 
   try {
     log('Checking if cache is populated');
-    const cachePopulated = await isGameLicenseCachePopulated();
+    const cachePopulated = await isGameLicenseCachePopulated({ steamUserID: steamID });
     log('Cache populated:', cachePopulated);
 
     // If cache is not populated, show missing data display for all games
@@ -146,26 +146,14 @@ async function handleGamePage(doc: Document): Promise<void> {
       return;
     }
 
-    // Check if the specific game is missing from memory
-    if (!fuzzyMatch(gameDataCache, gameName)) {
-      log('Cache miss for:', gameName, '- Fetching full license data');
+    // Fetch license data from backend (backend handles caching per-user)
+    log('Fetching license data for Steam ID:', steamID);
+    const fullCacheJson = await getGameLicenseData({ steamUserID: steamID });
+    const fullCacheMap = fullCacheJson ? JSON.parse(fullCacheJson) : {};
+    log('Retrieved', Object.keys(fullCacheMap).length, 'license entries');
 
-      // Fetch the entire cache object from the backend
-      const fullCacheJson = await getGameLicenseData();
-
-      if (fullCacheJson) {
-        const fullCacheMap = JSON.parse(fullCacheJson);
-
-        // Hydrate the in-memory cache with all entries
-        Object.entries(fullCacheMap).forEach(([name, data]) => {
-          gameDataCache.set(name, data);
-        });
-        log('Memory cache hydrated with', Object.keys(fullCacheMap).length, 'entries');
-      }
-    }
-
-    // Retrieve data from the now-hydrated cache
-    const data = fuzzyMatch(gameDataCache, gameName);
+    // Check if data exists for this game using fuzzy matching
+    const data = fuzzyMatch(new Map(Object.entries(fullCacheMap)), gameName);
     log('Data for current game:', data ? 'Found' : 'Not found');
 
     // If no data found, silently skip (don't show missing data display)

@@ -3,8 +3,8 @@ local millennium = require("millennium")
 local json = require("json")
 local io = require("io")
 
--- Global cache for license data (indexed by game name)
-GameLicenseCache = {}
+-- Global cache for license data (indexed by Steam ID, then game name)
+local GameLicenseCache = {}
 
 -- Path to the cache file (primary)
 local CACHE_FILE_PATH = millennium.steam_path() .. "/plugins/gratitude/gratitude_license_cache.json"
@@ -16,11 +16,8 @@ local CONSENT_FILE_PATH = millennium.steam_path() .. "/plugins/gratitude/gratitu
 -- Fallback path in case folder is renamed
 local CONSENT_FILE_PATH_FALLBACK = millennium.steam_path() .. "/plugins/gratitude_consent.json"
 
--- Consent state
-local consentState = {
-    allowed = false,
-    timestamp = nil
-}
+-- Consent state (per Steam ID)
+local consentState = {}
 
 -- Helper function to count table entries
 local function table_size(t)
@@ -52,11 +49,6 @@ end
 
 -- Save cache to file
 local function save_cache_to_file()
-    if not consentState.allowed then
-        logger:info("User has not given consent, skipping cache save")
-        return false
-    end
-
     logger:info("Saving cache to file: " .. CACHE_FILE_PATH)
 
     local file, err = io.open(CACHE_FILE_PATH, "w")
@@ -87,7 +79,11 @@ local function load_cache_from_file()
     file:close()
 
     if content and #content > 0 then
-        local decoded = json.decode(content)
+        local ok, decoded = pcall(json.decode, content)
+        if not ok then
+            logger:error("Failed to decode cache file JSON: " .. tostring(decoded))
+            return false
+        end
         if decoded then
             GameLicenseCache = decoded
             local count = 0
@@ -105,26 +101,46 @@ local function load_cache_from_file()
 end
 
 -- Function to be called from frontend to set license data
-function SetGameLicenseData(licenseData)
-    -- licenseData is a JSON string, []{date, item, acquisition}
-    logger:info("SetGameLicenseData called with data length: " .. tostring(#licenseData))
+-- @param steamUserID string - Steam ID of the user
+-- @param licenseData string - JSON string of license data array ([]{date, item, acquisition})
+function SetGameLicenseData(licenseData, steamUserID)
+    assert(type(licenseData) == "string", "licenseData must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    local len = type(licenseData) == "string" and #licenseData or 0
+    if not licenseData or len == 0 then
+        logger:error("No license data provided")
+        return false, "No license data provided"
+    end
+    logger:info("SetGameLicenseData called with data length: " .. tostring(len) .. " for Steam ID: " ..
+                    tostring(steamUserID))
+
+    if not steamUserID or steamUserID == "" then
+        logger:error("No Steam ID provided")
+        return false, "Steam ID not provided"
+    end
 
     local decodedData = json.decode(licenseData)
     if decodedData then
         -- Convert array to hash map indexed by game name for O(1) lookups
-        GameLicenseCache = {}
+        GameLicenseCache[steamUserID] = {}
         for _, license in ipairs(decodedData) do
             if license.item then
-                GameLicenseCache[license.item] = {
+                GameLicenseCache[steamUserID][license.item] = {
                     date = license.date,
                     acquisition = license.acquisition
                 }
             end
         end
 
-        logger:info(string.format("Cached %d license entries", #decodedData))
+        logger:info(string.format("Cached %d license entries for user %s", #decodedData, steamUserID))
 
-        save_cache_to_file()
+        -- Only save if user has consented
+        if consentState[steamUserID] and consentState[steamUserID].allowed then
+            save_cache_to_file()
+        else
+            logger:info("User " .. steamUserID .. " has not given consent, skipping cache save")
+        end
     else
         logger:error("Failed to decode license data JSON")
         return false, "Failed to decode license data JSON"
@@ -134,47 +150,68 @@ function SetGameLicenseData(licenseData)
 end
 
 -- Retrieve license data for a specific game as JSON
-function GetGameLicense(gameName)
-    logger:info("GetGameLicense called for game: " .. gameName)
+function GetGameLicense(gameName, steamUserID)
+    assert(type(gameName) == "string", "gameName must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    logger:info("GetGameLicense called for game: " .. gameName .. " and Steam ID: " .. tostring(steamUserID))
 
-    if GameLicenseCache[gameName] == nil then
+    if not steamUserID or steamUserID == "" or not GameLicenseCache[steamUserID] then
+        logger:info("No cache for Steam ID: " .. tostring(steamUserID))
+        return "{}"
+    end
+
+    if GameLicenseCache[steamUserID][gameName] == nil then
         logger:info("No license data found for game: " .. gameName)
         return "{}"
     end
-    return json.encode(GameLicenseCache[gameName])
+    return json.encode(GameLicenseCache[steamUserID][gameName])
 end
 
--- Retrieve entire license cache as JSON
-function GetGameLicenseData()
-    logger:info("GetGameLicenseData called")
-    if not IsGameLicenseCachePopulated() then
-        logger:info("GameLicenseCache is empty")
+-- Retrieve entire license cache as JSON (for specific user)
+function GetGameLicenseData(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    logger:info("GetGameLicenseData called for Steam ID: " .. tostring(steamUserID))
+
+    if not steamUserID or steamUserID == "" or not GameLicenseCache[steamUserID] then
+        logger:info("GameLicenseCache is empty for Steam ID " .. tostring(steamUserID))
         return "{}"
     end
 
-    return json.encode(GameLicenseCache)
+    logger:info("Returning " .. table_size(GameLicenseCache[steamUserID]) .. " entries for Steam ID " .. steamUserID)
+    return json.encode(GameLicenseCache[steamUserID])
 end
 
--- Check if the license cache is populated
+-- Check if the license cache is populated (for specific user)
 -- Used by frontend to distinguish between empty cache and cache misses
-function IsGameLicenseCachePopulated()
-    logger:info("IsGameLicenseCachePopulated called")
-    if next(GameLicenseCache) ~= nil then
-        logger:info("GameLicenseCache is populated")
+function IsGameLicenseCachePopulated(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    logger:info("IsGameLicenseCachePopulated called for Steam ID: " .. tostring(steamUserID))
+
+    if not steamUserID or steamUserID == "" then
+        logger:info("No Steam ID provided")
+        return false
+    end
+
+    if GameLicenseCache[steamUserID] and next(GameLicenseCache[steamUserID]) ~= nil then
+        logger:info("GameLicenseCache is populated for Steam ID " .. steamUserID)
         return true
     end
-    logger:info("GameLicenseCache is empty")
+    logger:info("GameLicenseCache is empty for Steam ID " .. steamUserID)
     return false
 end
 
--- Get the number of entries in the cache
-function GetCacheEntryCount()
-    logger:info("GetCacheEntryCount called")
-    local count = 0
-    for _ in pairs(GameLicenseCache) do
-        count = count + 1
+-- Get the number of entries in the cache (for specific user)
+function GetCacheEntryCount(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    logger:info("GetCacheEntryCount called for Steam ID: " .. tostring(steamUserID))
+
+    if not steamUserID or steamUserID == "" or not GameLicenseCache[steamUserID] then
+        logger:info("No cache for Steam ID: " .. tostring(steamUserID))
+        return 0
     end
-    logger:info("Cache has " .. count .. " entries")
+
+    local count = table_size(GameLicenseCache[steamUserID])
+    logger:info("Cache has " .. count .. " entries for Steam ID " .. steamUserID)
     return count
 end
 
@@ -230,7 +267,7 @@ local function load_consent_from_file()
         local decoded = json.decode(content)
         if decoded then
             consentState = decoded
-            logger:info("Consent state loaded from " .. path .. ": allowed=" .. tostring(consentState.allowed))
+            logger:info("Consent state loaded from " .. path)
             return true
         else
             logger:error("Failed to decode consent file JSON")
@@ -241,18 +278,37 @@ local function load_consent_from_file()
 end
 
 -- Store user consent decision (called from frontend)
-function SetConsent(allowed)
-    logger:info("SetConsent called with allowed=" .. tostring(allowed))
-    consentState.allowed = allowed
-    consentState.timestamp = os.time()
+function SetConsent(consent, steamUserID)
+    assert(type(consent) == "boolean", "consent must be a boolean")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    if not steamUserID or steamUserID == "" then
+        logger:error("No Steam ID provided")
+        return false
+    end
+
+    logger:info("SetConsent called for user " .. steamUserID .. " with allowed=" .. tostring(consent))
+
+    if not consentState[steamUserID] then
+        consentState[steamUserID] = {}
+    end
+
+    consentState[steamUserID].allowed = consent
+    consentState[steamUserID].timestamp = os.time()
     save_consent_to_file()
     return true
 end
 
 -- Check if user has already given consent
-function HasUserConsented()
-    logger:info("HasUserConsented called, returning: " .. tostring(consentState.allowed))
-    return consentState.allowed
+function HasUserConsented(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    if not steamUserID or steamUserID == "" then
+        logger:info("Cannot check consent: No Steam ID provided")
+        return false
+    end
+
+    local hasConsented = consentState[steamUserID] and consentState[steamUserID].allowed or false
+    logger:info("HasUserConsented called for user " .. steamUserID .. ", returning: " .. tostring(hasConsented))
+    return hasConsented
 end
 
 local function on_load()

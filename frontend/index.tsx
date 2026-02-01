@@ -1,21 +1,22 @@
 import { IconsModule, definePlugin, Field, DialogButton, callable } from '@steambrew/client';
-import { log, logError } from './lib/logger';
-import { setupObserver, clearFrontendCache, onMainContentReady_Register } from './injection/observer';
+import { log, logError } from '../lib/logger';
+import { setupObserver, onMainContentReady_Register } from './injection/observer';
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
+import { getCurrentAccountID } from '../lib/steamid';
 
 // Declare backend functions
-const isGameLicenseCachePopulated = callable<[], boolean>('IsGameLicenseCachePopulated');
-const getCacheEntryCount = callable<[], number>('GetCacheEntryCount');
-const clearCache = callable<[], boolean>('ClearCache');
-const hasUserConsented = callable<[], boolean>('HasUserConsented');
+const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
+const getCacheEntryCount = callable<[{ steamUserID: string }], number>('GetCacheEntryCount');
+const clearCache = callable<[{ steamUserID: string }], boolean>('ClearCache');
+const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
 
 const SettingsContent = () => {
 	const [isLoading, setIsLoading] = useState(true);
 	const [entryCount, setEntryCount] = useState(0);
 
 	const checkCache = async () => {
-		return await isGameLicenseCachePopulated().then((populated) => {
+		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() }).then((populated) => {
 			log('Response from IsGameLicenseCachePopulated:', populated);
 			return populated;
 		}).catch((error) => {
@@ -26,7 +27,7 @@ const SettingsContent = () => {
 
 	const updateEntryCount = async () => {
 		try {
-			const count = await getCacheEntryCount();
+			const count = await getCacheEntryCount({ steamUserID: getCurrentAccountID() });
 			setEntryCount(count);
 		} catch (error) {
 			logError('Error fetching cache entry count:', error);
@@ -35,10 +36,9 @@ const SettingsContent = () => {
 
 	const handleClearCache = async () => {
 		try {
-			const success = await clearCache();
+			const success = await clearCache({ steamUserID: getCurrentAccountID() });
 			if (success) {
 				log('Cache cleared successfully');
-				clearFrontendCache(); // Clear the in-memory cache
 				setEntryCount(0);
 			}
 		} catch (error) {
@@ -107,10 +107,11 @@ async function onPopupCreation(popup: any) {
 			if (!consentModalShown) {
 				consentModalShown = true;
 				try {
+					const currentUserID = getCurrentAccountID();
 					// Check if user has already consented
-					const userConsented = await hasUserConsented();
+					const userConsented = await hasUserConsented({ steamUserID: currentUserID });
 					if (!userConsented) {
-						showConsentModal();
+						showConsentModal(currentUserID);
 					}
 				} catch (error) {
 					logError('Error checking consent:', error);

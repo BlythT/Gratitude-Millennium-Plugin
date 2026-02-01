@@ -1,12 +1,11 @@
 import { log, logError } from "../lib/logger";
 import { showModal, ConfirmModal, callable } from "@steambrew/client";
 
+const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
 
-const setConsent = callable<[{ consent: boolean }], boolean>('SetConsent');
-
-const enableConsent = async () => {
+const enableConsent = async (steamUserID: string) => {
     try {
-        const result = await setConsent({ consent: true });
+        const result = await setConsent({ steamUserID: steamUserID, consent: true });
         if (result) {
             log("User consent stored successfully");
         }
@@ -17,7 +16,7 @@ const enableConsent = async () => {
 
 let consentAnswered = false;
 
-export const showConsentModal = async () => {
+export const showConsentModal = async (steamUserID: string) => {
     if (consentAnswered) {
         log("User already answered consent, not showing again");
         return;
@@ -46,7 +45,7 @@ export const showConsentModal = async () => {
                     consentAnswered = true;
                     consentModalWindow?.Close();
                     log("consent modal accepted, redirecting to store page to load cache for the first time");
-                    enableConsent();
+                    enableConsent(steamUserID);
                     window.open("steam://store/");
                 }}
                 onCancel={() => {
