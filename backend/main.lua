@@ -32,10 +32,12 @@ end
 -- While the folder from the release zip is "gratitude", some users may rename it
 -- The fallback will work no matter what the folder is renamed to.
 local function open_file_with_fallback(primary_path, fallback_path, mode)
+    logger:info("Attempting to open file: " .. primary_path .. " with fallback: " .. fallback_path)
     local file, err = io.open(primary_path, mode)
     if file then
         return file, primary_path
     end
+    logger:info("Failed to open primary path: " .. tostring(err))
 
     -- If opening primary path failed, try fallback
     file, err = io.open(fallback_path, mode)
@@ -49,9 +51,10 @@ end
 
 -- Save cache to file
 local function save_cache_to_file()
-    logger:info("Saving cache to file: " .. CACHE_FILE_PATH)
+    local targetPath = get_active_path(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK)
+    logger:info("Saving cache to file: " .. targetPath)
 
-    local file, err = io.open(CACHE_FILE_PATH, "w")
+    local file, err = io.open(targetPath, "w")
     if not file then
         logger:error("Failed to open cache file for writing: " .. tostring(err))
         return false
@@ -67,8 +70,6 @@ end
 
 -- Load cache from file
 local function load_cache_from_file()
-    logger:info("Loading cache from file: " .. CACHE_FILE_PATH)
-
     local file, path, err = open_file_with_fallback(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK, "r")
     if not file then
         logger:info("Cache file doesn't exist yet (first run or no data cached)")
@@ -234,9 +235,10 @@ end
 
 -- Save consent state to file
 local function save_consent_to_file()
-    logger:info("Saving consent state to file: " .. CONSENT_FILE_PATH)
+    local targetPath = get_active_path(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK)
+    logger:info("Saving consent state to file: " .. targetPath)
 
-    local file, err = io.open(CONSENT_FILE_PATH, "w")
+    local file, err = io.open(targetPath, "w")
     if not file then
         logger:error("Failed to open consent file for writing: " .. tostring(err))
         return false
@@ -252,8 +254,6 @@ end
 
 -- Load consent state from file
 local function load_consent_from_file()
-    logger:info("Loading consent state from file: " .. CONSENT_FILE_PATH)
-
     local file, path, err = open_file_with_fallback(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK, "r")
     if not file then
         logger:info("Consent file doesn't exist yet (user hasn't answered)")
