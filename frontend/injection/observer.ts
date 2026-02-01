@@ -125,9 +125,9 @@ async function handleGamePage(doc: Document): Promise<void> {
   isProcessing = true;
 
   try {
-      log('Checking if cache is populated');
-      const cachePopulated = await isGameLicenseCachePopulated();
-      log('Cache populated:', cachePopulated);
+    log('Checking if cache is populated');
+    const cachePopulated = await isGameLicenseCachePopulated();
+    log('Cache populated:', cachePopulated);
 
     // If cache is not populated, show missing data display for all games
     if (!cachePopulated) {
@@ -259,7 +259,7 @@ function fuzzyMatch(map: Map<string, any>, gameName: string, minMatchLength: num
 
   // Then try prefix matches, preferring longer keys (more specific)
   const matches: Array<{ key: string; value: any }> = [];
-  
+
   for (const [key, value] of map.entries()) {
     // Game name is prefix of key (e.g., "Dota 2" matches "Dota 2 - Gift")
     // This should always match regardless of length as some examples are short names with long suffixes

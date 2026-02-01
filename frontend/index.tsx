@@ -99,9 +99,9 @@ async function onPopupCreation(popup: any) {
 	}
 
 	const isMainWindow = popup.m_strName === 'SP Desktop_uid0';
-	
+
 	if (isMainWindow) {
-		
+
 		// Register callback to show consent modal when main content loads
 		onMainContentReady_Register(async () => {
 			if (!consentModalShown) {
@@ -130,7 +130,7 @@ async function onPopupCreation(popup: any) {
 function initializePopupHandling() {
 	// @ts-ignore - g_PopupManager exists on window but isn't typed
 	const g_PopupManager = window.g_PopupManager;
-	
+
 	if (!g_PopupManager) {
 		logError('g_PopupManager not available');
 		return;

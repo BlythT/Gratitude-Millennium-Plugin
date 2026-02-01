@@ -25,7 +25,9 @@ local consentState = {
 -- Helper function to count table entries
 local function table_size(t)
     local count = 0
-    for _ in pairs(t) do count = count + 1 end
+    for _ in pairs(t) do
+        count = count + 1
+    end
     return count
 end
 
@@ -37,14 +39,14 @@ local function open_file_with_fallback(primary_path, fallback_path, mode)
     if file then
         return file, primary_path
     end
-    
+
     -- If opening primary path failed, try fallback
     file, err = io.open(fallback_path, mode)
     if file then
         logger:info("Using fallback path: " .. fallback_path)
         return file, fallback_path
     end
-    
+
     return nil, primary_path, err
 end
 
@@ -62,11 +64,11 @@ local function save_cache_to_file()
         logger:error("Failed to open cache file for writing: " .. tostring(err))
         return false
     end
-    
+
     local encoded = json.encode(GameLicenseCache)
     file:write(encoded)
     file:close()
-    
+
     logger:info("Cache saved successfully")
     return true
 end
@@ -74,29 +76,31 @@ end
 -- Load cache from file
 local function load_cache_from_file()
     logger:info("Loading cache from file: " .. CACHE_FILE_PATH)
-    
+
     local file, path, err = open_file_with_fallback(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK, "r")
     if not file then
         logger:info("Cache file doesn't exist yet (first run or no data cached)")
         return false
     end
-    
+
     local content = file:read("*all")
     file:close()
-    
+
     if content and #content > 0 then
         local decoded = json.decode(content)
         if decoded then
             GameLicenseCache = decoded
             local count = 0
-            for _ in pairs(GameLicenseCache) do count = count + 1 end
+            for _ in pairs(GameLicenseCache) do
+                count = count + 1
+            end
             logger:info("Cache loaded successfully from " .. path .. " with " .. tostring(count) .. " entries")
             return true
         else
             logger:error("Failed to decode cache file JSON")
         end
     end
-    
+
     return false
 end
 
@@ -178,7 +182,7 @@ end
 function ClearCache()
     logger:info("ClearCache called")
     GameLicenseCache = {}
-    
+
     -- Delete the cache file
     local success = os.remove(CACHE_FILE_PATH)
     if success then
@@ -186,7 +190,7 @@ function ClearCache()
     else
         logger:info("Cache file not found or already deleted")
     end
-    
+
     logger:info("Cache cleared successfully")
     return true
 end
@@ -200,11 +204,11 @@ local function save_consent_to_file()
         logger:error("Failed to open consent file for writing: " .. tostring(err))
         return false
     end
-    
+
     local encoded = json.encode(consentState)
     file:write(encoded)
     file:close()
-    
+
     logger:info("Consent state saved successfully")
     return true
 end
@@ -212,16 +216,16 @@ end
 -- Load consent state from file
 local function load_consent_from_file()
     logger:info("Loading consent state from file: " .. CONSENT_FILE_PATH)
-    
+
     local file, path, err = open_file_with_fallback(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK, "r")
     if not file then
         logger:info("Consent file doesn't exist yet (user hasn't answered)")
         return false
     end
-    
+
     local content = file:read("*all")
     file:close()
-    
+
     if content and #content > 0 then
         local decoded = json.decode(content)
         if decoded then
@@ -232,7 +236,7 @@ local function load_consent_from_file()
             logger:error("Failed to decode consent file JSON")
         end
     end
-    
+
     return false
 end
 
@@ -257,7 +261,7 @@ local function on_load()
 
     -- Load cached data from file on startup
     load_cache_from_file()
-    
+
     -- Load consent state from file on startup
     load_consent_from_file()
 

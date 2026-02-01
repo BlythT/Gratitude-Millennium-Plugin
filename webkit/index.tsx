@@ -72,7 +72,7 @@ function parseLicenseTable(table: Element) {
 		const dateCell = row.querySelector('.license_date_col');
 		const itemCell = row.children[1];
 		const acquisitionCell = row.querySelector('.license_acquisition_col');
-		
+
 		if (dateCell && itemCell && acquisitionCell) {
 			const date = dateCell.textContent?.trim() || '';
 			// Complimentary items have a "Remove" link and extra newlines that need to be cleaned

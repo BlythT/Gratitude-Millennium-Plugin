@@ -115,9 +115,9 @@ export function isMainWindowContext(): boolean {
  */
 export function isWebkitContext(): boolean {
   // Webkit contexts typically have g_steamID or g_AccountID but not App
-  return !isMainWindowContext() && 
-         (typeof (window as any).g_steamID !== 'undefined' || 
-          typeof (window as any).g_AccountID !== 'undefined');
+  return !isMainWindowContext() &&
+    (typeof (window as any).g_steamID !== 'undefined' ||
+      typeof (window as any).g_AccountID !== 'undefined');
 }
 
 /**
