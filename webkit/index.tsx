@@ -84,7 +84,7 @@ function parseLicenseTable(table: Element) {
 		const acquisitionCell = row.querySelector('.license_acquisition_col');
 
 		if (dateCell && itemCell && acquisitionCell) {
-			const date = dateCell.textContent?.trim() || '';
+			const date = stanardizeDate(dateCell.textContent?.trim() || '');
 			// Complimentary items have a "Remove" link and extra newlines that need to be cleaned
 			const item = itemCell.textContent
 				?.split('\n')
@@ -96,4 +96,18 @@ function parseLicenseTable(table: Element) {
 		}
 	});
 	return licenses;
+}
+
+// Standardise date format (Last Played is Mar 5, 2025 while License Data is 5 Mar, 2025)
+function stanardizeDate(dateStr: string): string {
+	const date = new Date(dateStr);
+	if (isNaN(date.getTime())) {
+		return dateStr; // Return original string if parsing fails
+	}
+
+	const day = date.getDate().toString();
+	const month = date.toLocaleString('default', { month: 'short' });
+	const year = date.getFullYear();
+	// Use the format "Mar 5, 2025" so our dates are consistent with existing UI (e.g. Last Played tooltip).
+	return `${month} ${day}, ${year}`;
 }
