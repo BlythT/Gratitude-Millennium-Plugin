@@ -80,6 +80,7 @@ export function onMainContentReady_Register(callback: (doc: Document) => void): 
   log('Main content ready callback registered');
 }
 
+let lastProcessedGame: string | null = null;
 async function handleGamePage(doc: Document): Promise<void> {
   log('handleGamePage called');
 
@@ -99,12 +100,17 @@ async function handleGamePage(doc: Document): Promise<void> {
   }
 
   const gameName = detectGameName(doc);
+  if (gameName === lastProcessedGame) {
+    log('Game name unchanged, skipping');
+    return;
+  }
   const container = detectTooltipContainer(doc);
 
   if (!gameName || !container) {
     log('Missing game name or container, exiting');
     return;
   }
+  lastProcessedGame = gameName;
 
   if (getExistingDisplay(doc, gameName)) {
     log('Display already exists for:', gameName);
@@ -170,10 +176,12 @@ async function handleGamePage(doc: Document): Promise<void> {
     const display = createDisplay(doc, gameName, data);
     if (!display) return;
 
-    if (!insertDisplayAfter(container, display, '._1kiZKVbDe-9Ikootk57kpA._1aKegVl9_lSdNAyWYZQlr9')) {
-      log('Anchor not ready yet, waiting for next mutation');
-      return;
-    }
+    requestAnimationFrame(() => {
+      if (!insertDisplayAfter(container, display, '._1kiZKVbDe-9Ikootk57kpA._1aKegVl9_lSdNAyWYZQlr9')) {
+        log('Anchor not ready yet, waiting for next mutation');
+        return;
+      }
+    });
 
     log('Display inserted')
   } catch (error) {
@@ -195,20 +203,26 @@ export function setupObserver(doc: Document): void {
 
   log('Creating new MutationObserver');
 
-  // Debounce handler to avoid processing on every tiny DOM change
-  let debounceTimer: NodeJS.Timeout | null = null;
+  // Replace your observer initialization with this:
+  let isAnimationFramePending = false;
 
   observer = new MutationObserver(() => {
-    // Clear existing timer
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
+    // If we are already scheduled to run in the next frame, do nothing
+    if (isAnimationFramePending) return;
 
-    // Wait 100ms of inactivity before processing
-    debounceTimer = setTimeout(() => {
-      log('MutationObserver triggered (debounced)');
-      handleGamePage(doc);
-    }, 100);
+    isAnimationFramePending = true;
+
+    // Schedule execution for the very next browser paint
+    requestAnimationFrame(() => {
+      try {
+        // Only process if we aren't already middle-of-fetch
+        if (!isProcessing) {
+          handleGamePage(doc);
+        }
+      } finally {
+        isAnimationFramePending = false;
+      }
+    });
   });
 
   log('Starting to observe document body');
