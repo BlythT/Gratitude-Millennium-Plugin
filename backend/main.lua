@@ -8,6 +8,7 @@ local GameLicenseCache = {}
 
 -- Path to the cache file (primary)
 local CACHE_FILE_PATH = millennium.steam_path() .. "/plugins/gratitude/gratitude_license_cache.json"
+
 -- Fallback path in case folder is renamed
 local CACHE_FILE_PATH_FALLBACK = millennium.steam_path() .. "/plugins/gratitude_license_cache.json"
 
@@ -46,7 +47,26 @@ local function open_file_with_fallback(primary_path, fallback_path, mode)
         return file, fallback_path
     end
 
-    return nil, primary_path, err
+    return nil, nil -- Both failed
+end
+
+-- Helper function to get active path (primary or fallback)
+local function get_active_path(primary_path, fallback_path)
+    -- Check if fallback exists
+    local fallback_file = io.open(fallback_path, "r")
+    if fallback_file then
+        fallback_file:close()
+        -- Fallback exists, check if primary also exists
+        local primary_file = io.open(primary_path, "r")
+        if primary_file then
+            primary_file:close()
+            return primary_path -- Both exist, prefer primary
+        end
+        return fallback_path -- Only fallback exists, use it
+    end
+
+    -- Fallback doesn't exist, always use primary (whether it exists or not)
+    return primary_path
 end
 
 -- Save cache to file
@@ -70,7 +90,7 @@ end
 
 -- Load cache from file
 local function load_cache_from_file()
-    local file, path, err = open_file_with_fallback(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK, "r")
+    local file, path = open_file_with_fallback(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK, "r")
     if not file then
         logger:info("Cache file doesn't exist yet (first run or no data cached)")
         return false
@@ -254,7 +274,7 @@ end
 
 -- Load consent state from file
 local function load_consent_from_file()
-    local file, path, err = open_file_with_fallback(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK, "r")
+    local file, path = open_file_with_fallback(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK, "r")
     if not file then
         logger:info("Consent file doesn't exist yet (user hasn't answered)")
         return false

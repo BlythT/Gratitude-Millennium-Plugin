@@ -1,0 +1,17 @@
+{
+  "runtime.version": "Lua 5.4",
+  "diagnostics.globals": [
+    "millennium",
+    "logger",
+    "SetGameLicenseData",
+    "GetGameLicense",
+    "GetGameLicenseData",
+    "IsGameLicenseCachePopulated",
+    "GetCacheEntryCount",
+    "ClearCache",
+    "SetConsent",
+    "HasUserConsented"
+  ],
+  "diagnostics.disable": [],
+  "workspace.checkThirdParty": false
+}
