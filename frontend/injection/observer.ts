@@ -2,11 +2,8 @@
 import { log } from '../../lib/logger';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
 import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR } from '../types';
-import { callable } from '@steambrew/client';
 import { getCurrentAccountID } from '../../lib/steamid';
-
-const getGameLicenseData = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
-const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
+import { gameLicenseCache } from './gamelicensecache';
 
 let observer: MutationObserver | null = null;
 let isProcessing = false;
@@ -126,7 +123,7 @@ async function handleGamePage(doc: Document): Promise<void> {
 
   try {
     log('Checking if cache is populated');
-    const cachePopulated = await isGameLicenseCachePopulated({ steamUserID: steamID });
+    const cachePopulated = await gameLicenseCache.isBackendPopulated(steamID);
     log('Cache populated:', cachePopulated);
 
     // If cache is not populated, show missing data display for all games
@@ -146,14 +143,13 @@ async function handleGamePage(doc: Document): Promise<void> {
       return;
     }
 
-    // Fetch license data from backend (backend handles caching per-user)
-    log('Fetching license data for Steam ID:', steamID);
-    const fullCacheJson = await getGameLicenseData({ steamUserID: steamID });
-    const fullCacheMap = fullCacheJson ? JSON.parse(fullCacheJson) : {};
-    log('Retrieved', Object.keys(fullCacheMap).length, 'license entries');
+    // Fetch license data from cache (with automatic backend fetch on cache miss)
+    log('Getting license data from cache for Steam ID:', steamID);
+    const licenseDataMap = await gameLicenseCache.getData(steamID);
+    log('Retrieved', licenseDataMap.size, 'license entries');
 
     // Check if data exists for this game using fuzzy matching
-    const data = fuzzyMatch(new Map(Object.entries(fullCacheMap)), gameName);
+    const data = fuzzyMatch(licenseDataMap, gameName);
     log('Data for current game:', data ? 'Found' : 'Not found');
 
     // If no data found, silently skip (don't show missing data display)
