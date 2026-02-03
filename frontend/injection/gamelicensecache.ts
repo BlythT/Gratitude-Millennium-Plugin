@@ -6,11 +6,6 @@ const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>
 const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
 const clearCacheBackend = callable<[{ steamUserID: string }], boolean>('ClearCache');
 
-//                 GameLicenseCache[steamUserID][license.item] = {
-//                    date = license.date,
-//                    acquisition = license.acquisition
-//                }
-
 // Individual game license entry
 interface GameLicenseEntry {
 	date: string;
@@ -52,6 +47,21 @@ class GameLicenseCache {
 
 		log(`Cache miss for user ${steamUserID}, fetching from backend`);
 		return await this.loadFromBackend(steamUserID);
+	}
+
+	/**
+	 * Get cache data for a user synchronously.
+	 * @param steamUserID 
+	 * @returns Map of game license entries for the user, or null if not cached
+	 */
+	getDataSync(steamUserID: string): Map<string, GameLicenseEntry> | null {
+		const cached = this.cache.get(steamUserID);
+
+		if (cached && cached.isPopulated) {
+			return cached.entries;
+		}
+
+		return null;
 	}
 
 	/**
@@ -105,6 +115,16 @@ class GameLicenseCache {
 	async getEntryCount(steamUserID: string): Promise<number> {
 		const data = await this.getData(steamUserID);
 		return data.size;
+	}
+
+	/**
+	 * Get the number of cached entries for a user synchronously.
+	 * @param steamUserID 
+	 * @returns Number of entries, or null if not cached
+	 */
+	getEntryCountSync(steamUserID: string): number | null {
+		const data = this.getDataSync(steamUserID);
+		return data ? data.size : null;
 	}
 
 	/**
@@ -165,11 +185,27 @@ class GameLicenseCache {
 	}
 
 	/**
+	 * Check if a specific game is in the cache for a user synchronously
+	 */
+	hasGameSync(steamUserID: string, gameName: string): boolean {
+		const data = this.getDataSync(steamUserID);
+		return data ? data.has(gameName) : false;
+	}
+
+	/**
 	 * Get license info for a specific game
 	 */
 	async getGameLicense(steamUserID: string, gameName: string): Promise<GameLicenseEntry | null> {
 		const data = await this.getData(steamUserID);
 		return data.get(gameName) || null;
+	}
+
+	/**
+	 * Get license info for a specific game synchronously
+	 */
+	getGameLicenseSync(steamUserID: string, gameName: string): GameLicenseEntry | null {
+		const data = this.getDataSync(steamUserID);
+		return data ? data.get(gameName) || null : null;
 	}
 }
 
