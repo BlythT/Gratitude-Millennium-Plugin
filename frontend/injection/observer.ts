@@ -161,9 +161,7 @@ function handleGamePageSync(doc: Document): boolean {
 
   try {
     log('Checking if cache is populated');
-    const cachePopulated = gameLicenseCache.getEntryCountSync(steamID) !== null;
-
-    if (!cachePopulated) {
+    if (!gameLicenseCache.getDataSync(steamID)) {
       log('Cache not populated, inserting missing data display');
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {

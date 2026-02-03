@@ -51,17 +51,11 @@ class GameLicenseCache {
 
 	/**
 	 * Get cache data for a user synchronously.
-	 * @param steamUserID 
-	 * @returns Map of game license entries for the user, or null if not cached
+	 * @returns Map of game license entries, or null if not yet cached
 	 */
 	getDataSync(steamUserID: string): Map<string, GameLicenseEntry> | null {
 		const cached = this.cache.get(steamUserID);
-
-		if (cached && cached.isPopulated) {
-			return cached.entries;
-		}
-
-		return null;
+		return cached && cached.isPopulated ? cached.entries : null;
 	}
 
 	/**
@@ -70,9 +64,8 @@ class GameLicenseCache {
 	 * Since data is append-only, this only needs to be called:
 	 * - On first access (cache miss)
 	 * - After explicit cache clear
-	 * - When user manually refreshes to check for new entries
 	 */
-	async loadFromBackend(steamUserID: string): Promise<Map<string, GameLicenseEntry>> {
+	private async loadFromBackend(steamUserID: string): Promise<Map<string, GameLicenseEntry>> {
 		try {
 			// First check if backend cache is populated
 			const isPopulated = await isGameLicenseCachePopulated({ steamUserID });
@@ -109,46 +102,13 @@ class GameLicenseCache {
 	}
 
 	/**
-	 * Get the number of cached entries for a user.
-	 * Uses cached count if available, otherwise fetches from backend.
-	 */
-	async getEntryCount(steamUserID: string): Promise<number> {
-		const data = await this.getData(steamUserID);
-		return data.size;
-	}
-
-	/**
-	 * Get the number of cached entries for a user synchronously.
-	 * @param steamUserID 
-	 * @returns Number of entries, or null if not cached
-	 */
-	getEntryCountSync(steamUserID: string): number | null {
-		const data = this.getDataSync(steamUserID);
-		return data ? data.size : null;
-	}
-
-	/**
-	 * Check if backend cache is populated for a user
-	 */
-	async isBackendPopulated(steamUserID: string): Promise<boolean> {
-		try {
-			return await isGameLicenseCachePopulated({ steamUserID });
-		} catch (error) {
-			logError(`Error checking backend population for user ${steamUserID}:`, error);
-			return false;
-		}
-	}
-
-	/**
 	 * Clear cache for a user (both frontend and backend)
 	 */
 	async clearCache(steamUserID: string): Promise<boolean> {
 		try {
-			// Clear backend cache
 			const success = await clearCacheBackend({ steamUserID });
 			
 			if (success) {
-				// Clear frontend cache
 				this.cache.delete(steamUserID);
 				log(`Cache cleared for user ${steamUserID}`);
 			}
@@ -166,46 +126,6 @@ class GameLicenseCache {
 	invalidate(steamUserID: string): void {
 		this.cache.delete(steamUserID);
 		log(`Frontend cache invalidated for user ${steamUserID}`);
-	}
-
-	/**
-	 * Get cached data without fetching from backend (returns null if not cached)
-	 */
-	getCachedOnly(steamUserID: string): Map<string, GameLicenseEntry> | null {
-		const cached = this.cache.get(steamUserID);
-		return cached && cached.isPopulated ? cached.entries : null;
-	}
-
-	/**
-	 * Check if a specific game is in the cache for a user
-	 */
-	async hasGame(steamUserID: string, gameName: string): Promise<boolean> {
-		const data = await this.getData(steamUserID);
-		return data.has(gameName);
-	}
-
-	/**
-	 * Check if a specific game is in the cache for a user synchronously
-	 */
-	hasGameSync(steamUserID: string, gameName: string): boolean {
-		const data = this.getDataSync(steamUserID);
-		return data ? data.has(gameName) : false;
-	}
-
-	/**
-	 * Get license info for a specific game
-	 */
-	async getGameLicense(steamUserID: string, gameName: string): Promise<GameLicenseEntry | null> {
-		const data = await this.getData(steamUserID);
-		return data.get(gameName) || null;
-	}
-
-	/**
-	 * Get license info for a specific game synchronously
-	 */
-	getGameLicenseSync(steamUserID: string, gameName: string): GameLicenseEntry | null {
-		const data = this.getDataSync(steamUserID);
-		return data ? data.get(gameName) || null : null;
 	}
 }
 
