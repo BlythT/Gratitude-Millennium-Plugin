@@ -125,9 +125,15 @@ function handleGamePageSync(doc: Document): boolean {
     return false;
   }
 
-  if (gameName === lastProcessedGame) {
-    log('Game name unchanged, skipping');
+  const existingDisplay = getExistingDisplay(doc, gameName)
+  if (gameName === lastProcessedGame && existingDisplay && !existingDisplay.dataset.missing) {
+    log('Game name unchanged and display exists, skipping');
     return false;
+  }
+
+  if (existingDisplay) {
+    log('Removing existing display for game:', gameName);
+    existingDisplay.remove();
   }
 
   const tooltipContainer = detectElement(doc, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR);
@@ -144,11 +150,6 @@ function handleGamePageSync(doc: Document): boolean {
   }
 
   lastProcessedGame = gameName;
-
-  if (getExistingDisplay(doc, gameName)) {
-    log('Display already exists for:', gameName);
-    return false;
-  }
 
   // Get current Steam ID
   const steamID = getCurrentAccountID();

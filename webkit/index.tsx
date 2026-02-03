@@ -84,6 +84,8 @@ function parseLicenseTable(table: Element) {
 				.join(' ') || '';
 			const acquisition = acquisitionCell.textContent?.trim() || '';
 			licenses.push({ date, item, acquisition });
+		} else {
+			logError('Missing expected table cells in row:', row);
 		}
 	});
 	return licenses;
@@ -97,7 +99,7 @@ function standardizeDate(dateStr: string): string {
 	}
 
 	const day = date.getDate().toString();
-	const month = date.toLocaleString('default', { month: 'short' });
+	const month = date.toLocaleString('en-US', { month: 'short' });
 	const year = date.getFullYear();
 	// Use the format "Mar 5, 2025" so our dates are consistent with existing UI (e.g. Last Played tooltip).
 	return `${month} ${day}, ${year}`;

@@ -122,7 +122,11 @@ export function createDisplay(
   // Don't create anything if not a gift
   if (data?.acquisition !== "Gift/Guest Pass") {
     log("Not a gift:", data);
-    return null;
+    // return invisible placeholder to signal no display needed
+    const placeholder = doc.createElement('div');
+    placeholder.id = createDisplayId(gameName);
+    placeholder.style.display = 'none';
+    return placeholder;
   }
 
   // Main container matching Achievements structure with unique ID per game
@@ -161,6 +165,7 @@ export function createMissingDataDisplay(doc: Document, gameName: string): HTMLE
   const icon = createQuestionIcon(doc);
   container.appendChild(icon);
   container.appendChild(createContentContainer(doc, undefined));
+  container.dataset.missing = 'true';
   log('Created missing data display container:', container);
 
   return container;
