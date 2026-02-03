@@ -7,9 +7,9 @@ import { getCurrentAccountID } from '../lib/steamid';
 
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
-const getCacheEntryCount = callable<[{ steamUserID: string }], number>('GetCacheEntryCount');
+const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
 const clearCache = callable<[{ steamUserID: string }], boolean>('ClearCache');
-const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
+const hasUserConsented = callable<[{ steamUserID: string }], boolean | null>('HasUserConsented');
 
 const SettingsContent = () => {
 	const [isLoading, setIsLoading] = useState(true);
@@ -27,8 +27,9 @@ const SettingsContent = () => {
 
 	const updateEntryCount = async () => {
 		try {
-			const count = await getCacheEntryCount({ steamUserID: getCurrentAccountID() });
-			setEntryCount(count);
+			const data = await getAllCacheEntries({ steamUserID: getCurrentAccountID() });
+			const entries = data ? JSON.parse(data) : {};
+			setEntryCount(Object.keys(entries).length);
 		} catch (error) {
 			logError('Error fetching cache entry count:', error);
 		}
