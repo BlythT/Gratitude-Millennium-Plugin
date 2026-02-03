@@ -70,20 +70,22 @@ local function get_active_path(primary_path, fallback_path)
 end
 
 -- Save cache to file
+-- Uses atomic write (write to temp file, then rename) to avoid corruption if
+-- Steam crashes or closes during write
 local function save_cache_to_file()
     local targetPath = get_active_path(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK)
-    logger:info("Saving cache to file: " .. targetPath)
+    local tempPath = targetPath .. ".tmp"
 
-    local file, err = io.open(targetPath, "w")
+    local file, err = io.open(tempPath, "w")
     if not file then
-        logger:error("Failed to open cache file for writing: " .. tostring(err))
+        logger:error("Failed to open temp cache file for writing: " .. tostring(err))
         return false
     end
 
-    local encoded = json.encode(GameLicenseCache)
-    file:write(encoded)
+    file:write(json.encode(GameLicenseCache))
     file:close()
 
+    os.rename(tempPath, targetPath)
     logger:info("Cache saved successfully")
     return true
 end
@@ -209,20 +211,22 @@ function ClearCache(steamUserID)
 end
 
 -- Save consent state to file
+-- Uses atomic write (write to temp file, then rename) to avoid corruption if
+-- Steam crashes or closes during write
 local function save_consent_to_file()
     local targetPath = get_active_path(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK)
-    logger:info("Saving consent state to file: " .. targetPath)
+    local tempPath = targetPath .. ".tmp"
 
-    local file, err = io.open(targetPath, "w")
+    local file, err = io.open(tempPath, "w")
     if not file then
-        logger:error("Failed to open consent file for writing: " .. tostring(err))
+        logger:error("Failed to open temp consent file for writing: " .. tostring(err))
         return false
     end
 
-    local encoded = json.encode(consentState)
-    file:write(encoded)
+    file:write(json.encode(consentState))
     file:close()
 
+    os.rename(tempPath, targetPath)
     logger:info("Consent state saved successfully")
     return true
 end
@@ -289,8 +293,7 @@ function HasUserConsented(steamUserID)
         return consentState[steamUserID].allowed
     end
 
-    logger:info("HasUserConsented called for user " .. steamUserID .. ", returning: nil (not yet asked)")
-    return nil
+    return false
 end
 
 local function on_load()

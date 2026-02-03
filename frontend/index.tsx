@@ -9,7 +9,7 @@ import { getCurrentAccountID } from '../lib/steamid';
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
 const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
 const clearCache = callable<[{ steamUserID: string }], boolean>('ClearCache');
-const hasUserConsented = callable<[{ steamUserID: string }], boolean | null>('HasUserConsented');
+const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
 
 const SettingsContent = () => {
 	const [isLoading, setIsLoading] = useState(true);
@@ -49,7 +49,10 @@ const SettingsContent = () => {
 
 	// Polling to check if cache is populated
 	useEffect(() => {
+		let cancelled = false;
+
 		const pollCacheStatus = async () => {
+			if (cancelled) return;
 			const result = await checkCache();
 			if (result) {
 				setIsLoading(false);
