@@ -131,11 +131,6 @@ function handleGamePageSync(doc: Document): boolean {
     return false;
   }
 
-  if (existingDisplay) {
-    log('Removing existing display for game:', gameName);
-    existingDisplay.remove();
-  }
-
   const tooltipContainer = detectElement(doc, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR);
   if (!tooltipContainer) {
     log('Tooltip container not found, skipping');
@@ -159,6 +154,11 @@ function handleGamePageSync(doc: Document): boolean {
   }
 
   log('Starting to process game:', gameName);
+
+  if (existingDisplay && existingDisplay.dataset.missing) {
+    log('Existing display indicates missing data, removing it for refresh');
+    existingDisplay.remove();
+  }
 
   try {
     log('Checking if cache is populated');
