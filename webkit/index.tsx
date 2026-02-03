@@ -50,29 +50,26 @@ export default async function WebkitMain() {
 }
 
 // Fetch https://store.steampowered.com/account/licenses/
-async function fetchSteamLicenses(): Promise<string | null> {
-	try {
-		const response = await fetch('https://store.steampowered.com/account/licenses/', {
-			credentials: 'include', // Uses the user's existing session cookies
-		});
-
-		if (!response.ok) {
+async function fetchSteamLicenses(retries = 3, delayMs = 1000): Promise<string | null> {
+	for (let i = 0; i < retries; i++) {
+		try {
+			const response = await fetch('https://store.steampowered.com/account/licenses/', {
+				credentials: 'include',
+			});
+			if (response.ok) return await response.text();
 			logError('Failed to fetch licenses:', response.status);
-			return null;
+		} catch (error) {
+			logError(`Fetch attempt ${i + 1} failed:`, error);
 		}
-
-		const html = await response.text();
-		return html;
-	} catch (error) {
-		logError('Error fetching Steam licenses:', error);
-		return null;
+		if (i < retries - 1) await new Promise(r => setTimeout(r, delayMs * (i + 1)));
 	}
+	return null;
 }
 
 function parseLicenseTable(table: Element) {
 	const licenses: LicenseData[] = [];
 	const rows = table.querySelectorAll('tbody tr');
- 	rows.forEach((row) => {
+	rows.forEach((row) => {
 		const dateCell = row.querySelector('.license_date_col');
 		const itemCell = row.children[1];
 		const acquisitionCell = row.querySelector('.license_acquisition_col');
