@@ -1,19 +1,19 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import { log } from '../../lib/logger';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
-import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR } from '../types';
+import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR, MAIN_CONTENT_CONTAINER_SELECTOR } from '../types';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
 
 let observer: MutationObserver | null = null;
-let isProcessing = false;
 let onMainContentReady: ((doc: Document) => void) | null = null;
 let mainContentDetected = false;
+let lastProcessedGame: string | null = null;
 
 export function resetState(): void {
   log('Resetting state');
-  isProcessing = false;
   mainContentDetected = false;
+  lastProcessedGame = null;
   if (observer) {
     observer.disconnect();
     observer = null;
@@ -29,49 +29,33 @@ export function detectGameName(doc: Document): string | null {
   return gameName;
 }
 
-// Detect tooltip container element
-export function detectTooltipContainer(doc: Document): HTMLElement | null {
-  log('Looking for tooltip container with selector:', SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR);
-  const tooltipContainers = doc.querySelectorAll(SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR);
+/**
+ * Finds a specific element in the document by selector.
+ * @param doc The document or HTMLElement to search within
+ * @param selector The CSS selector to find the element
+ * @returns HTMLElement | null if not found
+ */
+export function detectElement(doc: Document | HTMLElement, selector: string): HTMLElement | null {
+  log('Looking for element with selector:', selector);
+  const elements = doc.querySelectorAll(selector);
 
-  log('Found', tooltipContainers.length, 'tooltip containers');
+  log('Found', elements.length, 'elements');
 
-  if (tooltipContainers.length === 0) {
-    log('No tooltip containers found');
+  if (elements.length === 0) {
+    log('No elements found');
     return null;
   }
 
-  const tooltipContainer = tooltipContainers[tooltipContainers.length - 1];
+  // Use last element (page has duplicates, first copy off screen)
+  const element = elements[elements.length - 1];
 
-  log('Container type:', typeof tooltipContainer, 'nodeType:', tooltipContainer?.nodeType);
-  log('Container constructor:', tooltipContainer?.constructor?.name);
-
-  // Check if it's an Element (nodeType 1) instead of strict HTMLElement check
-  if (!tooltipContainer || tooltipContainer.nodeType !== 1) {
-    log('Tooltip container is not a valid element node');
+  if (!element) {
+    log('No valid element found');
     return null;
   }
 
-  log('Found valid tooltip container:', tooltipContainer);
-  return tooltipContainer as HTMLElement;
-}
-
-function insertDisplayAfter(
-  container: HTMLElement,
-  display: HTMLElement,
-  className?: string
-): boolean {
-  log('Inserting display after anchor with class:', className);
-
-  // The container for the "Time Played" tooltip.
-  const anchor = container.querySelector(
-    className
-  );
-
-  if (!anchor) return false;
-
-  anchor.after(display);
-  return true;
+  log('Found valid element:', element);
+  return element as HTMLElement;
 }
 
 // Register callback for when main content container is ready
@@ -80,114 +64,151 @@ export function onMainContentReady_Register(callback: (doc: Document) => void): 
   log('Main content ready callback registered');
 }
 
-let lastProcessedGame: string | null = null;
-async function handleGamePage(doc: Document): Promise<void> {
+/**
+ * Fetch license data asynchronously to populate cache.
+ */
+async function triggerCacheRefresh(): Promise<void> {
+  log('Fetching license data asynchronously to populate cache');
+  const steamID = getCurrentAccountID();
+  if (!steamID) {
+    log('Steam ID not available, cannot fetch data');
+    return;
+  }
+  try {
+    await gameLicenseCache.getData(steamID);
+    log('License data fetched and cache populated');
+  } catch (error) {
+    log('Error fetching license data:', error);
+  }
+}
+
+/**
+ * Process the game page and trigger cache refresh if needed.
+ * @param doc The document to process
+ */
+function processAndRefreshIfNeeded(doc: Document): void {
+  const needsCacheRefresh = handleGamePageSync(doc);
+  if (needsCacheRefresh) {
+    triggerCacheRefresh();
+  }
+}
+
+/**
+ * Check if main content container is ready and trigger callback.
+ * @param doc The document to check
+ * @returns void
+ */
+function checkMainContentReady(doc: Document): void {
+  if (!onMainContentReady) return; // No callback registered, don't prevent further checks
+  if (mainContentDetected) return; // Already detected
+  if (!doc.querySelector(MAIN_CONTENT_CONTAINER_SELECTOR)) return;
+
+  log('Main content container detected, triggering callback');
+  mainContentDetected = true;
+  onMainContentReady?.(doc);
+}
+
+/**
+ * Handle game page logic synchronously.
+ * @param doc
+ * @returns boolean — true signals that an async cache refresh should be triggered
+ */
+function handleGamePageSync(doc: Document): boolean {
   log('handleGamePage called');
 
   // Check if main content is ready and trigger callback
-  if (!mainContentDetected && doc.querySelector('[class*="_3Z7VQ1IMk4E3HsHvrkLNgo"]')) {
-    log('Main content container detected, triggering callback');
-    mainContentDetected = true;
-    if (onMainContentReady) {
-      onMainContentReady(doc);
-    }
-  }
-
-  // Prevent concurrent processing
-  if (isProcessing) {
-    log('Already processing, skipping');
-    return;
-  }
+  checkMainContentReady(doc);
 
   const gameName = detectGameName(doc);
-  if (gameName === lastProcessedGame) {
-    log('Game name unchanged, skipping');
-    return;
+  if (!gameName) {
+    lastProcessedGame = null;
+    return false;
   }
-  const container = detectTooltipContainer(doc);
 
-  if (!gameName || !container) {
-    log('Missing game name or container, exiting');
-    return;
+  const existingDisplay = getExistingDisplay(doc, gameName)
+  if (gameName === lastProcessedGame && existingDisplay && !existingDisplay.dataset.missing) {
+    log('Game name unchanged and display exists, skipping');
+    return false;
   }
+
+  if (existingDisplay) {
+    log('Removing existing display for game:', gameName);
+    existingDisplay.remove();
+  }
+
+  const tooltipContainer = detectElement(doc, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR);
+  if (!tooltipContainer) {
+    log('Tooltip container not found, skipping');
+    return false;
+  }
+
+  // This is the Time Played tooltip element we will insert after.
+  const insertAfterTarget = detectElement(tooltipContainer, SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR);
+  if (!insertAfterTarget) {
+    log('Insert after target not found, skipping');
+    return false;
+  }
+
   lastProcessedGame = gameName;
-
-  if (getExistingDisplay(doc, gameName)) {
-    log('Display already exists for:', gameName);
-    return;
-  }
 
   // Get current Steam ID
   const steamID = getCurrentAccountID();
   if (!steamID) {
     log('Steam ID not available, skipping');
-    return;
+    return true;
   }
 
   log('Starting to process game:', gameName);
-  isProcessing = true;
 
   try {
     log('Checking if cache is populated');
-    const cachePopulated = await gameLicenseCache.isBackendPopulated(steamID);
-    log('Cache populated:', cachePopulated);
-
-    // If cache is not populated, show missing data display for all games
-    if (!cachePopulated) {
-      log('Cache not populated, creating missing data display');
-      const display = createMissingDataDisplay(doc, gameName);
-      if (display) {
-        if (insertDisplayAfter(container, display, '._1kiZKVbDe-9Ikootk57kpA._1aKegVl9_lSdNAyWYZQlr9')) {
-          log('Inserted missing data display for:', gameName);
-        } else {
-          log('Anchor not ready yet for missing data display, waiting for next mutation');
-        }
+    if (!gameLicenseCache.getDataSync(steamID)) {
+      log('Cache not populated, inserting missing data display');
+      const missingDisplay = createMissingDataDisplay(doc, gameName);
+      if (!missingDisplay) {
+        log('Failed to create missing data display');
+        return true;
       }
 
-      isProcessing = false;
-      log('Processing complete for:', gameName);
-      return;
+      insertAfterTarget.after(missingDisplay);
+      log('Missing data display inserted, will fetch data asynchronously');
+      return true;
     }
 
-    // Fetch license data from cache (with automatic backend fetch on cache miss)
-    log('Getting license data from cache for Steam ID:', steamID);
-    const licenseDataMap = await gameLicenseCache.getData(steamID);
+    log('Cache populated, proceeding to fetch license data synchronously');
+
+    const licenseDataMap = gameLicenseCache.getDataSync(steamID);
+    if (!licenseDataMap) {
+      log('Cache is empty despite being marked populated, this should not happen');
+      const missingDisplay = createMissingDataDisplay(doc, gameName);
+      if (!missingDisplay) {
+        log('Failed to create missing data display');
+        return true;
+      }
+      insertAfterTarget.after(missingDisplay);
+      return true;
+    }
     log('Retrieved', licenseDataMap.size, 'license entries');
 
     // Check if data exists for this game using fuzzy matching
     const data = fuzzyMatch(licenseDataMap, gameName);
     log('Data for current game:', data ? 'Found' : 'Not found');
 
-    // If no data found, silently skip (don't show missing data display)
     if (!data) {
       log('No data available for this specific game, skipping display');
-      isProcessing = false;
-      log('Processing complete for:', gameName);
-      return;
-    }
-
-    // Verify game hasn't changed during the async await
-    const currentGame = detectGameName(doc);
-    if (currentGame !== gameName) {
-      log('Game changed during fetch, skipping display');
-      return;
+      return true; // Signal async fetch: might exist on backend but not cached
     }
 
     const display = createDisplay(doc, gameName, data);
-    if (!display) return;
+    if (!display) return false;
 
-    requestAnimationFrame(() => {
-      if (!insertDisplayAfter(container, display, '._1kiZKVbDe-9Ikootk57kpA._1aKegVl9_lSdNAyWYZQlr9')) {
-        log('Anchor not ready yet, waiting for next mutation');
-        return;
-      }
-    });
-
-    log('Display inserted')
+    insertAfterTarget.after(display);
+    log('Display inserted');
+    return false;
   } catch (error) {
     log('Error handling game page:', error);
+    return false;
   } finally {
-    isProcessing = false;
     log('Processing complete for:', gameName);
   }
 }
@@ -203,22 +224,16 @@ export function setupObserver(doc: Document): void {
 
   log('Creating new MutationObserver');
 
-  // Replace your observer initialization with this:
   let isAnimationFramePending = false;
 
   observer = new MutationObserver(() => {
-    // If we are already scheduled to run in the next frame, do nothing
     if (isAnimationFramePending) return;
 
     isAnimationFramePending = true;
 
-    // Schedule execution for the very next browser paint
     requestAnimationFrame(() => {
       try {
-        // Only process if we aren't already middle-of-fetch
-        if (!isProcessing) {
-          handleGamePage(doc);
-        }
+        processAndRefreshIfNeeded(doc);
       } finally {
         isAnimationFramePending = false;
       }
@@ -233,52 +248,46 @@ export function setupObserver(doc: Document): void {
 
   log('MutationObserver set up successfully');
 
-  // Initial check
-  log('Running initial game page check');
-  handleGamePage(doc);
+  // Since the cache is empty on initial load, fetch the backend data first then try processing
+  triggerCacheRefresh().then(() => {
+    processAndRefreshIfNeeded(doc);
+  });
 }
 
 /**
  * Fuzzy matches a game name in the map using bidirectional prefix matching.
  * Handles cases where licenses have suffixes like " - Gift" or " - Closed Beta Access".
- * Returns the longest match, with a minimum length requirement except when the game name
- * is an exact prefix of a map key (e.g., "Dota 2" matching "Dota 2 - Gift").
- * 
+ * Forward matches (key starts with gameName) prefer the shortest key (base game over DLC).
+ * Reverse matches (gameName starts with key) take priority over forward matches.
+ *
  * @param map - The map to search in
  * @param gameName - The game name to search for
- * @param minMatchLength - Minimum character length for reverse matches (default: 5)
  * @returns The matching value, or null if no match found
  */
-function fuzzyMatch(map: Map<string, any>, gameName: string, minMatchLength: number = 5): any | null {
-  // First try exact match
+function fuzzyMatch(map: Map<string, any>, gameName: string): any | null {
   if (map.has(gameName)) {
     return map.get(gameName);
   }
 
-  // Then try prefix matches, preferring longer keys (more specific)
-  const matches: Array<{ key: string; value: any }> = [];
+  let forwardMatch: { key: string; value: any } | null = null; // gameName is prefix of key
+  let reverseMatch: { key: string; value: any } | null = null; // key is prefix of gameName
 
   for (const [key, value] of map.entries()) {
-    // Game name is prefix of key (e.g., "Dota 2" matches "Dota 2 - Gift")
-    // This should always match regardless of length as some examples are short names with long suffixes
-    // e.g. "Deadlock" matches "Deadlock - Closed Beta Access"
     if (key.startsWith(gameName)) {
-      matches.push({ key, value });
-    }
-    // Key is prefix of game name (e.g., "Bad North" matches "Bad North: Jotunn Edition")
-    // This requires minimum length to avoid spurious short matches
-    else if (gameName.startsWith(key) && key.length >= minMatchLength) {
-      matches.push({ key, value });
+      // Forward: prefer shortest key (base game over DLC)
+      if (!forwardMatch || key.length < forwardMatch.key.length) {
+        forwardMatch = { key, value };
+      }
+    } else if (gameName.startsWith(key)) {
+      // Reverse: prefer longest key (most specific edition)
+      if (!reverseMatch || key.length > reverseMatch.key.length) {
+        reverseMatch = { key, value };
+      }
     }
   }
 
-  // Return the longest matching key (most specific)
-  if (matches.length > 0) {
-    matches.sort((a, b) => b.key.length - a.key.length);
-    return matches[0].value;
-  }
-
-  return null;
+  // Prefer reverse match (exact edition) over forward (base game with suffix)
+  return reverseMatch?.value ?? forwardMatch?.value ?? null;
 }
 
 export function disconnectObserver(): void {

@@ -2,7 +2,7 @@ import { callable } from '@steambrew/webkit';
 import { log, logError } from './lib/logger';
 import { getCurrentAccountID } from './lib/steamid';
 
-const setGameLicenseData = callable<[{ steamUserID: string; licenseData: string }], void>('SetGameLicenseData');
+const setGameLicenseData = callable<[{ licenseData: string; steamUserID: string }], void>('SetGameLicenseData');
 
 type LicenseData = {
 	date: string;
@@ -13,78 +13,69 @@ type LicenseData = {
 export default async function WebkitMain() {
 	log("WebkitMain loaded");
 
-	fetchSteamLicenses().then((html) => {
-		if (html) {
-			log("Fetched Steam Licenses HTML");
+	const html = await fetchSteamLicenses();
+	if (!html) {
+		log("Failed to fetch Steam Licenses.");
+		return;
+	}
 
-			// Look for table with class account_table
-			const parser = new DOMParser();
-			const doc = parser.parseFromString(html, 'text/html');
-			const table = doc.querySelector('table.account_table');
-			if (table) {
-				log("Found account_table")
-				const data = parseLicenseTable(table);
+	log("Fetched Steam Licenses HTML");
 
-				log("getting steam user id");
-				const steamUserID = getCurrentAccountID();
-				if (!steamUserID || steamUserID === '') {
-					log("Steam User ID is empty or null");
-					logError("Could not get current Steam User ID.");
-					return;
-				}
-				log("Steam User ID:", steamUserID);
+	const parser = new DOMParser();
+	const doc = parser.parseFromString(html, 'text/html');
+	const table = doc.querySelector('table.account_table');
+	if (!table) {
+		log("account_table not found in the HTML.");
+		return;
+	}
 
-				log("Parsed License Data:", data);
-				log("Sending data to backend...");
-				setGameLicenseData({ steamUserID: steamUserID, licenseData: JSON.stringify(data) }).then(() => {
-					log("Data sent to backend successfully.");
-				}).catch((error) => {
-					logError("Error sending data to backend:", error);
-				});
-			} else {
-				log("account_table not found in the HTML.");
-			}
-		} else {
-			log("Failed to fetch Steam Licenses.");
-		}
-	});
+	log("Found account_table");
+
+	const steamUserID = getCurrentAccountID();
+	if (!steamUserID || steamUserID === '') {
+		logError("Could not get current Steam User ID.");
+		return;
+	}
+
+	const data = parseLicenseTable(table);
+	log("Parsed License Data:", data);
+	log("Sending data to backend...");
+
+	try {
+		await setGameLicenseData({ licenseData: JSON.stringify(data), steamUserID });
+		log("Data sent to backend successfully.");
+	} catch (error) {
+		logError("Error sending data to backend:", error);
+	}
 }
 
 // Fetch https://store.steampowered.com/account/licenses/
-async function fetchSteamLicenses(): Promise<string | null> {
-	try {
-		const response = await fetch('https://store.steampowered.com/account/licenses/', {
-			credentials: 'include', // Uses the user's existing session cookies
-			headers: {
-				'User-Agent': navigator.userAgent
-			}
-		});
-
-		if (!response.ok) {
+async function fetchSteamLicenses(retries = 3, delayMs = 1000): Promise<string | null> {
+	for (let i = 0; i < retries; i++) {
+		try {
+			const response = await fetch('https://store.steampowered.com/account/licenses/', {
+				credentials: 'include',
+			});
+			if (response.ok) return await response.text();
 			logError('Failed to fetch licenses:', response.status);
-			return null;
+		} catch (error) {
+			logError(`Fetch attempt ${i + 1} failed:`, error);
 		}
-
-		const html = await response.text();
-		return html;
-	} catch (error) {
-		logError('Error fetching Steam licenses:', error);
-		return null;
+		if (i < retries - 1) await new Promise(r => setTimeout(r, delayMs * (i + 1)));
 	}
+	return null;
 }
 
 function parseLicenseTable(table: Element) {
 	const licenses: LicenseData[] = [];
-	const rows = table.querySelectorAll('tr');
-	rows.forEach((row, index) => {
-		// Skip header row
-		if (index === 0) return;
+	const rows = table.querySelectorAll('tbody tr');
+	rows.forEach((row) => {
 		const dateCell = row.querySelector('.license_date_col');
 		const itemCell = row.children[1];
 		const acquisitionCell = row.querySelector('.license_acquisition_col');
 
 		if (dateCell && itemCell && acquisitionCell) {
-			const date = stanardizeDate(dateCell.textContent?.trim() || '');
+			const date = standardizeDate(dateCell.textContent?.trim() || '');
 			// Complimentary items have a "Remove" link and extra newlines that need to be cleaned
 			const item = itemCell.textContent
 				?.split('\n')
@@ -93,20 +84,22 @@ function parseLicenseTable(table: Element) {
 				.join(' ') || '';
 			const acquisition = acquisitionCell.textContent?.trim() || '';
 			licenses.push({ date, item, acquisition });
+		} else {
+			logError('Missing expected table cells in row:', row);
 		}
 	});
 	return licenses;
 }
 
 // Standardise date format (Last Played is Mar 5, 2025 while License Data is 5 Mar, 2025)
-function stanardizeDate(dateStr: string): string {
+function standardizeDate(dateStr: string): string {
 	const date = new Date(dateStr);
 	if (isNaN(date.getTime())) {
 		return dateStr; // Return original string if parsing fails
 	}
 
 	const day = date.getDate().toString();
-	const month = date.toLocaleString('default', { month: 'short' });
+	const month = date.toLocaleString('en-US', { month: 'short' });
 	const year = date.getFullYear();
 	// Use the format "Mar 5, 2025" so our dates are consistent with existing UI (e.g. Last Played tooltip).
 	return `${month} ${day}, ${year}`;
