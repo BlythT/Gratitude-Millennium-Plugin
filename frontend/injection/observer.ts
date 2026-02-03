@@ -258,44 +258,37 @@ export function setupObserver(doc: Document): void {
 /**
  * Fuzzy matches a game name in the map using bidirectional prefix matching.
  * Handles cases where licenses have suffixes like " - Gift" or " - Closed Beta Access".
- * Returns the longest match, with a minimum length requirement except when the game name
- * is an exact prefix of a map key (e.g., "Dota 2" matching "Dota 2 - Gift").
+ * Forward matches (key starts with gameName) prefer the shortest key (base game over DLC).
+ * Reverse matches (gameName starts with key) take priority over forward matches.
  *
  * @param map - The map to search in
  * @param gameName - The game name to search for
- * @param minMatchLength - Minimum character length for reverse matches (default: 5)
  * @returns The matching value, or null if no match found
  */
-function fuzzyMatch(map: Map<string, any>, gameName: string, minMatchLength: number = 5): any | null {
-  // First try exact match
+function fuzzyMatch(map: Map<string, any>, gameName: string): any | null {
   if (map.has(gameName)) {
     return map.get(gameName);
   }
 
-  // Then try prefix matches, preferring longer keys (more specific)
-  const matches: Array<{ key: string; value: any }> = [];
+  let forwardMatch: { key: string; value: any } | null = null; // gameName is prefix of key
+  let reverseMatch: { key: string; value: any } | null = null; // key is prefix of gameName
 
   for (const [key, value] of map.entries()) {
-    // Game name is prefix of key (e.g., "Dota 2" matches "Dota 2 - Gift")
-    // Always matches regardless of length: short names can have long suffixes
-    // e.g. "Deadlock" matches "Deadlock - Closed Beta Access"
     if (key.startsWith(gameName)) {
-      matches.push({ key, value });
-    }
-    // Key is prefix of game name (e.g., "Bad North" matches "Bad North: Jotunn Edition")
-    // Requires minimum length to avoid short matches ("It" matching "It Takes Two")
-    else if (gameName.startsWith(key) && key.length >= minMatchLength) {
-      matches.push({ key, value });
+      // Forward: prefer shortest key (base game over DLC)
+      if (!forwardMatch || key.length < forwardMatch.key.length) {
+        forwardMatch = { key, value };
+      }
+    } else if (gameName.startsWith(key)) {
+      // Reverse: prefer longest key (most specific edition)
+      if (!reverseMatch || key.length > reverseMatch.key.length) {
+        reverseMatch = { key, value };
+      }
     }
   }
 
-  // Return the longest matching key (most specific)
-  if (matches.length > 0) {
-    matches.sort((a, b) => b.key.length - a.key.length);
-    return matches[0].value;
-  }
-
-  return null;
+  // Prefer reverse match (exact edition) over forward (base game with suffix)
+  return reverseMatch?.value ?? forwardMatch?.value ?? null;
 }
 
 export function disconnectObserver(): void {
