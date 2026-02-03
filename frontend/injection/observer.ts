@@ -1,7 +1,7 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import { log } from '../../lib/logger';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
-import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR } from '../types';
+import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR, MAIN_CONTENT_CONTAINER_SELECTOR } from '../types';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
 
@@ -94,6 +94,21 @@ function processAndRefreshIfNeeded(doc: Document): void {
 }
 
 /**
+ * Check if main content container is ready and trigger callback.
+ * @param doc The document to check
+ * @returns void
+ */
+function checkMainContentReady(doc: Document): void {
+  if (!onMainContentReady) return; // No callback registered, don't prevent further checks
+  if (mainContentDetected) return; // Already detected
+  if (!doc.querySelector(MAIN_CONTENT_CONTAINER_SELECTOR)) return;
+
+  log('Main content container detected, triggering callback');
+  mainContentDetected = true;
+  onMainContentReady?.(doc);
+}
+
+/**
  * Handle game page logic synchronously.
  * @param doc
  * @returns boolean — true signals that an async cache refresh should be triggered
@@ -102,13 +117,7 @@ function handleGamePageSync(doc: Document): boolean {
   log('handleGamePage called');
 
   // Check if main content is ready and trigger callback
-  if (!mainContentDetected && doc.querySelector('[class*="_3Z7VQ1IMk4E3HsHvrkLNgo"]')) {
-    log('Main content container detected, triggering callback');
-    mainContentDetected = true;
-    if (onMainContentReady) {
-      onMainContentReady(doc);
-    }
-  }
+  checkMainContentReady(doc);
 
   const gameName = detectGameName(doc);
   if (!gameName) {
