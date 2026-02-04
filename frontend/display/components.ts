@@ -133,6 +133,8 @@ export function createDisplay(
   const container = doc.createElement('div');
   container.id = createDisplayId(gameName);
   container.className = '_1kiZKVbDe-9Ikootk57kpA';
+  container.style.contain = 'layout';
+  container.style.contentVisibility = 'auto';
 
   // Add icons and content
   const icon = createGiftIcon(doc);

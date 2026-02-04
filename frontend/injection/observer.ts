@@ -226,7 +226,11 @@ export function setupObserver(doc: Document): void {
 
   let isAnimationFramePending = false;
 
-  observer = new MutationObserver(() => {
+  observer = new MutationObserver((mutations) => {
+    // Debounce: only schedule one processing per frame, even if multiple mutations occur.
+    // This is safe because we query current DOM state (not mutation records), so we always
+    // see the final state after all mutations complete.
+    console.log('Mutations:', mutations);  // Log to see what's changing
     if (isAnimationFramePending) return;
 
     isAnimationFramePending = true;
