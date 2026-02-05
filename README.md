@@ -14,6 +14,20 @@
   <img src="assets/small.png" width="40%" alt="Tooltip Detail">
 </p>
 
+### Big Picture Mode
+
+Gratitude also works in Big Picture mode, providing the same gift information when browsing your library on the big screen.
+
+<p align="center">
+  <img src="assets/bigpicturemode.png" width="80%" alt="Big Picture Mode Integration">
+  <br>
+  <em>Full Big Picture mode support for couch gaming.</em>
+</p>
+
+<p align="center">
+  <img src="assets/small(big)picturemode.png" width="40%" alt="Big Picture Mode Tooltip">
+</p>
+
 ---
 
 ## 🛠 Installation
@@ -43,6 +57,9 @@
 **Q: Is Millennium allowed by Valve? (Will I get banned?)**   
 A: Using Millennium to customize your client is safe. As noted on the [Official Valve Software Wiki](https://developer.valvesoftware.com/wiki/Steam_Skins):   
 > "As the official skin support (for VGUI) has been removed... it was unofficially replaced by Millennium for Steam... an open source patcher that allows skins/themes after April 27th 2023."
+
+**Q: Does this work in Big Picture mode?**  
+A: Yes! Gratitude fully supports both the standard Steam library and Big Picture mode.
 
 **Q: Why isn't the gift display loading or isn't showing for a game I was just gifted?**  
 A: Try visiting the Steam Store in your client, then go back: This plugin stores your game license data but can only do so when you visit one of Steam's non-library pages.

@@ -4,6 +4,7 @@ import { setupObserver, onMainContentReady_Register } from './injection/observer
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
+import { POPUP_MAIN_WINDOW, POPUP_BIG_PICTURE_MODE } from './types'
 
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
@@ -102,9 +103,11 @@ async function onPopupCreation(popup: any) {
 		return;
 	}
 
-	const isMainWindow = popup.m_strName === 'SP Desktop_uid0';
+	const isMainWindow = popup.m_strName === POPUP_MAIN_WINDOW;
+	const isBigPictureWindow = popup.m_strName === POPUP_BIG_PICTURE_MODE;
 
-	if (isMainWindow) {
+	if (isMainWindow || isBigPictureWindow) {
+		log('Setting up observer for window:', popup.m_strName);
 
 		// Register callback to show consent modal when main content loads
 		onMainContentReady_Register(async () => {
