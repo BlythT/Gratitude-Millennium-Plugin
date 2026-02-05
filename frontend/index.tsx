@@ -4,7 +4,7 @@ import { setupObserver, onMainContentReady_Register } from './injection/observer
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
-import { POPUP_MAIN_WINDOW, POPUP_BIG_PICTURE_MODE } from './types'
+import { POPUPS } from './types';
 
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
@@ -103,8 +103,8 @@ async function onPopupCreation(popup: any) {
 		return;
 	}
 
-	const isMainWindow = popup.m_strName === POPUP_MAIN_WINDOW;
-	const isBigPictureWindow = popup.m_strName === POPUP_BIG_PICTURE_MODE;
+	const isMainWindow = popup.m_strName === POPUPS.main;
+	const isBigPictureWindow = popup.m_strName === POPUPS.bigPicture;
 
 	if (isMainWindow || isBigPictureWindow) {
 		log('Setting up observer for window:', popup.m_strName);

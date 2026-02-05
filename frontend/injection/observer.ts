@@ -1,18 +1,9 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import { log } from '../../lib/logger';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
-import {
-  SELECTED_GAME_NAME_SELECTOR,
-  SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR,
-  SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR,
-  MAIN_CONTENT_CONTAINER_SELECTOR,
-  BIG_PICTURE_GAME_NAME_SELECTOR,
-  BIG_PICTURE_TOOLTIP_CONTAINER_SELECTOR,
-  BIG_PICTURE_PLAYTIME_TOOLTIP_SELECTOR,
-  BIG_PICTURE_MAIN_CONTENT_CONTAINER_SELECTOR
-} from '../types';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
+import { SELECTORS } from '../types';
 
 let observer: MutationObserver | null = null;
 let onMainContentReady: ((doc: Document) => void) | null = null;
@@ -34,11 +25,11 @@ export function detectGameName(doc: Document): string | null {
   log('Detecting game name');
 
   // Try standard selector first
-  let nameElem = doc.querySelector(SELECTED_GAME_NAME_SELECTOR);
+  let nameElem = doc.querySelector(SELECTORS.standard.gameName);
 
   // If not found, try Big Picture selector
   if (!nameElem) {
-    nameElem = doc.querySelector(BIG_PICTURE_GAME_NAME_SELECTOR);
+    nameElem = doc.querySelector(SELECTORS.bigPicture.gameName);
   }
 
   const gameName = nameElem?.textContent?.trim() || null;
@@ -128,8 +119,8 @@ function checkMainContentReady(doc: Document): void {
   if (!onMainContentReady) return; // No callback registered, don't prevent further checks
   if (mainContentDetected) return; // Already detected
 
-  const hasMainContent = doc.querySelector(MAIN_CONTENT_CONTAINER_SELECTOR) ||
-    doc.querySelector(BIG_PICTURE_MAIN_CONTENT_CONTAINER_SELECTOR);
+  const hasMainContent = doc.querySelector(SELECTORS.standard.mainContent) ||
+    doc.querySelector(SELECTORS.bigPicture.mainContent);
 
   if (!hasMainContent) return;
 
@@ -162,8 +153,8 @@ function handleGamePageSync(doc: Document): boolean {
   }
 
   const tooltipContainer = detectElementMulti(doc, [
-    SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR,
-    BIG_PICTURE_TOOLTIP_CONTAINER_SELECTOR
+    SELECTORS.standard.tooltipContainer,
+    SELECTORS.bigPicture.tooltipContainer
   ]);
 
   if (!tooltipContainer) {
@@ -172,8 +163,8 @@ function handleGamePageSync(doc: Document): boolean {
   }
 
   const insertAfterTarget = detectElementMulti(tooltipContainer, [
-    SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR,
-    BIG_PICTURE_PLAYTIME_TOOLTIP_SELECTOR
+    SELECTORS.standard.playtimeTooltip,
+    SELECTORS.bigPicture.playtimeTooltip
   ]);
 
   if (!insertAfterTarget) {
