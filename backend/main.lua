@@ -2,20 +2,15 @@ local logger = require("logger")
 local millennium = require("millennium")
 local json = require("json")
 local io = require("io")
+local fs = require("fs")
+local utils = require("utils")
+
+local CACHE_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_cache.json")
+local CONSENT_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_consent.json")
 
 -- Global cache for license data (indexed by Steam ID, then game name)
+-- Structure: { [steamUserID] = { [gameName] = { date, acquisition }, [gameName2] = { ... } }, ... }    
 local GameLicenseCache = {}
-
--- Path to the cache file (primary)
-local CACHE_FILE_PATH = millennium.steam_path() .. "/plugins/gratitude/gratitude_license_cache.json"
-
--- Fallback path in case folder is renamed
-local CACHE_FILE_PATH_FALLBACK = millennium.steam_path() .. "/plugins/gratitude_license_cache.json"
-
--- Path to the consent file (primary)
-local CONSENT_FILE_PATH = millennium.steam_path() .. "/plugins/gratitude/gratitude_consent.json"
--- Fallback path in case folder is renamed
-local CONSENT_FILE_PATH_FALLBACK = millennium.steam_path() .. "/plugins/gratitude_consent.json"
 
 -- Consent state (per Steam ID)
 local consentState = {}
@@ -29,93 +24,109 @@ local function table_size(t)
     return count
 end
 
--- Helper function to try opening a file, with fallback path
--- While the folder from the release zip is "gratitude", some users may rename it
--- The fallback will work no matter what the folder is renamed to.
-local function open_file_with_fallback(primary_path, fallback_path, mode)
-    logger:info("Attempting to open file: " .. primary_path .. " with fallback: " .. fallback_path)
-    local file, err = io.open(primary_path, mode)
-    if file then
-        return file, primary_path
-    end
-    logger:info("Failed to open primary path: " .. tostring(err))
-
-    -- If opening primary path failed, try fallback
-    file, err = io.open(fallback_path, mode)
-    if file then
-        logger:info("Using fallback path: " .. fallback_path)
-        return file, fallback_path
-    end
-
-    return nil, nil -- Both failed
-end
-
--- Helper function to get active path (primary or fallback)
-local function get_active_path(primary_path, fallback_path)
-    -- Check if fallback exists
-    local fallback_file = io.open(fallback_path, "r")
-    if fallback_file then
-        fallback_file:close()
-        -- Fallback exists, check if primary also exists
-        local primary_file = io.open(primary_path, "r")
-        if primary_file then
-            primary_file:close()
-            return primary_path -- Both exist, prefer primary
-        end
-        return fallback_path -- Only fallback exists, use it
-    end
-
-    -- Fallback doesn't exist, always use primary (whether it exists or not)
-    return primary_path
-end
-
--- Save cache to file
--- Uses atomic write (write to temp file, then rename) to avoid corruption if
--- Steam crashes or closes during write
-local function save_cache_to_file()
-    local targetPath = get_active_path(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK)
-    local tempPath = targetPath .. ".tmp"
-
-    local file, err = io.open(tempPath, "w")
-    if not file then
-        logger:error("Failed to open temp cache file for writing: " .. tostring(err))
+local function save_json(path, data, description)
+    if not path then
+        logger:error("No valid path provided for " .. description .. " file")
         return false
     end
 
-    file:write(json.encode(GameLicenseCache))
+    if fs.exists(path) then
+        logger:info(description .. " file already exists at " .. path .. ", overwriting")
+    else
+        logger:info("Saving " .. description .. " to new file at " .. path)
+    end
+
+    -- Encode first - if this fails, we haven't touched the file yet
+    local success, encoded = pcall(json.encode, data)
+    if not success then
+        logger:error("Failed to encode " .. description .. " data: " .. tostring(encoded))
+        return false
+    end
+
+    local file, err = io.open(path, "w")
+    if not file then
+        logger:error("Failed to open " .. description .. " file for writing: " .. tostring(err))
+        return false
+    end
+
+    -- Write the data and explicitly check for errors
+    local write_success, write_err = pcall(function()
+        file:write(encoded)
+    end)
+
     file:close()
 
-    os.rename(tempPath, targetPath)
-    logger:info("Cache saved successfully")
+    if not write_success then
+        logger:error("Failed to write " .. description .. " file: " .. tostring(write_err))
+        return false
+    end
+
+    logger:info(description .. " saved successfully")
     return true
 end
 
--- Load cache from file
-local function load_cache_from_file()
-    local file, path = open_file_with_fallback(CACHE_FILE_PATH, CACHE_FILE_PATH_FALLBACK, "r")
+local function load_json(path, description)
+    if not path then
+        logger:error("No valid path provided for " .. description .. " file")
+        return nil
+    end
+
+    if not fs.exists(path) then
+        logger:info(description .. " file doesn't exist at " .. path)
+        return nil
+    end
+
+    local file, err = io.open(path, "r")
     if not file then
-        logger:info("Cache file doesn't exist yet (first run or no data cached)")
-        return false
+        logger:error("Failed to open " .. description .. " file for reading: " .. tostring(err))
+        return nil
     end
 
     local content = file:read("*all")
     file:close()
 
     if content and #content > 0 then
-        local ok, decoded = pcall(json.decode, content)
-        if not ok then
-            logger:error("Failed to decode cache file JSON: " .. tostring(decoded))
-            return false
-        end
-        if decoded then
-            GameLicenseCache = decoded
-            logger:info("Cache loaded successfully from " .. path .. " with " .. tostring(table_size(GameLicenseCache)) .. " users")
-            return true
+        local success, decoded = pcall(json.decode, content)
+        if success then
+            logger:info(description .. " loaded successfully from " .. path)
+            return decoded
         else
-            logger:error("Failed to decode cache file JSON")
+            logger:error("Failed to decode " .. description .. " JSON: " .. tostring(decoded))
+            return nil
         end
+    else
+        logger:info(description .. " file is empty at " .. path)
+        return nil
     end
+end
 
+local function save_cache_to_file()
+    return save_json(CACHE_FILE_PATH, GameLicenseCache, "Game license cache")
+end
+
+local function load_cache_from_file()
+    local loadedCache = load_json(CACHE_FILE_PATH, "Game license cache")
+    if loadedCache then
+        logger:info("Game license cache loaded successfully from file")
+        GameLicenseCache = loadedCache
+        return true
+    end
+    logger:info("Load failed or no existing game license cache found, starting with empty cache")
+    return false
+end
+
+local function save_consent_to_file()
+    return save_json(CONSENT_FILE_PATH, consentState, "Consent state")
+end
+
+local function load_consent_from_file()
+    local loadedConsent = load_json(CONSENT_FILE_PATH, "Consent state")
+    if loadedConsent then
+        logger:info("Consent state loaded successfully from file")
+        consentState = loadedConsent
+        return true
+    end
+    logger:info("Load failed or no existing consent state found, starting with empty consent state")
     return false
 end
 
@@ -136,9 +147,15 @@ function SetGameLicenseData(licenseData, steamUserID)
         return false, "Steam ID not provided"
     end
 
-    logger:info("SetGameLicenseData called with data length: " .. tostring(#licenseData) .. " for Steam ID: " .. steamUserID)
+    logger:info("SetGameLicenseData called with data length: " ..
+        tostring(#licenseData) .. " for Steam ID: " .. steamUserID)
 
-    local decodedData = json.decode(licenseData)
+    local success, decodedData = pcall(json.decode, licenseData)
+    if not success then
+        logger:error("Failed to decode license data JSON: " .. tostring(decodedData))
+        return false, "Failed to decode license data JSON"
+    end
+
     if decodedData then
         -- Convert array to hash map indexed by game name for O(1) lookups
         GameLicenseCache[steamUserID] = {}
@@ -210,52 +227,6 @@ function ClearCache(steamUserID)
     return true
 end
 
--- Save consent state to file
--- Uses atomic write (write to temp file, then rename) to avoid corruption if
--- Steam crashes or closes during write
-local function save_consent_to_file()
-    local targetPath = get_active_path(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK)
-    local tempPath = targetPath .. ".tmp"
-
-    local file, err = io.open(tempPath, "w")
-    if not file then
-        logger:error("Failed to open temp consent file for writing: " .. tostring(err))
-        return false
-    end
-
-    file:write(json.encode(consentState))
-    file:close()
-
-    os.rename(tempPath, targetPath)
-    logger:info("Consent state saved successfully")
-    return true
-end
-
--- Load consent state from file
-local function load_consent_from_file()
-    local file, path = open_file_with_fallback(CONSENT_FILE_PATH, CONSENT_FILE_PATH_FALLBACK, "r")
-    if not file then
-        logger:info("Consent file doesn't exist yet (user hasn't answered)")
-        return false
-    end
-
-    local content = file:read("*all")
-    file:close()
-
-    if content and #content > 0 then
-        local decoded = json.decode(content)
-        if decoded then
-            consentState = decoded
-            logger:info("Consent state loaded from " .. path)
-            return true
-        else
-            logger:error("Failed to decode consent file JSON")
-        end
-    end
-
-    return false
-end
-
 -- Store user consent decision (called from frontend)
 function SetConsent(consent, steamUserID)
     assert(type(consent) == "boolean", "consent must be a boolean")
@@ -289,7 +260,8 @@ function HasUserConsented(steamUserID)
     end
 
     if consentState[steamUserID] then
-        logger:info("HasUserConsented called for user " .. steamUserID .. ", returning: " .. tostring(consentState[steamUserID].allowed))
+        logger:info("HasUserConsented called for user " ..
+            steamUserID .. ", returning: " .. tostring(consentState[steamUserID].allowed))
         return consentState[steamUserID].allowed
     end
 
@@ -300,10 +272,8 @@ local function on_load()
     print("Gratitude plugin loaded")
     logger:info("Comparing millennium version: " .. millennium.cmp_version(millennium.version(), "2.29.3"))
 
-    -- Load cached data from file on startup
+    -- Load existing cache and consent data from disk
     load_cache_from_file()
-
-    -- Load consent state from file on startup
     load_consent_from_file()
 
     logger:info("Gratitude plugin loaded with Millennium version " .. millennium.version())
