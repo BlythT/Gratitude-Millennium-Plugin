@@ -1,7 +1,16 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import { log } from '../../lib/logger';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
-import { SELECTED_GAME_NAME_SELECTOR, SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR, MAIN_CONTENT_CONTAINER_SELECTOR } from '../types';
+import {
+  SELECTED_GAME_NAME_SELECTOR,
+  SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR,
+  SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR,
+  MAIN_CONTENT_CONTAINER_SELECTOR,
+  BIG_PICTURE_GAME_NAME_SELECTOR,
+  BIG_PICTURE_TOOLTIP_CONTAINER_SELECTOR,
+  BIG_PICTURE_PLAYTIME_TOOLTIP_SELECTOR,
+  BIG_PICTURE_MAIN_CONTENT_CONTAINER_SELECTOR
+} from '../types';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
 
@@ -20,13 +29,49 @@ export function resetState(): void {
   }
 }
 
-// Detect game name from document
+// Detect game name from document - try multiple selectors
 export function detectGameName(doc: Document): string | null {
-  log('Detecting game name with selector:', SELECTED_GAME_NAME_SELECTOR);
-  const nameElem = doc.querySelector(SELECTED_GAME_NAME_SELECTOR);
+  log('Detecting game name');
+
+  // Try standard selector first
+  let nameElem = doc.querySelector(SELECTED_GAME_NAME_SELECTOR);
+
+  // If not found, try Big Picture selector
+  if (!nameElem) {
+    nameElem = doc.querySelector(BIG_PICTURE_GAME_NAME_SELECTOR);
+  }
+
   const gameName = nameElem?.textContent?.trim() || null;
   log('Detected game name:', gameName);
   return gameName;
+}
+
+/**
+ * Finds a specific element in the document by selector, trying multiple selectors.
+ * @param doc The document or HTMLElement to search within
+ * @param selectors Array of CSS selectors to try
+ * @returns HTMLElement | null if not found
+ */
+export function detectElementMulti(doc: Document | HTMLElement, selectors: string[]): HTMLElement | null {
+  for (const selector of selectors) {
+    log('Looking for element with selector:', selector);
+    const elements = doc.querySelectorAll(selector);
+
+    log('Found', elements.length, 'elements');
+
+    if (elements.length > 0) {
+      // Use last element (page has duplicates, first copy off screen)
+      const element = elements[elements.length - 1];
+
+      if (element) {
+        log('Found valid element:', element);
+        return element as HTMLElement;
+      }
+    }
+  }
+
+  log('No valid element found for any selector');
+  return null;
 }
 
 /**
@@ -36,26 +81,7 @@ export function detectGameName(doc: Document): string | null {
  * @returns HTMLElement | null if not found
  */
 export function detectElement(doc: Document | HTMLElement, selector: string): HTMLElement | null {
-  log('Looking for element with selector:', selector);
-  const elements = doc.querySelectorAll(selector);
-
-  log('Found', elements.length, 'elements');
-
-  if (elements.length === 0) {
-    log('No elements found');
-    return null;
-  }
-
-  // Use last element (page has duplicates, first copy off screen)
-  const element = elements[elements.length - 1];
-
-  if (!element) {
-    log('No valid element found');
-    return null;
-  }
-
-  log('Found valid element:', element);
-  return element as HTMLElement;
+  return detectElementMulti(doc, [selector]);
 }
 
 // Register callback for when main content container is ready
@@ -101,7 +127,11 @@ function processAndRefreshIfNeeded(doc: Document): void {
 function checkMainContentReady(doc: Document): void {
   if (!onMainContentReady) return; // No callback registered, don't prevent further checks
   if (mainContentDetected) return; // Already detected
-  if (!doc.querySelector(MAIN_CONTENT_CONTAINER_SELECTOR)) return;
+
+  const hasMainContent = doc.querySelector(MAIN_CONTENT_CONTAINER_SELECTOR) ||
+    doc.querySelector(BIG_PICTURE_MAIN_CONTENT_CONTAINER_SELECTOR);
+
+  if (!hasMainContent) return;
 
   log('Main content container detected, triggering callback');
   mainContentDetected = true;
@@ -131,14 +161,21 @@ function handleGamePageSync(doc: Document): boolean {
     return false;
   }
 
-  const tooltipContainer = detectElement(doc, SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR);
+  const tooltipContainer = detectElementMulti(doc, [
+    SELECTED_GAME_TOOLTIP_CONTAINER_SELECTOR,
+    BIG_PICTURE_TOOLTIP_CONTAINER_SELECTOR
+  ]);
+
   if (!tooltipContainer) {
     log('Tooltip container not found, skipping');
     return false;
   }
 
-  // This is the Time Played tooltip element we will insert after.
-  const insertAfterTarget = detectElement(tooltipContainer, SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR);
+  const insertAfterTarget = detectElementMulti(tooltipContainer, [
+    SELECTED_GAME_PLAYTIME_TOOLTIP_SELECTOR,
+    BIG_PICTURE_PLAYTIME_TOOLTIP_SELECTOR
+  ]);
+
   if (!insertAfterTarget) {
     log('Insert after target not found, skipping');
     return false;
