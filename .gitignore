@@ -3,7 +3,5 @@ node_modules/
 pnpm-lock.yaml
 
 # Gratitude plugin data
-gratitude_consent.json.tmp
-gratitude_license_cache.json.tmp
-gratitude_consent.json
-gratitude_license_cache.json
+*gratitude_consent.json
+*gratitude_cache.json
