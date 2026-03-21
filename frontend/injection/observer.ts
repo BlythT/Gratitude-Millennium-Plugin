@@ -10,6 +10,10 @@ let onMainContentReady: ((doc: Document) => void) | null = null;
 let mainContentDetected = false;
 let lastProcessedGame: string | null = null;
 
+function logGamePageScan(gameName: string | null, result: string): void {
+  log('Game page scan:', JSON.stringify({ gameName, result }));
+}
+
 export function resetState(): void {
   log('Resetting state');
   mainContentDetected = false;
@@ -22,8 +26,6 @@ export function resetState(): void {
 
 // Detect game name from document - try multiple selectors
 export function detectGameName(doc: Document): string | null {
-  log('Detecting game name');
-
   // Try standard selector first
   let nameElem = doc.querySelector(SELECTORS.standard.gameName);
 
@@ -32,9 +34,7 @@ export function detectGameName(doc: Document): string | null {
     nameElem = doc.querySelector(SELECTORS.bigPicture.gameName);
   }
 
-  const gameName = nameElem?.textContent?.trim() || null;
-  log('Detected game name:', gameName);
-  return gameName;
+  return nameElem?.textContent?.trim() || null;
 }
 
 /**
@@ -135,20 +135,19 @@ function checkMainContentReady(doc: Document): void {
  * @returns boolean — true signals that an async cache refresh should be triggered
  */
 function handleGamePageSync(doc: Document): boolean {
-  log('handleGamePage called');
-
   // Check if main content is ready and trigger callback
   checkMainContentReady(doc);
 
   const gameName = detectGameName(doc);
   if (!gameName) {
+    logGamePageScan(null, 'no-game-detected');
     lastProcessedGame = null;
     return false;
   }
 
   const existingDisplay = getExistingDisplay(doc, gameName)
   if (gameName === lastProcessedGame && existingDisplay && !existingDisplay.dataset.missing) {
-    log('Game name unchanged and display exists, skipping');
+    logGamePageScan(gameName, 'skipped-existing-display');
     return false;
   }
 
@@ -158,7 +157,7 @@ function handleGamePageSync(doc: Document): boolean {
   ]);
 
   if (!tooltipContainer) {
-    log('Tooltip container not found, skipping');
+    logGamePageScan(gameName, 'tooltip-container-missing');
     return false;
   }
 
@@ -168,7 +167,7 @@ function handleGamePageSync(doc: Document): boolean {
   ]);
 
   if (!insertAfterTarget) {
-    log('Insert after target not found, skipping');
+    logGamePageScan(gameName, 'insert-target-missing');
     return false;
   }
 
@@ -177,11 +176,9 @@ function handleGamePageSync(doc: Document): boolean {
   // Get current Steam ID
   const steamID = getCurrentAccountID();
   if (!steamID) {
-    log('Steam ID not available, skipping');
+    logGamePageScan(gameName, 'steam-id-missing');
     return true;
   }
-
-  log('Starting to process game:', gameName);
 
   if (existingDisplay && existingDisplay.dataset.missing) {
     log('Existing display indicates missing data, removing it for refresh');
@@ -189,55 +186,50 @@ function handleGamePageSync(doc: Document): boolean {
   }
 
   try {
-    log('Checking if cache is populated');
     if (!gameLicenseCache.getDataSync(steamID)) {
-      log('Cache not populated, inserting missing data display');
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {
-        log('Failed to create missing data display');
+        logGamePageScan(gameName, 'missing-display-create-failed');
         return true;
       }
 
       insertAfterTarget.after(missingDisplay);
-      log('Missing data display inserted, will fetch data asynchronously');
+      logGamePageScan(gameName, 'missing-cache-display-inserted');
       return true;
     }
-
-    log('Cache populated, proceeding to fetch license data synchronously');
 
     const licenseDataMap = gameLicenseCache.getDataSync(steamID);
     if (!licenseDataMap) {
-      log('Cache is empty despite being marked populated, this should not happen');
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {
-        log('Failed to create missing data display');
+        logGamePageScan(gameName, 'cache-inconsistent-display-create-failed');
         return true;
       }
       insertAfterTarget.after(missingDisplay);
+      logGamePageScan(gameName, 'cache-inconsistent-missing-display-inserted');
       return true;
     }
-    log('Retrieved', licenseDataMap.size, 'license entries');
 
     // Check if data exists for this game using fuzzy matching
     const data = fuzzyMatch(licenseDataMap, gameName);
-    log('Data for current game:', data ? 'Found' : 'Not found');
 
     if (!data) {
-      log('No data available for this specific game, skipping display');
+      logGamePageScan(gameName, 'license-data-missing');
       return true; // Signal async fetch: might exist on backend but not cached
     }
 
     const display = createDisplay(doc, gameName, data);
-    if (!display) return false;
+    if (!display) {
+      logGamePageScan(gameName, 'display-create-failed');
+      return false;
+    }
 
     insertAfterTarget.after(display);
-    log('Display inserted');
+    logGamePageScan(gameName, 'display-inserted');
     return false;
   } catch (error) {
     log('Error handling game page:', error);
     return false;
-  } finally {
-    log('Processing complete for:', gameName);
   }
 }
 
@@ -254,11 +246,10 @@ export function setupObserver(doc: Document): void {
 
   let isAnimationFramePending = false;
 
-  observer = new MutationObserver((mutations) => {
+  observer = new MutationObserver(() => {
     // Debounce: only schedule one processing per frame, even if multiple mutations occur.
     // This is safe because we query current DOM state (not mutation records), so we always
     // see the final state after all mutations complete.
-    console.log('Mutations:', mutations);  // Log to see what's changing
     if (isAnimationFramePending) return;
 
     isAnimationFramePending = true;
