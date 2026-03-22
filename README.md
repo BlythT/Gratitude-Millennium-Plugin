@@ -28,7 +28,14 @@ Gratitude also works in Big Picture mode, providing the same gift information wh
   <img src="assets/small(big)picturemode.png" width="40%" alt="Big Picture Mode Tooltip">
 </p>
 
----
+### Gift Labeling ![NEW!](https://img.shields.io/badge/-NEW!-FFB347)
+Ever forgotten who gave you a game?
+
+| | |
+|:---|:---:|
+| Click the gift icon on any gifted game to open a details panel where you can record the gifter and add a personal note. | <a href="https://github.com/user-attachments/assets/8de0754f-ceba-45df-8fc8-fd237b7b1ce6"><img src="https://github.com/user-attachments/assets/8de0754f-ceba-45df-8fc8-fd237b7b1ce6" width="250" alt="Gift details panel"></a> |
+| <a href="https://github.com/user-attachments/assets/11bc1278-38fa-4a3c-81c5-6e8e19df4706"><img src="https://github.com/user-attachments/assets/11bc1278-38fa-4a3c-81c5-6e8e19df4706" width="250" alt="Friend autocomplete"></a> | The gifter field uses smart autocomplete against your Steam friends list, so you can find the right person without typing their full name. |
+| Once saved, the gifter's name shows up right in the tooltip so you never forget again! | <a href="https://github.com/user-attachments/assets/0af398fa-559e-4196-977e-aefac28d6af8"><img src="https://github.com/user-attachments/assets/0af398fa-559e-4196-977e-aefac28d6af8" width="250" alt="Gifter shown on hover"></a> |
 
 ## 🛠 Installation
 
@@ -71,7 +78,7 @@ A: Yes! Gratitude fully supports both the standard Steam library and Big Picture
 A: Try visiting the Steam Store in your client, then go back: This plugin stores your game license data but can only do so when you visit one of Steam's non-library pages.
 
 **Q: Can it show who gifted me the game?**  
-A: Unfortunately not. Outside of the original gift message and email, Steam does not store the "sender" information in a way the client can retrieve, so I cannot display it.
+A: Yes, with a little help from you! Steam doesn't store sender information in a way the client can retrieve, but you can label it yourself. Click the `Gifted` tooltip on any gifted game in your Library to open the details panel, where you can select the gifter from your Steam friends list and add a personal note. Once saved, the gifter's name will appear in the tooltip.
 
 ## Acknowledgments
 
