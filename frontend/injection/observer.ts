@@ -3,15 +3,21 @@ import { log } from '../../lib/logger';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
-import { SELECTORS } from '../types';
+import { giverCache } from './givercache';
+import { SELECTORS, type LicenseMatch } from '../types';
 
 let observer: MutationObserver | null = null;
 let onMainContentReady: ((doc: Document) => void) | null = null;
 let mainContentDetected = false;
 let lastProcessedGame: string | null = null;
 
-function logGamePageScan(gameName: string | null, result: string): void {
-  log('Game page scan:', JSON.stringify({ gameName, result }));
+function logGamePageScan(
+	gameName: string | null,
+	result: string,
+	details?: Record<string, unknown>,
+): void {
+	const summary = { gameName, result, ...details };
+	log('Game page scan:', JSON.stringify(summary));
 }
 
 export function resetState(): void {
@@ -92,7 +98,10 @@ async function triggerCacheRefresh(): Promise<void> {
     return;
   }
   try {
-    await gameLicenseCache.getData(steamID);
+    await Promise.all([
+      gameLicenseCache.getData(steamID),
+      giverCache.getAll(steamID),
+    ]);
     log('License data fetched and cache populated');
   } catch (error) {
     log('Error fetching license data:', error);
@@ -106,6 +115,15 @@ async function triggerCacheRefresh(): Promise<void> {
 function processAndRefreshIfNeeded(doc: Document): void {
   const needsCacheRefresh = handleGamePageSync(doc);
   if (needsCacheRefresh) {
+    triggerCacheRefresh();
+  }
+}
+
+export function refreshGamePage(doc: Document): void {
+  log('refreshGamePage called');
+  const needsCacheRefresh = handleGamePageSync(doc, true);
+  if (needsCacheRefresh) {
+    log('refreshGamePage requested async cache refresh');
     triggerCacheRefresh();
   }
 }
@@ -134,20 +152,20 @@ function checkMainContentReady(doc: Document): void {
  * @param doc
  * @returns boolean — true signals that an async cache refresh should be triggered
  */
-function handleGamePageSync(doc: Document): boolean {
+function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
   // Check if main content is ready and trigger callback
   checkMainContentReady(doc);
 
   const gameName = detectGameName(doc);
   if (!gameName) {
-    logGamePageScan(null, 'no-game-detected');
+    logGamePageScan(null, 'no-game-detected', { forceRefresh });
     lastProcessedGame = null;
     return false;
   }
 
   const existingDisplay = getExistingDisplay(doc, gameName)
-  if (gameName === lastProcessedGame && existingDisplay && !existingDisplay.dataset.missing) {
-    logGamePageScan(gameName, 'skipped-existing-display');
+  if (!forceRefresh && gameName === lastProcessedGame && existingDisplay && !existingDisplay.dataset.missing) {
+    logGamePageScan(gameName, 'skipped-existing-display', { forceRefresh });
     return false;
   }
 
@@ -157,7 +175,7 @@ function handleGamePageSync(doc: Document): boolean {
   ]);
 
   if (!tooltipContainer) {
-    logGamePageScan(gameName, 'tooltip-container-missing');
+    logGamePageScan(gameName, 'tooltip-container-missing', { forceRefresh });
     return false;
   }
 
@@ -167,7 +185,7 @@ function handleGamePageSync(doc: Document): boolean {
   ]);
 
   if (!insertAfterTarget) {
-    logGamePageScan(gameName, 'insert-target-missing');
+    logGamePageScan(gameName, 'insert-target-missing', { forceRefresh });
     return false;
   }
 
@@ -176,12 +194,12 @@ function handleGamePageSync(doc: Document): boolean {
   // Get current Steam ID
   const steamID = getCurrentAccountID();
   if (!steamID) {
-    logGamePageScan(gameName, 'steam-id-missing');
+    logGamePageScan(gameName, 'steam-id-missing', { forceRefresh });
     return true;
   }
 
-  if (existingDisplay && existingDisplay.dataset.missing) {
-    log('Existing display indicates missing data, removing it for refresh');
+  if (existingDisplay && (existingDisplay.dataset.missing || forceRefresh)) {
+    log('Removing existing display before refresh');
     existingDisplay.remove();
   }
 
@@ -189,12 +207,12 @@ function handleGamePageSync(doc: Document): boolean {
     if (!gameLicenseCache.getDataSync(steamID)) {
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {
-        logGamePageScan(gameName, 'missing-display-create-failed');
+        logGamePageScan(gameName, 'missing-display-create-failed', { forceRefresh });
         return true;
       }
 
       insertAfterTarget.after(missingDisplay);
-      logGamePageScan(gameName, 'missing-cache-display-inserted');
+      logGamePageScan(gameName, 'missing-cache-display-inserted', { forceRefresh });
       return true;
     }
 
@@ -202,30 +220,42 @@ function handleGamePageSync(doc: Document): boolean {
     if (!licenseDataMap) {
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {
-        logGamePageScan(gameName, 'cache-inconsistent-display-create-failed');
+        logGamePageScan(gameName, 'cache-inconsistent-display-create-failed', { forceRefresh });
         return true;
       }
       insertAfterTarget.after(missingDisplay);
-      logGamePageScan(gameName, 'cache-inconsistent-missing-display-inserted');
+      logGamePageScan(gameName, 'cache-inconsistent-missing-display-inserted', { forceRefresh });
       return true;
     }
 
     // Check if data exists for this game using fuzzy matching
-    const data = fuzzyMatch(licenseDataMap, gameName);
+    const match = fuzzyMatch(licenseDataMap, gameName);
 
-    if (!data) {
-      logGamePageScan(gameName, 'license-data-missing');
+    if (!match) {
+      logGamePageScan(gameName, 'license-data-missing', {
+        forceRefresh,
+        cacheEntries: licenseDataMap.size,
+      });
       return true; // Signal async fetch: might exist on backend but not cached
     }
 
-    const display = createDisplay(doc, gameName, data);
+    const giver = giverCache.getEntrySync(steamID, match.licenseKey);
+    const display = createDisplay(doc, gameName, match, giver, steamID, () => refreshGamePage(doc));
     if (!display) {
-      logGamePageScan(gameName, 'display-create-failed');
+      logGamePageScan(gameName, 'display-create-failed', {
+        forceRefresh,
+        licenseKey: match.licenseKey,
+        hasGiver: !!giver,
+      });
       return false;
     }
 
     insertAfterTarget.after(display);
-    logGamePageScan(gameName, 'display-inserted');
+    logGamePageScan(gameName, 'display-inserted', {
+      forceRefresh,
+      licenseKey: match.licenseKey,
+      hasGiver: !!giver,
+    });
     return false;
   } catch (error) {
     log('Error handling game page:', error);
@@ -287,9 +317,12 @@ export function setupObserver(doc: Document): void {
  * @param gameName - The game name to search for
  * @returns The matching value, or null if no match found
  */
-function fuzzyMatch(map: Map<string, any>, gameName: string): any | null {
+function fuzzyMatch(map: Map<string, any>, gameName: string): LicenseMatch | null {
   if (map.has(gameName)) {
-    return map.get(gameName);
+    return {
+      licenseKey: gameName,
+      data: map.get(gameName),
+    };
   }
 
   let forwardMatch: { key: string; value: any } | null = null; // gameName is prefix of key
@@ -310,7 +343,15 @@ function fuzzyMatch(map: Map<string, any>, gameName: string): any | null {
   }
 
   // Prefer reverse match (exact edition) over forward (base game with suffix)
-  return reverseMatch?.value ?? forwardMatch?.value ?? null;
+  const resolvedMatch = reverseMatch ?? forwardMatch;
+  if (!resolvedMatch) {
+    return null;
+  }
+
+  return {
+    licenseKey: resolvedMatch.key,
+    data: resolvedMatch.value,
+  };
 }
 
 export function disconnectObserver(): void {

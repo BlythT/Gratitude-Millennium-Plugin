@@ -35,7 +35,13 @@ Gratitude also works in Big Picture mode, providing the same gift information wh
 > [!IMPORTANT]
 > **Millennium is required.** This plugin will only work if you have the Millennium framework installed. If you haven't, visit [steambrew.app](https://steambrew.app/) first.
 
-1.  **Download the Plugin:**
+### Either: 
+1.  **Install from the Gratitude plugin page:**
+    * Open [Gratitude on steambrew.app](https://steambrew.app/plugin?id=a0f319c49e93).
+    * Use the install flow there. This is the recommended way to install the plugin.
+
+Or:
+1.  **Manual install fallback:**
     * Click the **Releases** section on the right side of this repository.
     * Under the latest version, look for the **Assets** dropdown.
     * Download the file named `gratitude-for-millenium-<version>.zip`.

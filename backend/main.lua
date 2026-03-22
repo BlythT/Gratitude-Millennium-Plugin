@@ -7,6 +7,8 @@ local utils = require("utils")
 
 local CACHE_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_cache.json")
 local CONSENT_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_consent.json")
+local GIVER_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_givers.json")
+local FRIENDS_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_friends.json")
 
 -- Global cache for license data (indexed by Steam ID, then game name)
 -- Structure: { [steamUserID] = { [gameName] = { date, acquisition }, [gameName2] = { ... } }, ... }    
@@ -14,6 +16,12 @@ local GameLicenseCache = {}
 
 -- Consent state (per Steam ID)
 local consentState = {}
+
+-- Giver metadata keyed by Steam ID, then license key
+local GiverStore = {}
+
+-- Cached Steam friends keyed by Steam ID
+local FriendsCacheStore = {}
 
 -- Helper function to count table entries
 local function table_size(t)
@@ -128,6 +136,147 @@ local function load_consent_from_file()
     end
     logger:info("Load failed or no existing consent state found, starting with empty consent state")
     return false
+end
+
+local function save_givers_to_file()
+    return save_json(GIVER_FILE_PATH, GiverStore, "Giver store")
+end
+
+local function load_givers_from_file()
+    local loadedGivers = load_json(GIVER_FILE_PATH, "Giver store")
+    if loadedGivers then
+        logger:info("Giver store loaded successfully from file")
+        GiverStore = loadedGivers
+        return true
+    end
+    logger:info("Load failed or no existing giver store found, starting with empty giver store")
+    return false
+end
+
+local function save_friends_to_file()
+    return save_json(FRIENDS_FILE_PATH, FriendsCacheStore, "Friends cache")
+end
+
+local function load_friends_from_file()
+    local loadedFriends = load_json(FRIENDS_FILE_PATH, "Friends cache")
+    if loadedFriends then
+        logger:info("Friends cache loaded successfully from file")
+        FriendsCacheStore = loadedFriends
+        return true
+    end
+    logger:info("Load failed or no existing friends cache found, starting with empty friends cache")
+    return false
+end
+
+local function ensure_account_store(store, steamUserID)
+    if not store[steamUserID] then
+        store[steamUserID] = {}
+    end
+
+    return store[steamUserID]
+end
+
+local function validate_required_string(value, fieldName)
+    if type(value) ~= "string" or value == "" then
+        return false, fieldName .. " must be a non-empty string"
+    end
+
+    return true
+end
+
+local function normalize_giver_payload(payload, steamUserID)
+    if type(payload) ~= "table" then
+        return nil, "giver payload must decode to a table"
+    end
+
+    local requiredFields = { "licenseKey", "libraryTitle", "displayName", "source" }
+    for _, fieldName in ipairs(requiredFields) do
+        local ok, message = validate_required_string(payload[fieldName], fieldName)
+        if not ok then
+            return nil, message
+        end
+    end
+
+    if payload.source ~= "manual" and payload.source ~= "friend-cache" then
+        return nil, "source must be manual or friend-cache"
+    end
+
+    local accountStore = ensure_account_store(GiverStore, steamUserID)
+    local existingRecord = accountStore[payload.licenseKey]
+    local now = os.time()
+
+    local normalized = {
+        licenseKey = payload.licenseKey,
+        libraryTitle = payload.libraryTitle,
+        displayName = payload.displayName,
+        source = payload.source,
+        createdAt = existingRecord and existingRecord.createdAt or now,
+        updatedAt = now,
+    }
+
+    if type(payload.steamID64) == "string" and payload.steamID64 ~= "" then
+        normalized.steamID64 = payload.steamID64
+    end
+
+    if type(payload.profileUrl) == "string" and payload.profileUrl ~= "" then
+        normalized.profileUrl = payload.profileUrl
+    end
+
+    if type(payload.notes) == "string" and payload.notes ~= "" then
+        normalized.notes = payload.notes
+    end
+
+    return normalized
+end
+
+local function normalize_friend_rows(decodedFriends)
+    if type(decodedFriends) ~= "table" then
+        return nil, "friends payload must decode to an array"
+    end
+
+    local normalizedFriends = {}
+    local now = os.time()
+
+    for _, friend in ipairs(decodedFriends) do
+        if type(friend) == "table" and type(friend.steamID64) == "string" and friend.steamID64 ~= "" and
+            type(friend.displayName) == "string" and friend.displayName ~= "" then
+            local normalizedFriend = {
+                steamID64 = friend.steamID64,
+                displayName = friend.displayName,
+                updatedAt = now,
+            }
+
+            if type(friend.profileUrl) == "string" and friend.profileUrl ~= "" then
+                normalizedFriend.profileUrl = friend.profileUrl
+            end
+
+            if type(friend.nicknameOrAlias) == "string" and friend.nicknameOrAlias ~= "" then
+                normalizedFriend.nicknameOrAlias = friend.nicknameOrAlias
+            end
+
+            if type(friend.avatarUrl) == "string" and friend.avatarUrl ~= "" then
+                normalizedFriend.avatarUrl = friend.avatarUrl
+            end
+
+            if type(friend.status) == "string" and friend.status ~= "" then
+                normalizedFriend.status = friend.status
+            end
+
+            if type(friend.gameName) == "string" and friend.gameName ~= "" then
+                normalizedFriend.gameName = friend.gameName
+            end
+
+            if type(friend.lastOnlineText) == "string" and friend.lastOnlineText ~= "" then
+                normalizedFriend.lastOnlineText = friend.lastOnlineText
+            end
+
+            table.insert(normalizedFriends, normalizedFriend)
+        else
+            logger:error("Skipping invalid friend record in SetFriendsCache")
+        end
+    end
+
+    return normalizedFriends
 end
 
 -- Function to be called from frontend to set license data
@@ -268,6 +417,191 @@ function HasUserConsented(steamUserID)
     return false
 end
 
+function GetGiverData(licenseKey, steamUserID)
+    assert(type(licenseKey) == "string", "licenseKey must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if steamUserID == "" or licenseKey == "" then
+        logger:info("Cannot get giver data without Steam ID and license key")
+        return "{}"
+    end
+
+    local accountStore = GiverStore[steamUserID]
+    if not accountStore or not accountStore[licenseKey] then
+        logger:info("No giver record found for user " .. steamUserID .. " and license " .. licenseKey)
+        return "{}"
+    end
+
+    return json.encode(accountStore[licenseKey])
+end
+
+function GetAllGiverData(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if steamUserID == "" or not GiverStore[steamUserID] then
+        logger:info("No giver records found for Steam ID " .. steamUserID)
+        return "{}"
+    end
+
+    logger:info("Returning " .. tostring(table_size(GiverStore[steamUserID])) .. " giver records for Steam ID " .. steamUserID)
+    return json.encode(GiverStore[steamUserID])
+end
+
+function UpsertGiverData(payloadJson, steamUserID)
+    assert(type(payloadJson) == "string", "payloadJson must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if payloadJson == "" then
+        logger:error("No giver payload provided")
+        return false, "No giver payload provided"
+    end
+
+    if steamUserID == "" then
+        logger:error("No Steam ID provided for giver upsert")
+        return false, "Steam ID not provided"
+    end
+
+    local success, decodedPayload = pcall(json.decode, payloadJson)
+    if not success then
+        logger:error("Failed to decode giver payload JSON: " .. tostring(decodedPayload))
+        return false, "Failed to decode giver payload JSON"
+    end
+
+    local normalizedPayload, errorMessage = normalize_giver_payload(decodedPayload, steamUserID)
+    if not normalizedPayload then
+        logger:error("Invalid giver payload: " .. tostring(errorMessage))
+        return false, errorMessage
+    end
+
+    local accountStore = ensure_account_store(GiverStore, steamUserID)
+    accountStore[normalizedPayload.licenseKey] = normalizedPayload
+
+    if not save_givers_to_file() then
+        return false, "Failed to save giver store"
+    end
+
+    logger:info("Upserted giver record for user " .. steamUserID .. " and license " .. normalizedPayload.licenseKey)
+    return true
+end
+
+function DeleteGiverData(licenseKey, steamUserID)
+    assert(type(licenseKey) == "string", "licenseKey must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if steamUserID == "" or licenseKey == "" then
+        logger:error("Steam ID and license key are required to delete giver data")
+        return false
+    end
+
+    logger:info("DeleteGiverData called for user " .. steamUserID .. " and license " .. licenseKey)
+
+    local accountStore = GiverStore[steamUserID]
+    logger:info("Current giver store account exists before delete=" .. tostring(accountStore ~= nil))
+    if accountStore then
+        logger:info("Current giver store entry count before delete=" .. tostring(table_size(accountStore)))
+    end
+
+    local hadRecord = GiverStore[steamUserID] and GiverStore[steamUserID][licenseKey] ~= nil
+    if GiverStore[steamUserID] then
+        GiverStore[steamUserID][licenseKey] = nil
+        if next(GiverStore[steamUserID]) == nil then
+            GiverStore[steamUserID] = nil
+        end
+    end
+
+    if not save_givers_to_file() then
+        return false
+    end
+
+    local stillExists = GiverStore[steamUserID] and GiverStore[steamUserID][licenseKey] ~= nil
+    local remainingCount = GiverStore[steamUserID] and table_size(GiverStore[steamUserID]) or 0
+
+    logger:info("Deleted giver record for user " .. steamUserID .. " and license " .. licenseKey ..
+        ", existed before delete=" .. tostring(hadRecord) ..
+        ", still exists after delete=" .. tostring(stillExists) ..
+        ", remaining account entries=" .. tostring(remainingCount))
+    return true
+end
+
+function GetFriendsCache(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if steamUserID == "" or not FriendsCacheStore[steamUserID] then
+        logger:info("No friends cache found for Steam ID " .. steamUserID)
+        return "{}"
+    end
+
+    return json.encode(FriendsCacheStore[steamUserID])
+end
+
+function HasFriendsCache(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if steamUserID == "" then
+        logger:info("Cannot check friends cache without Steam ID")
+        return false
+    end
+
+    return FriendsCacheStore[steamUserID] ~= nil
+end
+
+function SetFriendsCache(friendsJson, steamUserID)
+    assert(type(friendsJson) == "string", "friendsJson must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if friendsJson == "" then
+        logger:error("No friends payload provided")
+        return false, "No friends payload provided"
+    end
+
+    if steamUserID == "" then
+        logger:error("No Steam ID provided for friends cache")
+        return false, "Steam ID not provided"
+    end
+
+    local success, decodedFriends = pcall(json.decode, friendsJson)
+    if not success then
+        logger:error("Failed to decode friends payload JSON: " .. tostring(decodedFriends))
+        return false, "Failed to decode friends payload JSON"
+    end
+
+    local normalizedFriends, errorMessage = normalize_friend_rows(decodedFriends)
+    if not normalizedFriends then
+        logger:error("Invalid friends payload: " .. tostring(errorMessage))
+        return false, errorMessage
+    end
+
+    FriendsCacheStore[steamUserID] = {
+        friends = normalizedFriends,
+        updatedAt = os.time(),
+    }
+
+    if not save_friends_to_file() then
+        return false, "Failed to save friends cache"
+    end
+
+    logger:info("Stored " .. tostring(#normalizedFriends) .. " friends for user " .. steamUserID)
+    return true
+end
+
+function ClearFriendsCache(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if steamUserID == "" then
+        logger:error("No Steam ID provided for ClearFriendsCache")
+        return false
+    end
+
+    FriendsCacheStore[steamUserID] = nil
+
+    if not save_friends_to_file() then
+        return false
+    end
+
+    logger:info("Cleared friends cache for Steam ID: " .. steamUserID)
+    return true
+end
+
 local function on_load()
     print("Gratitude plugin loaded")
     logger:info("Comparing millennium version: " .. millennium.cmp_version(millennium.version(), "2.29.3"))
@@ -275,6 +609,8 @@ local function on_load()
     -- Load existing cache and consent data from disk
     load_cache_from_file()
     load_consent_from_file()
+    load_givers_from_file()
+    load_friends_from_file()
 
     logger:info("Gratitude plugin loaded with Millennium version " .. millennium.version())
     millennium.ready()
@@ -288,6 +624,8 @@ local function on_unload()
     -- Save cache and consent one last time before unloading
     save_cache_to_file()
     save_consent_to_file()
+    save_givers_to_file()
+    save_friends_to_file()
 end
 
 -- Called when the Steam UI has fully loaded.

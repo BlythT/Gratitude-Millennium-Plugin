@@ -43,3 +43,41 @@ export type LicenseData = {
   acquisition: string;
   date: string;
 };
+
+export type LicenseMatch = {
+  licenseKey: string;
+  data: LicenseData;
+};
+
+export type GiverSource = 'manual' | 'friend-cache';
+
+export type GiverData = {
+  licenseKey: string;
+  libraryTitle: string;
+  displayName: string;
+  steamID64?: string;
+  profileUrl?: string;
+  notes?: string;
+  source: GiverSource;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type FriendStatus = 'in-game' | 'online' | 'offline' | 'unknown';
+
+export type FriendRecord = {
+  steamID64: string;
+  profileUrl?: string;
+  displayName: string;
+  nicknameOrAlias?: string | null;
+  avatarUrl?: string;
+  status: FriendStatus;
+  gameName?: string | null;
+  lastOnlineText?: string | null;
+  updatedAt: number;
+};
+
+export type FriendsCacheSnapshot = {
+  friends: FriendRecord[];
+  updatedAt: number;
+};

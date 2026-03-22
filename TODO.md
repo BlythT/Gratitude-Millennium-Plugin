@@ -8,3 +8,8 @@
 - [ ] Fix functionality for non-english steam clients
   - License data has non-english "acquired" method field ![todo image 1](./assets/todo1.png)
   - License data has english game name but non-english library game name ![todo image 2](./assets/todo2.png)
+- [ ] Gifted tooltip doesn't show until you've played a game (because of Last Played selector)
+
+# Long term
+- [ ] Widen scope and show icons for all license types, configurable by settings (people requested knowing when they bought a game, not just gifts, which this plugin could definitely do)
+- [ ] Confugrable icon for gift?
