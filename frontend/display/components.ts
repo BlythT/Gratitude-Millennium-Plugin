@@ -1,7 +1,8 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
-import { ICONS, UI_CLASSES, type LicenseData } from '../types'
+import { ICONS, UI_CLASSES, type GiverData, type LicenseData, type LicenseMatch } from '../types'
 import { log } from '../../lib/logger';
 import confetti from 'canvas-confetti';
+import { showGiverModal } from '../components/GiverModal';
 
 function createDisplayId(gameName: string): string {
   return 'gratitude-' + gameName.toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -66,9 +67,24 @@ function fireConfetti(doc: Document) {
   }, 5000);
 }
 
-function createContentContainer(doc: Document, data?: LicenseData): HTMLElement {
+function createContentContainer(
+  doc: Document,
+  data?: LicenseData,
+  giver?: GiverData | null,
+  onManageGiver?: () => void,
+): HTMLElement {
   const textDiv = doc.createElement('div');
   textDiv.className = UI_CLASSES.textContainer;
+
+  if (onManageGiver) {
+    textDiv.style.cursor = 'pointer';
+    textDiv.title = giver ? `Gifted by ${giver.displayName}` : 'Add Giver';
+    textDiv.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onManageGiver();
+    });
+  }
 
   const labelDiv = doc.createElement('div');
   labelDiv.className = UI_CLASSES.label;
@@ -99,8 +115,12 @@ function createContentContainer(doc: Document, data?: LicenseData): HTMLElement 
 export function createDisplay(
   doc: Document,
   gameName: string,
-  data?: LicenseData
+  match: LicenseMatch,
+  giver: GiverData | null,
+  steamUserID: string,
+  onGiverUpdated: () => void,
 ): HTMLElement | null {
+  const data = match.data;
   log('Creating display with data:', data);
 
   // Don't create anything if not a gift
@@ -123,7 +143,18 @@ export function createDisplay(
   // Add icons and content
   const icon = createGiftIcon(doc);
   container.appendChild(icon);
-  container.appendChild(createContentContainer(doc, data));
+  container.appendChild(createContentContainer(doc, data, giver, () => {
+    showGiverModal({
+      parentWindow: doc.defaultView ?? window,
+      steamUserID,
+      gameTitle: gameName,
+      licenseKey: match.licenseKey,
+      giftDate: data.date,
+      existingGiver: giver,
+      onSaved: onGiverUpdated,
+      onDeleted: onGiverUpdated,
+    });
+  }));
 
   log('Created display container:', container);
 

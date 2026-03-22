@@ -1,5 +1,5 @@
 import { callable } from '@steambrew/client';
-import { log, logError } from '../lib/logger';
+import { log, logError } from '../../lib/logger';
 
 // Backend callable functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');

@@ -1,4 +1,4 @@
-import { log, logError } from "../lib/logger";
+import { log, logError } from "../../lib/logger";
 import { showModal, ConfirmModal, callable } from "@steambrew/client";
 
 const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
@@ -35,7 +35,7 @@ export const showConsentModal = async (steamUserID: string) => {
         const consentModalWindow = showModal(
             <ConfirmModal
                 strTitle="Gratitude: Local Storage Permission"
-                strDescription="This plugin needs to store your Steam license history locally (acquisition dates and sources) to function. Your data never leaves your computer."
+                strDescription="This plugin needs to store your Steam license history (acquisition dates and sources) and friends list locally to function. Your data never leaves your computer."
                 strOKButtonText="Allow"
                 strCancelButtonText="Deny"
                 bAlertDialog={false}

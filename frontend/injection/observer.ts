@@ -3,12 +3,22 @@ import { log } from '../../lib/logger';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
-import { SELECTORS } from '../types';
+import { giverCache } from './givercache';
+import { SELECTORS, type LicenseMatch } from '../types';
 
 let observer: MutationObserver | null = null;
 let onMainContentReady: ((doc: Document) => void) | null = null;
 let mainContentDetected = false;
 let lastProcessedGame: string | null = null;
+
+function logGamePageScan(
+	gameName: string | null,
+	result: string,
+	details?: Record<string, unknown>,
+): void {
+	const summary = { gameName, result, ...details };
+	log('Game page scan:', JSON.stringify(summary));
+}
 
 export function resetState(): void {
   log('Resetting state');
@@ -22,8 +32,6 @@ export function resetState(): void {
 
 // Detect game name from document - try multiple selectors
 export function detectGameName(doc: Document): string | null {
-  log('Detecting game name');
-
   // Try standard selector first
   let nameElem = doc.querySelector(SELECTORS.standard.gameName);
 
@@ -32,9 +40,7 @@ export function detectGameName(doc: Document): string | null {
     nameElem = doc.querySelector(SELECTORS.bigPicture.gameName);
   }
 
-  const gameName = nameElem?.textContent?.trim() || null;
-  log('Detected game name:', gameName);
-  return gameName;
+  return nameElem?.textContent?.trim() || null;
 }
 
 /**
@@ -92,7 +98,10 @@ async function triggerCacheRefresh(): Promise<void> {
     return;
   }
   try {
-    await gameLicenseCache.getData(steamID);
+    await Promise.all([
+      gameLicenseCache.getData(steamID),
+      giverCache.getAll(steamID),
+    ]);
     log('License data fetched and cache populated');
   } catch (error) {
     log('Error fetching license data:', error);
@@ -106,6 +115,15 @@ async function triggerCacheRefresh(): Promise<void> {
 function processAndRefreshIfNeeded(doc: Document): void {
   const needsCacheRefresh = handleGamePageSync(doc);
   if (needsCacheRefresh) {
+    triggerCacheRefresh();
+  }
+}
+
+export function refreshGamePage(doc: Document): void {
+  log('refreshGamePage called');
+  const needsCacheRefresh = handleGamePageSync(doc, true);
+  if (needsCacheRefresh) {
+    log('refreshGamePage requested async cache refresh');
     triggerCacheRefresh();
   }
 }
@@ -134,21 +152,20 @@ function checkMainContentReady(doc: Document): void {
  * @param doc
  * @returns boolean — true signals that an async cache refresh should be triggered
  */
-function handleGamePageSync(doc: Document): boolean {
-  log('handleGamePage called');
-
+function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
   // Check if main content is ready and trigger callback
   checkMainContentReady(doc);
 
   const gameName = detectGameName(doc);
   if (!gameName) {
+    logGamePageScan(null, 'no-game-detected', { forceRefresh });
     lastProcessedGame = null;
     return false;
   }
 
   const existingDisplay = getExistingDisplay(doc, gameName)
-  if (gameName === lastProcessedGame && existingDisplay && !existingDisplay.dataset.missing) {
-    log('Game name unchanged and display exists, skipping');
+  if (!forceRefresh && gameName === lastProcessedGame && existingDisplay && !existingDisplay.dataset.missing) {
+    logGamePageScan(gameName, 'skipped-existing-display', { forceRefresh });
     return false;
   }
 
@@ -158,7 +175,7 @@ function handleGamePageSync(doc: Document): boolean {
   ]);
 
   if (!tooltipContainer) {
-    log('Tooltip container not found, skipping');
+    logGamePageScan(gameName, 'tooltip-container-missing', { forceRefresh });
     return false;
   }
 
@@ -168,7 +185,7 @@ function handleGamePageSync(doc: Document): boolean {
   ]);
 
   if (!insertAfterTarget) {
-    log('Insert after target not found, skipping');
+    logGamePageScan(gameName, 'insert-target-missing', { forceRefresh });
     return false;
   }
 
@@ -177,67 +194,72 @@ function handleGamePageSync(doc: Document): boolean {
   // Get current Steam ID
   const steamID = getCurrentAccountID();
   if (!steamID) {
-    log('Steam ID not available, skipping');
+    logGamePageScan(gameName, 'steam-id-missing', { forceRefresh });
     return true;
   }
 
-  log('Starting to process game:', gameName);
-
-  if (existingDisplay && existingDisplay.dataset.missing) {
-    log('Existing display indicates missing data, removing it for refresh');
+  if (existingDisplay && (existingDisplay.dataset.missing || forceRefresh)) {
+    log('Removing existing display before refresh');
     existingDisplay.remove();
   }
 
   try {
-    log('Checking if cache is populated');
     if (!gameLicenseCache.getDataSync(steamID)) {
-      log('Cache not populated, inserting missing data display');
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {
-        log('Failed to create missing data display');
+        logGamePageScan(gameName, 'missing-display-create-failed', { forceRefresh });
         return true;
       }
 
       insertAfterTarget.after(missingDisplay);
-      log('Missing data display inserted, will fetch data asynchronously');
+      logGamePageScan(gameName, 'missing-cache-display-inserted', { forceRefresh });
       return true;
     }
-
-    log('Cache populated, proceeding to fetch license data synchronously');
 
     const licenseDataMap = gameLicenseCache.getDataSync(steamID);
     if (!licenseDataMap) {
-      log('Cache is empty despite being marked populated, this should not happen');
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {
-        log('Failed to create missing data display');
+        logGamePageScan(gameName, 'cache-inconsistent-display-create-failed', { forceRefresh });
         return true;
       }
       insertAfterTarget.after(missingDisplay);
+      logGamePageScan(gameName, 'cache-inconsistent-missing-display-inserted', { forceRefresh });
       return true;
     }
-    log('Retrieved', licenseDataMap.size, 'license entries');
 
     // Check if data exists for this game using fuzzy matching
-    const data = fuzzyMatch(licenseDataMap, gameName);
-    log('Data for current game:', data ? 'Found' : 'Not found');
+    const match = fuzzyMatch(licenseDataMap, gameName);
 
-    if (!data) {
-      log('No data available for this specific game, skipping display');
+    if (!match) {
+      logGamePageScan(gameName, 'license-data-missing', {
+        forceRefresh,
+        cacheEntries: licenseDataMap.size,
+      });
       return true; // Signal async fetch: might exist on backend but not cached
     }
 
-    const display = createDisplay(doc, gameName, data);
-    if (!display) return false;
+    const giver = giverCache.getEntrySync(steamID, match.licenseKey);
+    const display = createDisplay(doc, gameName, match, giver, steamID, () => refreshGamePage(doc));
+    if (!display) {
+      logGamePageScan(gameName, 'display-create-failed', {
+        forceRefresh,
+        licenseKey: match.licenseKey,
+        hasGiver: !!giver,
+      });
+      return false;
+    }
 
     insertAfterTarget.after(display);
-    log('Display inserted');
+    logGamePageScan(gameName, 'display-inserted', {
+      forceRefresh,
+      licenseKey: match.licenseKey,
+      hasGiver: !!giver,
+    });
     return false;
   } catch (error) {
     log('Error handling game page:', error);
     return false;
-  } finally {
-    log('Processing complete for:', gameName);
   }
 }
 
@@ -254,11 +276,10 @@ export function setupObserver(doc: Document): void {
 
   let isAnimationFramePending = false;
 
-  observer = new MutationObserver((mutations) => {
+  observer = new MutationObserver(() => {
     // Debounce: only schedule one processing per frame, even if multiple mutations occur.
     // This is safe because we query current DOM state (not mutation records), so we always
     // see the final state after all mutations complete.
-    console.log('Mutations:', mutations);  // Log to see what's changing
     if (isAnimationFramePending) return;
 
     isAnimationFramePending = true;
@@ -296,9 +317,12 @@ export function setupObserver(doc: Document): void {
  * @param gameName - The game name to search for
  * @returns The matching value, or null if no match found
  */
-function fuzzyMatch(map: Map<string, any>, gameName: string): any | null {
+function fuzzyMatch(map: Map<string, any>, gameName: string): LicenseMatch | null {
   if (map.has(gameName)) {
-    return map.get(gameName);
+    return {
+      licenseKey: gameName,
+      data: map.get(gameName),
+    };
   }
 
   let forwardMatch: { key: string; value: any } | null = null; // gameName is prefix of key
@@ -319,7 +343,15 @@ function fuzzyMatch(map: Map<string, any>, gameName: string): any | null {
   }
 
   // Prefer reverse match (exact edition) over forward (base game with suffix)
-  return reverseMatch?.value ?? forwardMatch?.value ?? null;
+  const resolvedMatch = reverseMatch ?? forwardMatch;
+  if (!resolvedMatch) {
+    return null;
+  }
+
+  return {
+    licenseKey: resolvedMatch.key,
+    data: resolvedMatch.value,
+  };
 }
 
 export function disconnectObserver(): void {
