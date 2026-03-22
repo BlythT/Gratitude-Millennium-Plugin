@@ -11,5 +11,7 @@
 - [ ] Gifted tooltip doesn't show until you've played a game (because of Last Played selector)
 
 # Long term
+- [x] Add Gift Labeling (allow people to assign manually who gave them the game with optional notes)
 - [ ] Widen scope and show icons for all license types, configurable by settings (people requested knowing when they bought a game, not just gifts, which this plugin could definitely do)
-- [ ] Confugrable icon for gift?
+- [ ] Configurable icon between gifters avatar and existing icon?
+- [ ] Watch for steam gift page (someone accepts a gift in their steam client) and auto-fill gifter and notes as labels?
