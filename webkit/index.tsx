@@ -15,8 +15,13 @@ export default async function WebkitMain() {
 		return;
 	}
 
-	await maybeSyncLicenses(steamUserID);
-	await maybeSyncFriends(steamUserID);
+	void maybeSyncLicenses(steamUserID).catch((error) => {
+		logError('Unexpected error during license sync:', error);
+	});
+
+	void maybeSyncFriends(steamUserID).catch((error) => {
+		logError('Unexpected error during friends sync:', error);
+	});
 }
 
 async function maybeSyncLicenses(steamUserID) {
