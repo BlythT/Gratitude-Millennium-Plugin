@@ -9,6 +9,7 @@ local CACHE_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_cache.json"
 local CONSENT_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_consent.json")
 local GIVER_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_givers.json")
 local FRIENDS_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_friends.json")
+local SETTINGS_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_settings.json")
 
 -- Global cache for license data (indexed by Steam ID, then game name)
 -- Structure: { [steamUserID] = { [gameName] = { date, acquisition }, [gameName2] = { ... } }, ... }    
@@ -22,6 +23,9 @@ local GiverStore = {}
 
 -- Cached Steam friends keyed by Steam ID
 local FriendsCacheStore = {}
+
+-- UI settings keyed by Steam ID
+local SettingsStore = {}
 
 -- Helper function to count table entries
 local function table_size(t)
@@ -168,6 +172,21 @@ local function load_friends_from_file()
     return false
 end
 
+local function save_settings_to_file()
+    return save_json(SETTINGS_FILE_PATH, SettingsStore, "Settings store")
+end
+
+local function load_settings_from_file()
+    local loadedSettings = load_json(SETTINGS_FILE_PATH, "Settings store")
+    if loadedSettings then
+        logger:info("Settings store loaded successfully from file")
+        SettingsStore = loadedSettings
+        return true
+    end
+    logger:info("Load failed or no existing settings store found, starting with empty settings store")
+    return false
+end
+
 local function ensure_account_store(store, steamUserID)
     if not store[steamUserID] then
         store[steamUserID] = {}
@@ -277,6 +296,27 @@ local function normalize_friend_rows(decodedFriends)
     end
 
     return normalizedFriends
+end
+
+local function normalize_settings_payload(decodedPayload)
+    if type(decodedPayload) ~= "table" then
+        return nil, "settings payload must decode to a table"
+    end
+
+    local ok, message = validate_required_string(decodedPayload.steamUserID, "steamUserID")
+    if not ok then
+        return nil, message
+    end
+
+    if type(decodedPayload.settings) ~= "table" then
+        return nil, "settings must be a table"
+    end
+
+    local normalized = {
+        showFriendPickerSteamUrl = decodedPayload.settings.showFriendPickerSteamUrl == true
+    }
+
+    return decodedPayload.steamUserID, normalized
 end
 
 -- Function to be called from frontend to set license data
@@ -602,6 +642,47 @@ function ClearFriendsCache(steamUserID)
     return true
 end
 
+function GetUiSettings(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    if steamUserID == "" then
+        logger:info("No UI settings found without Steam ID")
+        return "{}"
+    end
+
+    return json.encode(SettingsStore[steamUserID] or {})
+end
+
+function SetUiSettings(payloadJson)
+    assert(type(payloadJson) == "string", "payloadJson must be a string")
+
+    if payloadJson == "" then
+        logger:error("No settings payload provided")
+        return false, "No settings payload provided"
+    end
+
+    local success, decodedPayload = pcall(json.decode, payloadJson)
+    if not success then
+        logger:error("Failed to decode settings payload JSON: " .. tostring(decodedPayload))
+        return false, "Failed to decode settings payload JSON"
+    end
+
+    local steamUserID, normalizedSettingsOrError = normalize_settings_payload(decodedPayload)
+    if not steamUserID then
+        logger:error("Invalid settings payload: " .. tostring(normalizedSettingsOrError))
+        return false, normalizedSettingsOrError
+    end
+
+    SettingsStore[steamUserID] = normalizedSettingsOrError
+
+    if not save_settings_to_file() then
+        return false, "Failed to save settings store"
+    end
+
+    logger:info("Saved UI settings for Steam ID " .. steamUserID)
+    return true
+end
+
 local function on_load()
     print("Gratitude plugin loaded")
     logger:info("Comparing millennium version: " .. millennium.cmp_version(millennium.version(), "2.29.3"))
@@ -611,6 +692,7 @@ local function on_load()
     load_consent_from_file()
     load_givers_from_file()
     load_friends_from_file()
+    load_settings_from_file()
 
     logger:info("Gratitude plugin loaded with Millennium version " .. millennium.version())
     millennium.ready()
@@ -626,6 +708,7 @@ local function on_unload()
     save_consent_to_file()
     save_givers_to_file()
     save_friends_to_file()
+    save_settings_to_file()
 end
 
 -- Called when the Steam UI has fully loaded.

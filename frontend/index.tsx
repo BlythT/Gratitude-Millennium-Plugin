@@ -1,10 +1,11 @@
-import { IconsModule, definePlugin, Field, DialogButton, callable } from '@steambrew/client';
+import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
 import { log, logError } from '../lib/logger';
 import { setupObserver, onMainContentReady_Register } from './injection/observer';
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
 import { POPUPS } from './types';
+import { useSettings } from './settings';
 
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
@@ -13,8 +14,10 @@ const clearCache = callable<[{ steamUserID: string }], boolean>('ClearCache');
 const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
 
 const SettingsContent = () => {
+	const steamUserID = getCurrentAccountID();
 	const [isLoading, setIsLoading] = useState(true);
 	const [entryCount, setEntryCount] = useState(0);
+	const [settings, setSetting] = useSettings(steamUserID);
 
 	const checkCache = async () => {
 		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() }).then((populated) => {
@@ -66,31 +69,40 @@ const SettingsContent = () => {
 		pollCacheStatus();
 	}, []);
 
-	if (isLoading) {
-		return (
-			<Field
-				label="Gift History"
-				description="Gift History not initialized! Please visit the Store page and come back."
-				bottomSeparator="standard"
-			/>
-		);
-	}
-
 	return (
 		<>
-			<Field
-				label="Cache Status"
-				description={`${entryCount} game license ${entryCount === 1 ? 'entry' : 'entries'} cached`}
+			<ToggleField
+				label="Show Steam links"
+				description="Show and edit profile links and IDs."
+				checked={settings.showFriendPickerSteamUrl}
+				onChange={(checked) => void setSetting('showFriendPickerSteamUrl', checked)}
 				bottomSeparator="standard"
 			/>
-			<Field label="Cache Management" bottomSeparator="standard">
-				<DialogButton onClick={handleClearCache} style={{ padding: '.25em .5em' }}>
-					Clear Cache
-				</DialogButton>
-			</Field>
-			<Field label="Missing something?"
-				description="Newly gifted games might not be detected: try visiting the store or restarting steam before checking your library"
-				bottomSeparator="standard" />
+			{isLoading ? (
+				<Field
+					label="Gift History"
+					description="Gift History not initialized! Please visit the Store page and come back."
+					bottomSeparator="standard"
+				/>
+			) : (
+				<>
+					<Field
+						label="Cache"
+						description={`${entryCount} game license ${entryCount === 1 ? 'entry' : 'entries'} cached`}
+						bottomSeparator="standard"
+						childrenLayout="below"
+					>
+						<DialogButton onClick={handleClearCache}>
+							Clear
+						</DialogButton>
+					</Field>
+					<Field
+						label="Missing something?"
+						description="Newly gifted games might not be detected: try visiting the store or restarting steam before checking your library"
+						bottomSeparator="standard"
+					/>
+				</>
+			)}
 		</>
 	);
 };

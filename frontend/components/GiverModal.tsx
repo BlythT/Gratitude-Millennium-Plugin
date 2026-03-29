@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { log, logError } from '../../lib/logger';
 import { friendsCache } from '../injection/friendscache';
 import { giverCache } from '../injection/givercache';
+import { useSettings, type GratitudeSettings } from '../settings';
 import type { FriendRecord, FriendsCacheSnapshot, GiverData, GiverSource } from '../types';
 
 type GiverModalOptions = {
@@ -165,7 +166,11 @@ function normalizeAutocompleteText(value: string): string {
 		.trim();
 }
 
-function getFriendLinkLabel(friend: FriendRecord): string {
+function getFriendLinkLabel(friend: FriendRecord, settings: GratitudeSettings): string {
+	if (!settings.showFriendPickerSteamUrl) {
+		return '';
+	}
+
 	const rawValue = friend.profileUrl ?? friend.steamID64 ?? '';
 	if (!rawValue) {
 		return '';
@@ -226,6 +231,7 @@ function GiverModalContent({
 	onDeleted,
 	closeModal,
 }: GiverModalProps) {
+	const [settings] = useSettings(steamUserID);
 	const [displayName, setDisplayName] = useState(existingGiver?.displayName ?? '');
 	const [profileField, setProfileField] = useState(
 		existingGiver?.profileUrl ?? existingGiver?.steamID64 ?? '',
@@ -238,7 +244,7 @@ function GiverModalContent({
 	const [statusMessage, setStatusMessage] = useState<string | null>(null);
 	const [isEditing, setIsEditing] = useState(!existingGiver);
 	const [isDisplayNameFocused, setIsDisplayNameFocused] = useState(false);
-	const [ghostOverlayMetrics, setGhostOverlayMetrics] = useState<GhostOverlayMetrics | null>(null);
+	const [ghostOverlayMetrics] = useState<GhostOverlayMetrics | null>(null);
 	const displayNameFieldRef = useRef<HTMLDivElement | null>(null);
 
 	useEffect(() => {
@@ -618,6 +624,13 @@ function GiverModalContent({
 				value={notes}
 				onChange={(event) => setNotes(event.currentTarget.value)}
 			/>
+			{settings.showFriendPickerSteamUrl ? (
+				<TextField
+					label="Steam Profile URL / ID"
+					value={profileField}
+					onChange={(event) => setProfileField(event.currentTarget.value)}
+				/>
+			) : null}
 			<div style={{ display: 'grid', gap: '8px', width: '100%', minWidth: 0 }}>
 				<div style={{ display: 'grid', gap: '6px' }}>
 					<div style={detailLabelStyle}>Friend Finder</div>
@@ -640,7 +653,10 @@ function GiverModalContent({
 					<ScrollPanel>
 						<div style={{ maxHeight: '220px', overflowY: 'auto' }}>
 							<div style={{ display: 'grid', gap: '8px', padding: '8px' }}>
-								{filteredFriends.length > 0 ? filteredFriends.map((friend) => (
+								{filteredFriends.length > 0 ? filteredFriends.map((friend) => {
+									const friendLinkLabel = getFriendLinkLabel(friend, settings);
+
+									return (
 									<button
 										key={friend.steamID64}
 										type="button"
@@ -672,20 +688,23 @@ function GiverModalContent({
 											<div style={{ fontSize: '12px', opacity: 0.75, minWidth: 0 }}>
 												{getStatusLabel(friend)}
 											</div>
-											<div
-												style={{
-													fontSize: '12px',
-													opacity: 0.6,
-													minWidth: 0,
-													overflowWrap: 'anywhere',
-													wordBreak: 'break-word',
-												}}
-											>
-												{getFriendLinkLabel(friend)}
-											</div>
+											{friendLinkLabel ? (
+												<div
+													style={{
+														fontSize: '12px',
+														opacity: 0.6,
+														minWidth: 0,
+														overflowWrap: 'anywhere',
+														wordBreak: 'break-word',
+													}}
+												>
+													{friendLinkLabel}
+												</div>
+											) : null}
 										</div>
 									</button>
-								)) : (
+									);
+								}) : (
 									<div style={{ padding: '12px', fontSize: '12px', opacity: 0.75 }}>
 										{friendsSnapshot
 											? 'No cached friends match the current field values. Try another search or fetch friends for a fresh cache.'
