@@ -2,9 +2,11 @@ node_modules/
 .millennium/
 pnpm-lock.yaml
 AGENTS.md
+archive/
 
 # Gratitude plugin data
 *gratitude_consent.json
 *gratitude_cache.json
 *gratitude_friends.json
 *gratitude_givers.json
+backend/gratitude_settings.json
