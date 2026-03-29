@@ -4,8 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Added a persistent advanced setting to show or hide Steam profile links and IDs in the giver friend finder.
+- Added support for showing and editing a Steam profile URL or ID on manual giver entries when the advanced setting is enabled.
+
 ### Changed
 
+- Updated the Gratitude sidebar settings to use native Millennium-style controls while keeping plugin-owned persistence for UI preferences.
+- Unified cache status and cache clearing into a single cache section in the settings sidebar.
 - Updated webkit startup sync to run license and friends cache refreshes in the background instead of awaiting them during `WebkitMain()` startup.
 - Reduced the chance that visiting Steam Store or Community pages will feel delayed while Gratitude refreshes cached data.
 
