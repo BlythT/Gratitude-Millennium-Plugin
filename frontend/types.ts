@@ -63,17 +63,12 @@ export type GiverData = {
   updatedAt: number;
 };
 
-export type FriendStatus = 'in-game' | 'online' | 'offline' | 'unknown';
-
 export type FriendRecord = {
   steamID64: string;
   profileUrl?: string;
   displayName: string;
   nicknameOrAlias?: string | null;
   avatarUrl?: string;
-  status: FriendStatus;
-  gameName?: string | null;
-  lastOnlineText?: string | null;
   updatedAt: number;
 };
 

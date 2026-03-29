@@ -144,10 +144,7 @@ function parseFriendsList(root) {
 		const profileUrl = row.querySelector('.selectable_overlay[href]')?.href?.trim();
 		const avatarUrl = row.querySelector('.player_avatar img[src]')?.src?.trim();
 		const displayName = getFriendDisplayName(row);
-		const gameName = row.querySelector('.friend_game_link')?.textContent?.trim();
-		const lastOnlineText = row.querySelector('.friend_last_online_text')?.textContent?.trim();
 		const nicknameOrAlias = getFriendAlias(row, displayName, profileUrl);
-		const status = getFriendStatus(row);
 
 		if (!steamID64 || !displayName) {
 			logError('Skipping friend row with incomplete data.');
@@ -160,9 +157,6 @@ function parseFriendsList(root) {
 			displayName,
 			nicknameOrAlias,
 			avatarUrl: avatarUrl || undefined,
-			status,
-			gameName: gameName || undefined,
-			lastOnlineText: lastOnlineText || undefined,
 		});
 	}
 
@@ -240,22 +234,6 @@ function getProfileSlug(profileUrl) {
 
 function isSteamID64(value) {
 	return /^\d{17}$/.test(value.trim());
-}
-
-function getFriendStatus(row) {
-	if (row.classList.contains('in-game')) {
-		return 'in-game';
-	}
-
-	if (row.classList.contains('online')) {
-		return 'online';
-	}
-
-	if (row.classList.contains('offline')) {
-		return 'offline';
-	}
-
-	return 'unknown';
 }
 
 // Standardise date format (Last Played is Mar 5, 2025 while License Data is 5 Mar, 2025)

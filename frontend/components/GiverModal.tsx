@@ -141,22 +141,6 @@ function normalizeProfileField(value: string): { steamID64?: string; profileUrl?
 	return { profileUrl: trimmed };
 }
 
-function getStatusLabel(friend: FriendRecord): string {
-	if (friend.status === 'in-game' && friend.gameName) {
-		return `In game: ${friend.gameName}`;
-	}
-
-	if (friend.status === 'online') {
-		return 'Online';
-	}
-
-	if (friend.status === 'offline' && friend.lastOnlineText) {
-		return friend.lastOnlineText;
-	}
-
-	return friend.status;
-}
-
 function normalizeAutocompleteText(value: string): string {
 	return value
 		.toLowerCase()
@@ -646,8 +630,8 @@ function GiverModalContent({
 						: friendsSnapshot
 							? friendAssistQuery
 								? `${filteredFriends.length} matching friend suggestion${filteredFriends.length === 1 ? '' : 's'}`
-								: `${friendsSnapshot.friends.length} recent friend suggestion${friendsSnapshot.friends.length === 1 ? '' : 's'}`
-							: 'No local friends cache yet. Visit a Steam Community page or use Refresh Friends, or enter a giver manually.'}
+								: `${friendsSnapshot.friends.length} cached friend suggestion${friendsSnapshot.friends.length === 1 ? '' : 's'}`
+							: 'No local friends cache yet. Visit a Steam Community page or use Fetch Friends, or enter a giver manually.'}
 				</div>
 				<div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', height: '220px', overflow: 'hidden' }}>
 					<ScrollPanel>
@@ -685,9 +669,6 @@ function GiverModalContent({
 											<div style={{ minWidth: 0 }}>
 												{getFriendDisplayLabel(friend)}
 											</div>
-											<div style={{ fontSize: '12px', opacity: 0.75, minWidth: 0 }}>
-												{getStatusLabel(friend)}
-											</div>
 											{friendLinkLabel ? (
 												<div
 													style={{
@@ -707,7 +688,7 @@ function GiverModalContent({
 								}) : (
 									<div style={{ padding: '12px', fontSize: '12px', opacity: 0.75 }}>
 										{friendsSnapshot
-											? 'No cached friends match the current field values. Try another search or fetch friends for a fresh cache.'
+											? 'No cached friends match the current field values. Try another search or fetch friends again for a fresh cache.'
 											: 'No cached friends yet. Fetch friends to populate suggestions.'}
 									</div>
 								)}

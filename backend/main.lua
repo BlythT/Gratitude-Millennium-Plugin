@@ -277,18 +277,6 @@ local function normalize_friend_rows(decodedFriends)
                 normalizedFriend.avatarUrl = friend.avatarUrl
             end
 
-            if type(friend.status) == "string" and friend.status ~= "" then
-                normalizedFriend.status = friend.status
-            end
-
-            if type(friend.gameName) == "string" and friend.gameName ~= "" then
-                normalizedFriend.gameName = friend.gameName
-            end
-
-            if type(friend.lastOnlineText) == "string" and friend.lastOnlineText ~= "" then
-                normalizedFriend.lastOnlineText = friend.lastOnlineText
-            end
-
             table.insert(normalizedFriends, normalizedFriend)
         else
             logger:error("Skipping invalid friend record in SetFriendsCache")
