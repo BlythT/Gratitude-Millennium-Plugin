@@ -444,6 +444,16 @@ function GiverModalContent({
 	const linkedFriend = findLinkedFriend(friendsSnapshot, existingGiver);
 
 	const isLinkedFriend = source === 'friend-cache' && Boolean(profileField);
+	const handleOpenLinkedProfile = () => {
+		if (!linkedProfileUrl) {
+			return;
+		}
+
+		closeModal();
+		window.setTimeout(() => {
+			window.open(`steam://openurl/${linkedProfileUrl}`);
+		}, 0);
+	};
 
 	const renderDetailView = () => (
 		<div style={{ display: 'grid', gap: '14px', ...modalContentWidthStyle }}>
@@ -466,11 +476,7 @@ function GiverModalContent({
 							cursor: linkedProfileUrl ? 'pointer' : 'default',
 						}}
 						title={linkedProfileUrl ? 'Open Steam profile' : undefined}
-						onClick={() => {
-							if (linkedProfileUrl) {
-								window.open(`steam://openurl/${linkedProfileUrl}`);
-							}
-						}}
+						onClick={handleOpenLinkedProfile}
 					>
 						{linkedFriend?.avatarUrl ? (
 							<img
