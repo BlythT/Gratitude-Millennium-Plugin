@@ -1,10 +1,11 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import { log } from '../../lib/logger';
+import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
 import { giverCache } from './givercache';
-import { SELECTORS, type LicenseMatch } from '../types';
+import { SELECTORS } from '../types';
 
 let observer: MutationObserver | null = null;
 let onMainContentReady: ((doc: Document) => void) | null = null;
@@ -229,7 +230,7 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
     }
 
     // Check if data exists for this game using fuzzy matching
-    const match = fuzzyMatch(licenseDataMap, gameName);
+    const match = fuzzyMatchLicenseName(licenseDataMap, gameName);
 
     if (!match) {
       logGamePageScan(gameName, 'license-data-missing', {
@@ -305,53 +306,6 @@ export function setupObserver(doc: Document): void {
   triggerCacheRefresh().then(() => {
     processAndRefreshIfNeeded(doc);
   });
-}
-
-/**
- * Fuzzy matches a game name in the map using bidirectional prefix matching.
- * Handles cases where licenses have suffixes like " - Gift" or " - Closed Beta Access".
- * Forward matches (key starts with gameName) prefer the shortest key (base game over DLC).
- * Reverse matches (gameName starts with key) take priority over forward matches.
- *
- * @param map - The map to search in
- * @param gameName - The game name to search for
- * @returns The matching value, or null if no match found
- */
-function fuzzyMatch(map: Map<string, any>, gameName: string): LicenseMatch | null {
-  if (map.has(gameName)) {
-    return {
-      licenseKey: gameName,
-      data: map.get(gameName),
-    };
-  }
-
-  let forwardMatch: { key: string; value: any } | null = null; // gameName is prefix of key
-  let reverseMatch: { key: string; value: any } | null = null; // key is prefix of gameName
-
-  for (const [key, value] of map.entries()) {
-    if (key.startsWith(gameName)) {
-      // Forward: prefer shortest key (base game over DLC)
-      if (!forwardMatch || key.length < forwardMatch.key.length) {
-        forwardMatch = { key, value };
-      }
-    } else if (gameName.startsWith(key)) {
-      // Reverse: prefer longest key (most specific edition)
-      if (!reverseMatch || key.length > reverseMatch.key.length) {
-        reverseMatch = { key, value };
-      }
-    }
-  }
-
-  // Prefer reverse match (exact edition) over forward (base game with suffix)
-  const resolvedMatch = reverseMatch ?? forwardMatch;
-  if (!resolvedMatch) {
-    return null;
-  }
-
-  return {
-    licenseKey: resolvedMatch.key,
-    data: resolvedMatch.value,
-  };
 }
 
 export function disconnectObserver(): void {
