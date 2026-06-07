@@ -1,7 +1,6 @@
 node_modules/
 .millennium/
 pnpm-lock.yaml
-AGENTS.md
 archive/
 
 # Gratitude plugin data
