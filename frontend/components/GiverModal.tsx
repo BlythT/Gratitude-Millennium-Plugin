@@ -78,14 +78,7 @@ const ghostFieldContainerStyle = {
 	width: '100%',
 } as const;
 
-type GhostOverlayMetrics = {
-	top: number;
-	left: number;
-	right: number;
-	height: number;
-	fontSize: string;
-	lineHeight: string;
-};
+
 
 function buildProfileUrl(giver?: GiverData | null): string | null {
 	if (!giver) {
@@ -227,8 +220,6 @@ function GiverModalContent({
 	const [isSaving, setIsSaving] = useState(false);
 	const [statusMessage, setStatusMessage] = useState<string | null>(null);
 	const [isEditing, setIsEditing] = useState(!existingGiver);
-	const [isDisplayNameFocused, setIsDisplayNameFocused] = useState(false);
-	const [ghostOverlayMetrics] = useState<GhostOverlayMetrics | null>(null);
 	const displayNameFieldRef = useRef<HTMLDivElement | null>(null);
 
 	useEffect(() => {
@@ -281,13 +272,7 @@ function GiverModalContent({
 		topSuggestedLabel &&
 		normalizeAutocompleteText(topSuggestedLabel) !== normalizeAutocompleteText(displayName),
 	);
-	const ghostCompletionSuffix = (
-		canAcceptTopSuggestion &&
-		topSuggestedLabel.toLowerCase().startsWith(displayName.toLowerCase()) &&
-		topSuggestedLabel.length > displayName.length
-	)
-		? topSuggestedLabel.slice(displayName.length)
-		: '';
+
 
 	const updateDisplayName = (nextValue: string) => {
 		setDisplayName(nextValue);
@@ -318,6 +303,11 @@ function GiverModalContent({
 		);
 
 		try {
+			if (existingGiver && existingGiver.licenseKey !== licenseKey) {
+				log(`Migrating legacy giver entry from "${existingGiver.licenseKey}" to "${licenseKey}"`);
+				await giverCache.remove(steamUserID, existingGiver.licenseKey);
+			}
+
 			const { steamID64, profileUrl } = normalizeProfileField(profileField);
 			const success = await giverCache.upsert(steamUserID, {
 				licenseKey,
@@ -396,47 +386,14 @@ function GiverModalContent({
 			return undefined;
 		}
 
-		const measureOverlay = () => {
-			// TODO: Fix or remove ghost text overlay on top of Steam input field
-			// const computed = window.getComputedStyle(input);
-			// const paddingLeft = Number.parseFloat(computed.paddingLeft || '0') || 0;
-			// const paddingRight = Number.parseFloat(computed.paddingRight || '0') || 0;
-
-			// setGhostOverlayMetrics({
-			// 	top: input.offsetTop,
-			// 	left: input.offsetLeft + paddingLeft,
-			// 	right: Math.max(0, wrapper.clientWidth - (input.offsetLeft + input.offsetWidth) + paddingRight),
-			// 	height: input.offsetHeight,
-			// 	fontSize: computed.fontSize,
-			// 	lineHeight: computed.lineHeight,
-			// });
-		};
-
 		const onKeyDown = (event: Event) => {
 			handleDisplayNameKeyDown(event as unknown as { key: string; preventDefault: () => void });
 		};
 
-		const onFocus = () => {
-			setIsDisplayNameFocused(true);
-			window.requestAnimationFrame(measureOverlay);
-		};
-
-		const onBlur = () => {
-			setIsDisplayNameFocused(false);
-			window.requestAnimationFrame(measureOverlay);
-		};
-
-		measureOverlay();
 		input.addEventListener('keydown', onKeyDown);
-		input.addEventListener('focus', onFocus);
-		input.addEventListener('blur', onBlur);
-		window.addEventListener('resize', measureOverlay);
 
 		return () => {
 			input.removeEventListener('keydown', onKeyDown);
-			input.removeEventListener('focus', onFocus);
-			input.removeEventListener('blur', onBlur);
-			window.removeEventListener('resize', measureOverlay);
 		};
 	}, [canAcceptTopSuggestion, topSuggestedFriend, topSuggestedLabel, displayName]);
 
@@ -444,6 +401,16 @@ function GiverModalContent({
 	const linkedFriend = findLinkedFriend(friendsSnapshot, existingGiver);
 
 	const isLinkedFriend = source === 'friend-cache' && Boolean(profileField);
+	const handleOpenLinkedProfile = () => {
+		if (!linkedProfileUrl) {
+			return;
+		}
+
+		closeModal();
+		window.setTimeout(() => {
+			window.open(`steam://openurl/${linkedProfileUrl}`);
+		}, 0);
+	};
 
 	const renderDetailView = () => (
 		<div style={{ display: 'grid', gap: '14px', ...modalContentWidthStyle }}>
@@ -466,11 +433,7 @@ function GiverModalContent({
 							cursor: linkedProfileUrl ? 'pointer' : 'default',
 						}}
 						title={linkedProfileUrl ? 'Open Steam profile' : undefined}
-						onClick={() => {
-							if (linkedProfileUrl) {
-								window.open(`steam://openurl/${linkedProfileUrl}`);
-							}
-						}}
+						onClick={handleOpenLinkedProfile}
 					>
 						{linkedFriend?.avatarUrl ? (
 							<img
@@ -524,29 +487,6 @@ function GiverModalContent({
 			</div>
 			<div>
 				<div ref={displayNameFieldRef} style={ghostFieldContainerStyle}>
-					{isDisplayNameFocused && ghostCompletionSuffix && ghostOverlayMetrics ? (
-						<div
-							style={{
-								position: 'absolute',
-								top: `${ghostOverlayMetrics.top}px`,
-								left: `${ghostOverlayMetrics.left}px`,
-								right: `${ghostOverlayMetrics.right}px`,
-								height: `${ghostOverlayMetrics.height}px`,
-								display: 'flex',
-								alignItems: 'center',
-								pointerEvents: 'none',
-								whiteSpace: 'pre',
-								overflow: 'hidden',
-								fontSize: ghostOverlayMetrics.fontSize,
-								lineHeight: ghostOverlayMetrics.lineHeight,
-								fontFamily: 'inherit',
-								zIndex: 2,
-							}}
-						>
-							<span style={{ visibility: 'hidden' }}>{displayName}</span>
-							<span style={{ opacity: 0.35 }}>{ghostCompletionSuffix}</span>
-						</div>
-					) : null}
 					<TextField
 						label={(
 							<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>

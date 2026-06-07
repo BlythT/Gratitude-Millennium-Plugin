@@ -1,7 +1,6 @@
 node_modules/
 .millennium/
 pnpm-lock.yaml
-AGENTS.md
 archive/
 
 # Gratitude plugin data
@@ -10,3 +9,7 @@ archive/
 *gratitude_friends.json
 *gratitude_givers.json
 backend/gratitude_settings.json
+
+# Match report tools testing artifacts
+tools/snapshots/
+tools/reports/

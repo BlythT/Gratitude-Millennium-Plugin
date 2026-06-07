@@ -1,10 +1,11 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import { log } from '../../lib/logger';
+import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
 import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
 import { giverCache } from './givercache';
-import { SELECTORS, type LicenseMatch } from '../types';
+import { SELECTORS } from '../types';
 
 let observer: MutationObserver | null = null;
 let onMainContentReady: ((doc: Document) => void) | null = null;
@@ -152,6 +153,39 @@ function checkMainContentReady(doc: Document): void {
  * @param doc
  * @returns boolean — true signals that an async cache refresh should be triggered
  */
+export function detectAppId(doc: Document): number | null {
+  // 1. Try to find standard Steam attributes
+  const appIdElement = doc.querySelector('[data-appid]');
+  if (appIdElement) {
+    const appIdAttr = appIdElement.getAttribute('data-appid');
+    if (appIdAttr) {
+      const parsed = parseInt(appIdAttr, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        log('Detected App ID from data-appid:', parsed);
+        return parsed;
+      }
+    }
+  }
+
+  // 2. Try to search links on the page (Store Page, Community Hub, etc.)
+  const links = doc.querySelectorAll('a[href]');
+  for (const link of Array.from(links)) {
+    const href = link.getAttribute('href');
+    if (!href) continue;
+
+    const match = href.match(/(?:steam:\/\/rungameid\/|steam:\/\/store\/|steam:\/\/url\/StorePage\/|steam:\/\/url\/StoreAppPage\/|store\.steampowered\.com\/app\/|steamcommunity\.com\/app\/)(\d+)/i);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        log('Detected App ID from link href:', parsed, href);
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
 function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
   // Check if main content is ready and trigger callback
   checkMainContentReady(doc);
@@ -204,7 +238,8 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
   }
 
   try {
-    if (!gameLicenseCache.getDataSync(steamID)) {
+    const licenseDataMap = gameLicenseCache.getDataSync(steamID);
+    if (!licenseDataMap) {
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {
         logGamePageScan(gameName, 'missing-display-create-failed', { forceRefresh });
@@ -216,30 +251,42 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
       return true;
     }
 
-    const licenseDataMap = gameLicenseCache.getDataSync(steamID);
-    if (!licenseDataMap) {
-      const missingDisplay = createMissingDataDisplay(doc, gameName);
-      if (!missingDisplay) {
-        logGamePageScan(gameName, 'cache-inconsistent-display-create-failed', { forceRefresh });
-        return true;
+    // Check if data exists for this game using App ID or fuzzy name matching
+    let match = null;
+    const appId = detectAppId(doc);
+    if (appId) {
+      const license = licenseDataMap.byAppId.get(String(appId));
+      if (license) {
+        match = {
+          licenseKey: String(appId),
+          data: license,
+          matchType: 'appid-exact'
+        };
+        log('Found App ID match in cache:', appId, match);
       }
-      insertAfterTarget.after(missingDisplay);
-      logGamePageScan(gameName, 'cache-inconsistent-missing-display-inserted', { forceRefresh });
-      return true;
     }
 
-    // Check if data exists for this game using fuzzy matching
-    const match = fuzzyMatch(licenseDataMap, gameName);
+    if (!match) {
+      const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
+      if (fuzzyMatch) {
+        match = {
+          licenseKey: fuzzyMatch.licenseKey,
+          data: fuzzyMatch.data,
+          matchType: fuzzyMatch.matchType
+        };
+        log('Found fuzzy name match in cache:', gameName, match);
+      }
+    }
 
     if (!match) {
       logGamePageScan(gameName, 'license-data-missing', {
         forceRefresh,
-        cacheEntries: licenseDataMap.size,
+        cacheEntries: licenseDataMap.byName.size,
       });
       return true; // Signal async fetch: might exist on backend but not cached
     }
 
-    const giver = giverCache.getEntrySync(steamID, match.licenseKey);
+    const giver = giverCache.getEntrySync(steamID, match.licenseKey, match.data.name);
     const display = createDisplay(doc, gameName, match, giver, steamID, () => refreshGamePage(doc));
     if (!display) {
       logGamePageScan(gameName, 'display-create-failed', {
@@ -305,53 +352,6 @@ export function setupObserver(doc: Document): void {
   triggerCacheRefresh().then(() => {
     processAndRefreshIfNeeded(doc);
   });
-}
-
-/**
- * Fuzzy matches a game name in the map using bidirectional prefix matching.
- * Handles cases where licenses have suffixes like " - Gift" or " - Closed Beta Access".
- * Forward matches (key starts with gameName) prefer the shortest key (base game over DLC).
- * Reverse matches (gameName starts with key) take priority over forward matches.
- *
- * @param map - The map to search in
- * @param gameName - The game name to search for
- * @returns The matching value, or null if no match found
- */
-function fuzzyMatch(map: Map<string, any>, gameName: string): LicenseMatch | null {
-  if (map.has(gameName)) {
-    return {
-      licenseKey: gameName,
-      data: map.get(gameName),
-    };
-  }
-
-  let forwardMatch: { key: string; value: any } | null = null; // gameName is prefix of key
-  let reverseMatch: { key: string; value: any } | null = null; // key is prefix of gameName
-
-  for (const [key, value] of map.entries()) {
-    if (key.startsWith(gameName)) {
-      // Forward: prefer shortest key (base game over DLC)
-      if (!forwardMatch || key.length < forwardMatch.key.length) {
-        forwardMatch = { key, value };
-      }
-    } else if (gameName.startsWith(key)) {
-      // Reverse: prefer longest key (most specific edition)
-      if (!reverseMatch || key.length > reverseMatch.key.length) {
-        reverseMatch = { key, value };
-      }
-    }
-  }
-
-  // Prefer reverse match (exact edition) over forward (base game with suffix)
-  const resolvedMatch = reverseMatch ?? forwardMatch;
-  if (!resolvedMatch) {
-    return null;
-  }
-
-  return {
-    licenseKey: resolvedMatch.key,
-    data: resolvedMatch.value,
-  };
 }
 
 export function disconnectObserver(): void {

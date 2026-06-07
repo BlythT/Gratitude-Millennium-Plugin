@@ -10,11 +10,13 @@ const clearCacheBackend = callable<[{ steamUserID: string }], boolean>('ClearCac
 interface GameLicenseEntry {
 	date: string;
 	acquisition: string;
+	name?: string;
 }
 
-// User cache stores entries in a Map for efficient O(1) lookups
+// User cache stores entries in Maps for efficient lookups
 interface UserCache {
-	entries: Map<string, GameLicenseEntry>; // Map<gameName, licenseInfo>
+	byAppId: Map<string, GameLicenseEntry>; // Map<appId, licenseInfo>
+	byName: Map<string, GameLicenseEntry>;  // Map<gameName, licenseInfo>
 	isPopulated: boolean;
 }
 
@@ -36,13 +38,13 @@ class GameLicenseCache {
 	 * Since data is append-only, once cached it never needs refreshing
 	 * unless explicitly cleared.
 	 */
-	async getData(steamUserID: string): Promise<Map<string, GameLicenseEntry>> {
+	async getData(steamUserID: string): Promise<UserCache> {
 		const cached = this.cache.get(steamUserID);
 		
 		// Cache hit - data is still valid since it's append-only
 		if (cached && cached.isPopulated) {
-			log(`Cache hit for user ${steamUserID} (${cached.entries.size} entries)`);
-			return cached.entries;
+			log(`Cache hit for user ${steamUserID} (${cached.byAppId.size} byAppId, ${cached.byName.size} byName entries)`);
+			return cached;
 		}
 
 		log(`Cache miss for user ${steamUserID}, fetching from backend`);
@@ -51,11 +53,11 @@ class GameLicenseCache {
 
 	/**
 	 * Get cache data for a user synchronously.
-	 * @returns Map of game license entries, or null if not yet cached
+	 * @returns UserCache, or null if not yet cached
 	 */
-	getDataSync(steamUserID: string): Map<string, GameLicenseEntry> | null {
+	getDataSync(steamUserID: string): UserCache | null {
 		const cached = this.cache.get(steamUserID);
-		return cached && cached.isPopulated ? cached.entries : null;
+		return cached && cached.isPopulated ? cached : null;
 	}
 
 	/**
@@ -65,39 +67,59 @@ class GameLicenseCache {
 	 * - On first access (cache miss)
 	 * - After explicit cache clear
 	 */
-	private async loadFromBackend(steamUserID: string): Promise<Map<string, GameLicenseEntry>> {
+	private async loadFromBackend(steamUserID: string): Promise<UserCache> {
 		try {
 			// First check if backend cache is populated
 			const isPopulated = await isGameLicenseCachePopulated({ steamUserID });
 			
 			if (!isPopulated) {
 				log(`Backend cache not populated for user ${steamUserID}`);
-				this.cache.set(steamUserID, {
-					entries: new Map(),
+				const emptyCache = {
+					byAppId: new Map<string, GameLicenseEntry>(),
+					byName: new Map<string, GameLicenseEntry>(),
 					isPopulated: false
-				});
-				return new Map();
+				};
+				this.cache.set(steamUserID, emptyCache);
+				return emptyCache;
 			}
 
 			// Fetch all entries from backend (returns JSON string)
 			const entriesJson = await getAllCacheEntries({ steamUserID });
-			const dataObj: Record<string, GameLicenseEntry> = entriesJson ? JSON.parse(entriesJson) : {};
+			const dataObj: any = entriesJson ? JSON.parse(entriesJson) : {};
 			
-			// Convert object to Map for efficient lookups
-			const entries = new Map<string, GameLicenseEntry>(Object.entries(dataObj));
-			
-			log(`Loaded ${entries.size} entries from backend for user ${steamUserID}`);
+			// Support legacy flat format if present
+			let byAppIdMap: Map<string, GameLicenseEntry>;
+			let byNameMap: Map<string, GameLicenseEntry>;
 
-			// Update local cache - valid forever since data is append-only
-			this.cache.set(steamUserID, {
-				entries,
+			if (dataObj && (dataObj.byAppId || dataObj.byName)) {
+				byAppIdMap = new Map<string, GameLicenseEntry>(Object.entries(dataObj.byAppId ?? {}));
+				byNameMap = new Map<string, GameLicenseEntry>(Object.entries(dataObj.byName ?? {}));
+			} else {
+				// Convert old flat format (where the whole object is key: licenseInfo)
+				byAppIdMap = new Map<string, GameLicenseEntry>();
+				byNameMap = new Map<string, GameLicenseEntry>(Object.entries(dataObj ?? {}));
+			}
+			
+			log(`Loaded cache from backend for user ${steamUserID}: ${byAppIdMap.size} byAppId, ${byNameMap.size} byName entries`);
+
+			const userCache = {
+				byAppId: byAppIdMap,
+				byName: byNameMap,
 				isPopulated: true
-			});
+			};
 
-			return entries;
+			// Update local cache
+			this.cache.set(steamUserID, userCache);
+
+			return userCache;
 		} catch (error) {
 			logError(`Error loading cache from backend for user ${steamUserID}:`, error);
-			return new Map();
+			const errorCache = {
+				byAppId: new Map<string, GameLicenseEntry>(),
+				byName: new Map<string, GameLicenseEntry>(),
+				isPopulated: false
+			};
+			return errorCache;
 		}
 	}
 

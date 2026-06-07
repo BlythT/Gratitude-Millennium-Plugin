@@ -80,6 +80,13 @@ A: Try visiting the Steam Store in your client, then go back: This plugin stores
 **Q: Can it show who gifted me the game?**  
 A: Yes, with a little help from you! Steam doesn't store sender information in a way the client can retrieve, but you can label it yourself. Click the `Gifted` tooltip on any gifted game in your Library to open the details panel, where you can select the gifter from your Steam friends list and add a personal note. Once saved, the gifter's name will appear in the tooltip.
 
+### Matching Harness
+If you want to debug library-title vs license-name mismatches, there is a small report tool in `tools/license-match-report.mjs`.
+
+- Run it with `npm run match:licenses -- --cache backend/gratitude_cache.json --dom path/to/snapshots`
+- It accepts a single saved `.html` snapshot, a folder of snapshots, or a plain text file of titles
+- The report shows exact matches, the plugin's current prefix-based fuzzy matches, normalized-only matches, and misses
+
 ## Acknowledgments
 
 A special thanks to **[HLTB for Millennium](https://github.com/jcdoll/hltb-millennium-plugin)** for executing another plugin which places game-specific tooltips: it made a great study/starting out point, especially for the observer and injection logic.

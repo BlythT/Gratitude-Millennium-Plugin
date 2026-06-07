@@ -2,6 +2,7 @@
 import { callable } from '@steambrew/webkit';
 import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
+import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
 
 const setGameLicenseData = callable('SetGameLicenseData');
 const setFriendsCache = callable('SetFriendsCache');
@@ -24,14 +25,59 @@ export default async function WebkitMain() {
 	});
 }
 
+async function fetchOwnedGames(doc) {
+	const configEl = doc.getElementById('application_config');
+	if (!configEl) {
+		log('application_config element not found.');
+		return [];
+	}
+
+	try {
+		const storeUserConfigAttr = configEl.getAttribute('data-store_user_config');
+		const userInfoAttr = configEl.getAttribute('data-userinfo');
+		if (!storeUserConfigAttr || !userInfoAttr) {
+			log('Missing dataset attributes on application_config.');
+			return [];
+		}
+
+		const { webapi_token } = JSON.parse(storeUserConfigAttr);
+		const { steamid } = JSON.parse(userInfoAttr);
+		if (!webapi_token || !steamid) {
+			log('webapi_token or steamid is missing from config.');
+			return [];
+		}
+
+		log(`Fetching owned games for Steam ID: ${steamid}`);
+		const res = await fetch(
+			`https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/` +
+			`?access_token=${encodeURIComponent(webapi_token)}` +
+			`&steamid=${steamid}` +
+			`&include_appinfo=true` +
+			`&include_played_free_games=true` +
+			`&language=english`
+		);
+
+		if (!res.ok) {
+			logError('Failed to fetch owned games from Steam API:', res.status);
+			return [];
+		}
+
+		const data = await res.json();
+		return data.response?.games ?? [];
+	} catch (error) {
+		logError('Error in fetchOwnedGames:', error);
+		return [];
+	}
+}
+
 async function maybeSyncLicenses(steamUserID) {
-	const html = await fetchPage('https://store.steampowered.com/account/licenses/');
+	const html = await fetchPage('https://store.steampowered.com/account/licenses/?l=english');
 	if (!html) {
 		log('Failed to fetch Steam Licenses.');
 		return;
 	}
 
-	log('Fetched Steam Licenses HTML');
+	log('Fetched Steam Licenses HTML (l=english)');
 
 	const parser = new DOMParser();
 	const doc = parser.parseFromString(html, 'text/html');
@@ -43,11 +89,55 @@ async function maybeSyncLicenses(steamUserID) {
 
 	log('Found account_table');
 
-	const data = parseLicenseTable(table);
-	log('Parsed License Data:', data);
+	const licenses = parseLicenseTable(table);
+	log(`Parsed ${licenses.length} License Data entries`);
+
+	// Try to fetch owned games list
+	const ownedGames = await fetchOwnedGames(doc);
+	log(`Fetched ${ownedGames.length} owned games from Web API`);
+
+	const byAppId = {};
+	const byName = {};
+
+	// Create Map of owned games for fuzzy matching: Name -> { appid }
+	const gamesMap = new Map();
+	ownedGames.forEach((game) => {
+		if (game.name && game.appid) {
+			gamesMap.set(game.name, { appid: game.appid });
+		}
+	});
+
+	// Process and match each license
+	licenses.forEach((license) => {
+		if (!license.item) return;
+
+		// Save under byName for compatibility/fallback
+		byName[license.item] = {
+			date: license.date,
+			acquisition: license.acquisition,
+		};
+
+		// Try to match license name to an App ID
+		const match = fuzzyMatchLicenseName(gamesMap, license.item);
+		if (match && match.data?.appid) {
+			const appId = match.data.appid;
+			byAppId[appId] = {
+				date: license.date,
+				acquisition: license.acquisition,
+				name: license.item,
+			};
+		}
+	});
+
+	log(`Mapped ${Object.keys(byAppId).length} licenses to App IDs, and ${Object.keys(byName).length} by name`);
+
+	const payload = {
+		byAppId,
+		byName,
+	};
 
 	try {
-		await setGameLicenseData({ licenseData: JSON.stringify(data), steamUserID });
+		await setGameLicenseData({ licenseData: JSON.stringify(payload), steamUserID });
 		log('License data sent to backend successfully.');
 	} catch (error) {
 		logError('Error sending license data to backend:', error);

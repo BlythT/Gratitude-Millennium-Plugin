@@ -5,7 +5,7 @@
 - [x] Make game license data cache per-steamID (bug right now if you swap accounts, shows previous accounts gifts as yours if you own same game)
 - [x] Standardise date format (Last Played is Mar 5, 2025 while Gratitude is 5 Mar, 2025)
 - [x] Submit to [Millennium Plugin DB](https://github.com/shdwmtr/plugdb)
-- [ ] Fix functionality for non-english steam clients
+- [x] Fix functionality for non-english steam clients
   - License data has non-english "acquired" method field ![todo image 1](./assets/todo1.png)
   - License data has english game name but non-english library game name ![todo image 2](./assets/todo2.png)
 - [ ] Gifted tooltip doesn't show until you've played a game (because of Last Played selector)

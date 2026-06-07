@@ -47,6 +47,7 @@ export type LicenseData = {
 export type LicenseMatch = {
   licenseKey: string;
   data: LicenseData;
+  matchType?: string;
 };
 
 export type GiverSource = 'manual' | 'friend-cache';
