@@ -238,7 +238,8 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
   }
 
   try {
-    if (!gameLicenseCache.getDataSync(steamID)) {
+    const licenseDataMap = gameLicenseCache.getDataSync(steamID);
+    if (!licenseDataMap) {
       const missingDisplay = createMissingDataDisplay(doc, gameName);
       if (!missingDisplay) {
         logGamePageScan(gameName, 'missing-display-create-failed', { forceRefresh });
@@ -247,18 +248,6 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
 
       insertAfterTarget.after(missingDisplay);
       logGamePageScan(gameName, 'missing-cache-display-inserted', { forceRefresh });
-      return true;
-    }
-
-    const licenseDataMap = gameLicenseCache.getDataSync(steamID);
-    if (!licenseDataMap) {
-      const missingDisplay = createMissingDataDisplay(doc, gameName);
-      if (!missingDisplay) {
-        logGamePageScan(gameName, 'cache-inconsistent-display-create-failed', { forceRefresh });
-        return true;
-      }
-      insertAfterTarget.after(missingDisplay);
-      logGamePageScan(gameName, 'cache-inconsistent-missing-display-inserted', { forceRefresh });
       return true;
     }
 

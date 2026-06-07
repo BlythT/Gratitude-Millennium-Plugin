@@ -9,3 +9,7 @@ archive/
 *gratitude_friends.json
 *gratitude_givers.json
 backend/gratitude_settings.json
+
+# Match report tools testing artifacts
+tools/snapshots/
+tools/reports/
