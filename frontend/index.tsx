@@ -33,7 +33,11 @@ const SettingsContent = () => {
 		try {
 			const data = await getAllCacheEntries({ steamUserID: getCurrentAccountID() });
 			const entries = data ? JSON.parse(data) : {};
-			setEntryCount(Object.keys(entries).length);
+			if (entries.byName) {
+				setEntryCount(Object.keys(entries.byName).length);
+			} else {
+				setEntryCount(Object.keys(entries).length);
+			}
 		} catch (error) {
 			logError('Error fetching cache entry count:', error);
 		}

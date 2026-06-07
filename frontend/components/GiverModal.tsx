@@ -318,6 +318,11 @@ function GiverModalContent({
 		);
 
 		try {
+			if (existingGiver && existingGiver.licenseKey !== licenseKey) {
+				log(`Migrating legacy giver entry from "${existingGiver.licenseKey}" to "${licenseKey}"`);
+				await giverCache.remove(steamUserID, existingGiver.licenseKey);
+			}
+
 			const { steamID64, profileUrl } = normalizeProfileField(profileField);
 			const success = await giverCache.upsert(steamUserID, {
 				licenseKey,

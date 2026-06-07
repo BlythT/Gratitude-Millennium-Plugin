@@ -1,7 +1,8 @@
 {
 	"scripts": {
 		"dev": "millennium-ttc --build dev",
-		"build": "millennium-ttc --build prod"
+		"build": "millennium-ttc --build prod",
+		"match:licenses": "node ./tools/license-match-report.mjs"
 	},
 	"devDependencies": {
 		"@babel/preset-env": "^7.28.3",

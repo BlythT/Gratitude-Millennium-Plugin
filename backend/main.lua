@@ -120,7 +120,24 @@ local function load_cache_from_file()
     local loadedCache = load_json(CACHE_FILE_PATH, "Game license cache")
     if loadedCache then
         logger:info("Game license cache loaded successfully from file")
-        GameLicenseCache = loadedCache
+        -- Migrate to new structure if needed
+        GameLicenseCache = {}
+        for steamUserID, userCache in pairs(loadedCache) do
+            if type(userCache) == "table" then
+                if userCache.byAppId or userCache.byName then
+                    GameLicenseCache[steamUserID] = {
+                        byAppId = userCache.byAppId or {},
+                        byName = userCache.byName or {}
+                    }
+                else
+                    -- Migrate old name-only cache
+                    GameLicenseCache[steamUserID] = {
+                        byAppId = {},
+                        byName = userCache
+                    }
+                end
+            end
+        end
         return true
     end
     logger:info("Load failed or no existing game license cache found, starting with empty cache")
@@ -334,18 +351,31 @@ function SetGameLicenseData(licenseData, steamUserID)
     end
 
     if decodedData then
-        -- Convert array to hash map indexed by game name for O(1) lookups
-        GameLicenseCache[steamUserID] = {}
-        for _, license in ipairs(decodedData) do
-            if license.item then
-                GameLicenseCache[steamUserID][license.item] = {
-                    date = license.date,
-                    acquisition = license.acquisition
-                }
+        if type(decodedData) == "table" and (decodedData.byAppId or decodedData.byName) then
+            GameLicenseCache[steamUserID] = {
+                byAppId = decodedData.byAppId or {},
+                byName = decodedData.byName or {}
+            }
+            local byAppIdSize = table_size(GameLicenseCache[steamUserID].byAppId)
+            local byNameSize = table_size(GameLicenseCache[steamUserID].byName)
+            logger:info(string.format("Cached %d byAppId and %d byName license entries for user %s", byAppIdSize, byNameSize, steamUserID))
+        else
+            -- Fallback for old format (flat array)
+            GameLicenseCache[steamUserID] = {
+                byAppId = {},
+                byName = {}
+            }
+            for _, license in ipairs(decodedData) do
+                if license.item then
+                    GameLicenseCache[steamUserID].byName[license.item] = {
+                        date = license.date,
+                        acquisition = license.acquisition
+                    }
+                end
             end
+            local byNameSize = table_size(GameLicenseCache[steamUserID].byName)
+            logger:info(string.format("Cached %d license entries in legacy format for user %s", byNameSize, steamUserID))
         end
-
-        logger:info(string.format("Cached %d license entries for user %s", #decodedData, steamUserID))
 
         -- Only save if user has consented
         if consentState[steamUserID] and consentState[steamUserID].allowed then
@@ -384,9 +414,14 @@ function IsGameLicenseCachePopulated(steamUserID)
         return false
     end
 
-    if GameLicenseCache[steamUserID] and next(GameLicenseCache[steamUserID]) ~= nil then
-        logger:info("GameLicenseCache is populated for Steam ID " .. steamUserID)
-        return true
+    local cache = GameLicenseCache[steamUserID]
+    if cache then
+        local hasAppIds = cache.byAppId and next(cache.byAppId) ~= nil
+        local hasNames = cache.byName and next(cache.byName) ~= nil
+        if hasAppIds or hasNames then
+            logger:info("GameLicenseCache is populated for Steam ID " .. steamUserID)
+            return true
+        end
     end
     logger:info("GameLicenseCache is empty for Steam ID " .. steamUserID)
     return false

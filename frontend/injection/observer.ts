@@ -153,6 +153,39 @@ function checkMainContentReady(doc: Document): void {
  * @param doc
  * @returns boolean — true signals that an async cache refresh should be triggered
  */
+export function detectAppId(doc: Document): number | null {
+  // 1. Try to find standard Steam attributes
+  const appIdElement = doc.querySelector('[data-appid]');
+  if (appIdElement) {
+    const appIdAttr = appIdElement.getAttribute('data-appid');
+    if (appIdAttr) {
+      const parsed = parseInt(appIdAttr, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        log('Detected App ID from data-appid:', parsed);
+        return parsed;
+      }
+    }
+  }
+
+  // 2. Try to search links on the page (Store Page, Community Hub, etc.)
+  const links = doc.querySelectorAll('a[href]');
+  for (const link of Array.from(links)) {
+    const href = link.getAttribute('href');
+    if (!href) continue;
+
+    const match = href.match(/(?:steam:\/\/rungameid\/|steam:\/\/store\/|steam:\/\/url\/StorePage\/|steam:\/\/url\/StoreAppPage\/|store\.steampowered\.com\/app\/|steamcommunity\.com\/app\/)(\d+)/i);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        log('Detected App ID from link href:', parsed, href);
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
 function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
   // Check if main content is ready and trigger callback
   checkMainContentReady(doc);
@@ -229,18 +262,42 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
       return true;
     }
 
-    // Check if data exists for this game using fuzzy matching
-    const match = fuzzyMatchLicenseName(licenseDataMap, gameName);
+    // Check if data exists for this game using App ID or fuzzy name matching
+    let match = null;
+    const appId = detectAppId(doc);
+    if (appId) {
+      const license = licenseDataMap.byAppId.get(String(appId));
+      if (license) {
+        match = {
+          licenseKey: String(appId),
+          data: license,
+          matchType: 'appid-exact'
+        };
+        log('Found App ID match in cache:', appId, match);
+      }
+    }
+
+    if (!match) {
+      const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
+      if (fuzzyMatch) {
+        match = {
+          licenseKey: fuzzyMatch.licenseKey,
+          data: fuzzyMatch.data,
+          matchType: fuzzyMatch.matchType
+        };
+        log('Found fuzzy name match in cache:', gameName, match);
+      }
+    }
 
     if (!match) {
       logGamePageScan(gameName, 'license-data-missing', {
         forceRefresh,
-        cacheEntries: licenseDataMap.size,
+        cacheEntries: licenseDataMap.byName.size,
       });
       return true; // Signal async fetch: might exist on backend but not cached
     }
 
-    const giver = giverCache.getEntrySync(steamID, match.licenseKey);
+    const giver = giverCache.getEntrySync(steamID, match.licenseKey, match.data.name);
     const display = createDisplay(doc, gameName, match, giver, steamID, () => refreshGamePage(doc));
     if (!display) {
       logGamePageScan(gameName, 'display-create-failed', {

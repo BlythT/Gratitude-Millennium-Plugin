@@ -45,11 +45,15 @@ class GiverCache {
 		return cached && cached.isLoaded ? cached.entries : null;
 	}
 
-	getEntrySync(steamUserID: string, licenseKey: string): GiverData | null {
+	getEntrySync(steamUserID: string, licenseKey: string, fallbackLicenseKey?: string): GiverData | null {
 		const entries = this.getAllSync(steamUserID);
-		const giver = entries?.get(licenseKey) ?? null;
+		if (!entries) return null;
+		let giver = entries.get(licenseKey) ?? null;
+		if (!giver && fallbackLicenseKey) {
+			giver = entries.get(fallbackLicenseKey) ?? null;
+		}
 		log(
-			`Synchronous giver lookup for user ${steamUserID} and license ${licenseKey}: ${giver ? 'hit' : 'miss'}`,
+			`Synchronous giver lookup for user ${steamUserID} and license ${licenseKey} (fallback: ${fallbackLicenseKey}): ${giver ? 'hit' : 'miss'}`,
 		);
 		return giver;
 	}
