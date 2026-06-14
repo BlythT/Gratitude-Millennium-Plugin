@@ -1,8 +1,9 @@
 name: Release Plugin
 
 on:
-  release:
-    types: [published] # Runs when you click 'Publish Release'
+  push:
+    tags:
+      - 'v*' # Runs when you push a new version tag
 
 permissions:
   contents: write
@@ -34,12 +35,13 @@ jobs:
           cp plugin.json gratitude/
           cp LICENSE gratitude/
           cp README.md gratitude/
-          # Uses the tag name associated with the release for the filename
-          zip -r gratitude-for-millenium-${{ github.event.release.tag_name }}.zip gratitude
+          # Uses the pushed tag name for the filename
+          zip -r gratitude-for-millenium-${{ github.ref_name }}.zip gratitude
 
-      - name: Upload Release Asset
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: gratitude-for-millenium-${{ github.event.release.tag_name }}.zip
+          files: gratitude-for-millenium-${{ github.ref_name }}.zip
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
