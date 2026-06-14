@@ -3,6 +3,8 @@ import { log, logError } from '../lib/logger';
 import { setupObserver, onMainContentReady_Register } from './injection/observer';
 import { isTruthy } from './utils/truthy';
 import { gameLicenseCache } from './injection/gamelicensecache';
+import { friendsCache } from './injection/friendscache';
+import { giverCache } from './injection/givercache';
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
@@ -17,7 +19,9 @@ const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserCo
 const SettingsContent = () => {
 	const steamUserID = getCurrentAccountID();
 	const [isLoading, setIsLoading] = useState(true);
-	const [entryCount, setEntryCount] = useState(0);
+	const [licenseCount, setLicenseCount] = useState(0);
+	const [friendCount, setFriendCount] = useState(0);
+	const [giverCount, setGiverCount] = useState(0);
 	const [settings, setSetting] = useSettings(steamUserID);
 
 	const checkCache = async () => {
@@ -32,13 +36,20 @@ const SettingsContent = () => {
 
 	const updateEntryCount = async () => {
 		try {
-			const data = await getAllCacheEntries({ steamUserID: getCurrentAccountID() });
+			const steamID = getCurrentAccountID();
+			const data = await getAllCacheEntries({ steamUserID: steamID });
 			const entries = data ? JSON.parse(data) : {};
 			if (entries.byName) {
-				setEntryCount(Object.keys(entries.byName).length);
+				setLicenseCount(Object.keys(entries.byName).length);
 			} else {
-				setEntryCount(Object.keys(entries).length);
+				setLicenseCount(Object.keys(entries).length);
 			}
+
+			const friendsData = await friendsCache.getData(steamID);
+			setFriendCount(friendsData?.friends?.length || 0);
+
+			const giversData = await giverCache.getAll(steamID);
+			setGiverCount(giversData?.size || 0);
 		} catch (error) {
 			logError('Error fetching cache entry count:', error);
 		}
@@ -46,10 +57,13 @@ const SettingsContent = () => {
 
 	const handleClearCache = async () => {
 		try {
-			const success = await gameLicenseCache.clearCache(getCurrentAccountID());
-			if (isTruthy(success)) {
-				log('Cache cleared successfully');
-				setEntryCount(0);
+			const steamID = getCurrentAccountID();
+			const successLicense = await gameLicenseCache.clearCache(steamID);
+			const successFriends = await friendsCache.clearCache(steamID);
+			if (isTruthy(successLicense) || isTruthy(successFriends)) {
+				log('Caches cleared successfully');
+				setLicenseCount(0);
+				setFriendCount(0);
 			}
 		} catch (error) {
 			logError('Error clearing cache:', error);
@@ -92,15 +106,20 @@ const SettingsContent = () => {
 			) : (
 				<>
 					<Field
-						label="Cache"
-						description={`${entryCount} game license ${entryCount === 1 ? 'entry' : 'entries'} cached`}
+						label="Scraped Caches"
+						description={`${licenseCount} licenses | ${friendCount} friends`}
 						bottomSeparator="standard"
 						childrenLayout="below"
 					>
 						<DialogButton onClick={handleClearCache}>
-							Clear
+							Clear Scraped Caches
 						</DialogButton>
 					</Field>
+					<Field
+						label="Your Data"
+						description={`${giverCount} manually recorded gifts. (This is never cleared automatically).`}
+						bottomSeparator="standard"
+					/>
 					<Field
 						label="Missing something?"
 						description="Newly gifted games might not be detected: try visiting the store or restarting steam before checking your library"
