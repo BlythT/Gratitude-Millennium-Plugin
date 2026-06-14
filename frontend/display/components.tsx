@@ -126,14 +126,16 @@ const GiftedBadge = ({ doc, gameName, match, giver, steamUserID, onGiverUpdated 
   const tooltipContent = <GiftedTooltipContent giver={giver} date={data.date} />;
 
   return (
-    <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
-      <div className={UI_CLASSES.displayContainer} style={{ contain: 'layout', contentVisibility: 'auto' }}>
+    <>
+      <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
         <div 
           className={UI_CLASSES.iconContainer} 
           style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
           onClick={handleConfetti}
           dangerouslySetInnerHTML={{ __html: ICONS.gift }}
         />
+      </SafeTooltip>
+      <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
         <div 
           className={UI_CLASSES.textContainer} 
           style={{ cursor: 'pointer' }}
@@ -142,8 +144,8 @@ const GiftedBadge = ({ doc, gameName, match, giver, steamUserID, onGiverUpdated 
           <div className={UI_CLASSES.label}>Gifted</div>
           <div className={UI_CLASSES.value}>{data.date}</div>
         </div>
-      </div>
-    </SafeTooltip>
+      </SafeTooltip>
+    </>
   );
 };
 
@@ -156,22 +158,26 @@ const MissingDataBadge = () => {
   const tooltipContent = <MissingDataTooltipContent />;
 
   return (
-    <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
-      <div 
-        className={UI_CLASSES.displayContainer} 
-        style={{ cursor: 'pointer' }}
-        onClick={handleClick}
-      >
+    <>
+      <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
         <div 
           className={UI_CLASSES.iconContainer}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          onClick={handleClick}
           dangerouslySetInnerHTML={{ __html: ICONS.question }}
         />
-        <div className={UI_CLASSES.textContainer}>
+      </SafeTooltip>
+      <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
+        <div 
+          className={UI_CLASSES.textContainer} 
+          style={{ cursor: 'pointer' }}
+          onClick={handleClick}
+        >
           <div className={UI_CLASSES.label}>Gifted</div>
           <div className={UI_CLASSES.value}>Loading...</div>
         </div>
-      </div>
-    </SafeTooltip>
+      </SafeTooltip>
+    </>
   );
 };
 
@@ -195,9 +201,14 @@ export function createDisplay(
   }
 
   const container = doc.createElement('div');
+  container.id = createDisplayId(gameName);
+  container.className = UI_CLASSES.displayContainer;
+  container.style.contain = 'layout';
+  container.style.contentVisibility = 'auto';
   
-  // Render using ReactDOM.render to immediately generate synchronous DOM structure
-  (ReactDOM as any).render(
+  // Render using ReactDOM.createRoot (matching size-on-disk pattern)
+  const root = (ReactDOM as any).createRoot(container);
+  root.render(
     <GiftedBadge
       doc={doc}
       gameName={gameName}
@@ -205,37 +216,28 @@ export function createDisplay(
       giver={giver}
       steamUserID={steamUserID}
       onGiverUpdated={onGiverUpdated}
-    />,
-    container
+    />
   );
 
-  const element = container.firstElementChild as HTMLElement;
-  if (element) {
-    element.id = createDisplayId(gameName);
-    log('Created display container:', element);
-    return element;
-  }
-  return null;
+  log('Created display container:', container);
+  return container;
 }
 
 export function createMissingDataDisplay(doc: Document, gameName: string): HTMLElement | null {
   log('Creating missing data display for:', gameName);
   
   const container = doc.createElement('div');
+  container.id = createDisplayId(gameName);
+  container.className = UI_CLASSES.displayContainer;
+  container.dataset.missing = 'true';
 
-  (ReactDOM as any).render(
-    <MissingDataBadge />,
-    container
+  const root = (ReactDOM as any).createRoot(container);
+  root.render(
+    <MissingDataBadge />
   );
 
-  const element = container.firstElementChild as HTMLElement;
-  if (element) {
-    element.id = createDisplayId(gameName);
-    element.dataset.missing = 'true';
-    log('Created missing data display container:', element);
-    return element;
-  }
-  return null;
+  log('Created missing data display container:', container);
+  return container;
 }
 
 export function getExistingDisplay(doc: Document, gameName: string): HTMLElement | null {
