@@ -1,6 +1,7 @@
 import React from 'react';
 import { findModuleDetailsByExport } from '@steambrew/client';
-import { UI_CLASSES, type GiverData, type LicenseMatch } from '../types';
+import { UI_CLASSES } from '../../lib/framework/steam-constants';
+import { type GiverData, type LicenseMatch } from '../types';
 import { log } from '../../lib/logger';
 import confetti from 'canvas-confetti';
 import { showGiverModal } from './GiverModal';
@@ -125,6 +126,7 @@ const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: Badge
 };
 
 export interface GiftBadgeData {
+  status: 'gift' | 'missing-cache';
   gameName: string;
   steamUserID: string;
   match: LicenseMatch | null;
@@ -136,7 +138,7 @@ export interface GiftBadgeData {
 export const GiftBadge: React.FC<{ data: GiftBadgeData | null }> = ({ data }) => {
   if (!data) return null; // Wait for initial payload
   
-  if (!data.match) {
+  if (data.status === 'missing-cache') {
     const handleMissingClick = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -154,8 +156,8 @@ export const GiftBadge: React.FC<{ data: GiftBadgeData | null }> = ({ data }) =>
     );
   }
   
-  if (data.match.data.acquisition !== "Gift/Guest Pass") {
-    return null; // Not a gifted game, render nothing
+  if (data.status === 'gift' && (!data.match || data.match.data.acquisition !== "Gift/Guest Pass")) {
+    return null; // Fallback safeguard
   }
 
   const handleConfetti = (e: React.MouseEvent) => {

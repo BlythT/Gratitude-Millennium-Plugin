@@ -1,7 +1,7 @@
 import { callable } from '@steambrew/client';
 import { log, logError } from '../../lib/logger';
-import { CacheManager } from './CacheManager';
-import { isTruthy } from '../utils/truthy';
+import { CacheManager } from '../../lib/framework/CacheManager';
+import { isTruthy } from '../../lib/framework/truthy';
 import type { GiverData } from '../types';
 
 const getAllGiverData = callable<[{ steamUserID: string }], string>('GetAllGiverData');
@@ -11,7 +11,7 @@ const deleteGiverData = callable<[{ steamUserID: string; licenseKey: string }], 
 class GiverCache {
 	private manager = new CacheManager<Map<string, GiverData>>(
 		'Giver',
-		async (steamUserID) => {
+		async (steamUserID: string) => {
 			const giverJson = await getAllGiverData({ steamUserID });
 			const giverObject: Record<string, GiverData> = giverJson ? JSON.parse(giverJson) : {};
 			return new Map<string, GiverData>(Object.entries(giverObject));
