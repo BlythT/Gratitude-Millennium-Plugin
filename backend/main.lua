@@ -719,8 +719,8 @@ local function on_load()
 
     -- Millennium requires at least one network hook to inject webkit.js into a Target
     -- Register empty scripts for Store and Community pages so our Webkit script gets loaded
-    millennium.add_browser_js("", ".*store\\.steampowered\\.com.*")
-    millennium.add_browser_js("", ".*steamcommunity\\.com.*")
+    -- millennium.add_browser_js("", ".*store\\.steampowered\\.com.*")
+    -- millennium.add_browser_js("", ".*steamcommunity\\.com.*")
 
     logger:info("Gratitude plugin loaded with Millennium version " .. millennium.version())
     millennium.ready()
