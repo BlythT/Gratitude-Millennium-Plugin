@@ -66,26 +66,6 @@ const SafeTooltip = ({ toolTipContent, fallbackText, children }: SafeTooltipProp
   } as any);
 };
 
-const GiftedTooltipContent = ({ giver, date }: { giver: GiverData | null; date: string }) => {
-  return (
-    <div style={{ padding: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <div style={{ fontWeight: 500 }}>{giver ? `Gifted by ${giver.displayName}` : 'Gifted Game'}</div>
-      {giver?.notes && <div style={{ fontSize: '12px', opacity: 0.8, maxWidth: '200px', wordBreak: 'break-word' }}>{giver.notes}</div>}
-      <div style={{ fontSize: '12px', opacity: 0.8 }}>Acquired: {date}</div>
-      {!giver && <div style={{ fontSize: '11px', opacity: 0.6, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '4px', marginTop: '2px' }}>Click to record gifter info</div>}
-    </div>
-  );
-};
-
-const MissingDataTooltipContent = () => {
-  return (
-    <div style={{ padding: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <div style={{ fontWeight: 500 }}>License data not found</div>
-      <div style={{ fontSize: '12px', opacity: 0.8 }}>Click to refresh (opens store page)</div>
-    </div>
-  );
-};
-
 interface GiftedBadgeProps {
   doc: Document;
   gameName: string;
@@ -120,14 +100,12 @@ const GiftedBadge = ({ doc, gameName, match, giver, steamUserID, onGiverUpdated 
   };
 
   const tooltipText = giver 
-    ? `Gifted by ${giver.displayName}${giver.notes ? ` - ${giver.notes}` : ''}. Acquired: ${data.date}` 
-    : `Gifted Game. Acquired: ${data.date}. Click to record gifter info.`;
-
-  const tooltipContent = <GiftedTooltipContent giver={giver} date={data.date} />;
+    ? `Gifted by ${giver.displayName} on ${data.date}${giver.notes ? ` - ${giver.notes}` : ''}` 
+    : `Gifted on ${data.date} - Click to record gifter info`;
 
   return (
     <>
-      <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
+      <SafeTooltip toolTipContent={tooltipText} fallbackText={tooltipText}>
         <div 
           className={UI_CLASSES.iconContainer} 
           style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
@@ -135,7 +113,7 @@ const GiftedBadge = ({ doc, gameName, match, giver, steamUserID, onGiverUpdated 
           dangerouslySetInnerHTML={{ __html: ICONS.gift }}
         />
       </SafeTooltip>
-      <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
+      <SafeTooltip toolTipContent={tooltipText} fallbackText={tooltipText}>
         <div 
           className={UI_CLASSES.textContainer} 
           style={{ cursor: 'pointer' }}
@@ -154,12 +132,11 @@ const MissingDataBadge = () => {
     window.open("steam://store/");
   };
 
-  const tooltipText = 'License data not found, click to refresh (opens store page)';
-  const tooltipContent = <MissingDataTooltipContent />;
+  const tooltipText = 'License data not found. Click to refresh (opens store page).';
 
   return (
     <>
-      <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
+      <SafeTooltip toolTipContent={tooltipText} fallbackText={tooltipText}>
         <div 
           className={UI_CLASSES.iconContainer}
           style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
@@ -167,7 +144,7 @@ const MissingDataBadge = () => {
           dangerouslySetInnerHTML={{ __html: ICONS.question }}
         />
       </SafeTooltip>
-      <SafeTooltip toolTipContent={tooltipContent} fallbackText={tooltipText}>
+      <SafeTooltip toolTipContent={tooltipText} fallbackText={tooltipText}>
         <div 
           className={UI_CLASSES.textContainer} 
           style={{ cursor: 'pointer' }}
