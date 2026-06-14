@@ -1,7 +1,7 @@
 // Modified from https://github.com/jcdoll/hltb-millennium-plugin
 import { log } from '../../lib/logger';
 import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
-import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
+import { createDisplay, createMissingDataDisplay, getExistingDisplay, unmountDisplay } from '../display/components';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { gameLicenseCache } from './gamelicensecache';
 import { giverCache } from './givercache';
@@ -11,6 +11,7 @@ let observer: MutationObserver | null = null;
 let onMainContentReady: ((doc: Document) => void) | null = null;
 let mainContentDetected = false;
 let lastProcessedGame: string | null = null;
+let activeDisplayElement: HTMLElement | null = null;
 
 function logGamePageScan(
 	gameName: string | null,
@@ -25,6 +26,10 @@ export function resetState(): void {
   log('Resetting state');
   mainContentDetected = false;
   lastProcessedGame = null;
+  if (activeDisplayElement) {
+    unmountDisplay(activeDisplayElement);
+    activeDisplayElement = null;
+  }
   if (observer) {
     observer.disconnect();
     observer = null;
@@ -187,6 +192,13 @@ export function detectAppId(doc: Document): number | null {
 }
 
 function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
+  // Check if active display element was detached from DOM and unmount if so
+  if (activeDisplayElement && !activeDisplayElement.isConnected) {
+    log('Active display element was detached from DOM, unmounting React root');
+    unmountDisplay(activeDisplayElement);
+    activeDisplayElement = null;
+  }
+
   // Check if main content is ready and trigger callback
   checkMainContentReady(doc);
 
@@ -234,11 +246,19 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
 
   if (existingDisplay && forceRefresh) {
     log('Removing existing display for force refresh');
+    unmountDisplay(existingDisplay);
     existingDisplay.remove();
+    if (activeDisplayElement === existingDisplay) {
+      activeDisplayElement = null;
+    }
   } else if (existingDisplay && existingDisplay.dataset.missing) {
     if (gameLicenseCache.getDataSync(steamID)) {
       log('Removing existing missing display because cache is now populated');
+      unmountDisplay(existingDisplay);
       existingDisplay.remove();
+      if (activeDisplayElement === existingDisplay) {
+        activeDisplayElement = null;
+      }
     } else {
       // Missing display already exists and cache is still empty.
       // Don't modify the DOM to prevent infinite observer loops, and don't fetch again.
@@ -256,6 +276,7 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
       }
 
       insertAfterTarget.after(missingDisplay);
+      activeDisplayElement = missingDisplay;
       logGamePageScan(gameName, 'missing-cache-display-inserted', { forceRefresh });
       return true;
     }
@@ -307,6 +328,7 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
     }
 
     insertAfterTarget.after(display);
+    activeDisplayElement = display;
     logGamePageScan(gameName, 'display-inserted', {
       forceRefresh,
       licenseKey: match.licenseKey,
