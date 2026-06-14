@@ -52,16 +52,6 @@ try {
   console.log(`Tagging as ${tag}...`);
   execSync(`git tag ${tag}`, { stdio: 'inherit' });
 
-  // 4. Update plugin.json back to dev version
-  console.log(`Bumping plugin.json back to 0.0.0-dev...`);
-  pluginData.version = '0.0.0-dev';
-  fs.writeFileSync(pluginJsonPath, JSON.stringify(pluginData, null, '\t') + '\n');
-
-  // 5. Commit the dev version
-  console.log(`Committing dev version...`);
-  execSync('git add plugin.json', { stdio: 'inherit' });
-  execSync(`git commit -m "chore: prepare for next development iteration"`, { stdio: 'inherit' });
-
   console.log('\n✅ Success! The local release has been prepared and tagged.');
   console.log(`To publish to GitHub, run:\n\n  git push origin main --tags\n`);
 
