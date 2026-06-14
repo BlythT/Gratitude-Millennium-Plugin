@@ -4,15 +4,20 @@ import { CacheManager } from '../../lib/framework/CacheManager';
 import { isTruthy } from '../../lib/framework/truthy';
 import type { GiverData } from '../types';
 
-const getAllGiverData = callable<[{ steamUserID: string }], string>('GetAllGiverData');
-const upsertGiverData = callable<[{ payloadJson: string; steamUserID: string }], boolean>('UpsertGiverData');
-const deleteGiverData = callable<[{ steamUserID: string; licenseKey: string }], boolean>('DeleteGiverData');
+const getStoreData = callable<[{ steamUserID: string, storeName: string }], string>('GetStoreData');
+const setStoreData = callable<[{ payloadJson: string, steamUserID: string, storeName: string }], boolean>('SetStoreData');
+
+function validateRequiredString(value: unknown, fieldName: string): asserts value is string {
+	if (typeof value !== 'string' || value.trim() === '') {
+		throw new Error(`${fieldName} must be a non-empty string`);
+	}
+}
 
 class GiverCache {
 	private manager = new CacheManager<Map<string, GiverData>>(
 		'Giver',
 		async (steamUserID: string) => {
-			const giverJson = await getAllGiverData({ steamUserID });
+			const giverJson = await getStoreData({ steamUserID, storeName: 'givers' });
 			const giverObject: Record<string, GiverData> = giverJson ? JSON.parse(giverJson) : {};
 			return new Map<string, GiverData>(Object.entries(giverObject));
 		}
@@ -40,9 +45,49 @@ class GiverCache {
 	async upsert(steamUserID: string, giverData: Omit<GiverData, 'createdAt' | 'updatedAt'>): Promise<boolean> {
 		try {
 			log(`Upserting giver data for user ${steamUserID} and license ${giverData.licenseKey}`);
-			const success = await upsertGiverData({
-				payloadJson: JSON.stringify(giverData),
+			validateRequiredString(giverData.licenseKey, 'licenseKey');
+			validateRequiredString(giverData.libraryTitle, 'libraryTitle');
+			validateRequiredString(giverData.displayName, 'displayName');
+			validateRequiredString(giverData.source, 'source');
+
+			if (giverData.source !== 'manual' && giverData.source !== 'friend-cache') {
+				throw new Error('source must be manual or friend-cache');
+			}
+
+			const map = await this.getAll(steamUserID);
+			const existingRecord = map.get(giverData.licenseKey);
+			const now = Math.floor(Date.now() / 1000);
+
+			const normalized: GiverData = {
+				licenseKey: giverData.licenseKey,
+				libraryTitle: giverData.libraryTitle,
+				displayName: giverData.displayName,
+				source: giverData.source,
+				createdAt: existingRecord ? existingRecord.createdAt : now,
+				updatedAt: now,
+			};
+
+			if (typeof giverData.steamID64 === 'string' && giverData.steamID64 !== '') {
+				normalized.steamID64 = giverData.steamID64;
+			}
+
+			if (typeof giverData.profileUrl === 'string' && giverData.profileUrl !== '') {
+				normalized.profileUrl = giverData.profileUrl;
+			}
+
+			if (typeof giverData.notes === 'string' && giverData.notes !== '') {
+				normalized.notes = giverData.notes;
+			}
+
+			// Update the map
+			map.set(giverData.licenseKey, normalized);
+
+			// Serialize and save
+			const payloadObject = Object.fromEntries(map.entries());
+			const success = await setStoreData({
+				payloadJson: JSON.stringify(payloadObject),
 				steamUserID,
+				storeName: 'givers'
 			});
 
 			if (isTruthy(success)) {
@@ -60,7 +105,20 @@ class GiverCache {
 	async remove(steamUserID: string, licenseKey: string): Promise<boolean> {
 		try {
 			log(`Deleting giver data for user ${steamUserID} and license ${licenseKey}`);
-			const success = await deleteGiverData({ steamUserID, licenseKey });
+			
+			const map = await this.getAll(steamUserID);
+			if (!map.has(licenseKey)) {
+				return true;
+			}
+
+			map.delete(licenseKey);
+
+			const payloadObject = Object.fromEntries(map.entries());
+			const success = await setStoreData({
+				payloadJson: JSON.stringify(payloadObject),
+				steamUserID,
+				storeName: 'givers'
+			});
 
 			if (isTruthy(success)) {
 				log(`Reloading giver cache from backend after delete for user ${steamUserID}`);

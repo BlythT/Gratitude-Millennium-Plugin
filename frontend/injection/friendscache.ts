@@ -3,8 +3,8 @@ import { CacheManager } from '../../lib/framework/CacheManager';
 import type { FriendRecord, FriendsCacheSnapshot } from '../types';
 import { isTruthy } from '../../lib/framework/truthy';
 
-const getFriendsCache = callable<[{ steamUserID: string }], string>('GetFriendsCache');
-const clearFriendsCacheBackend = callable<[{ steamUserID: string }], boolean>('ClearFriendsCache');
+const getStoreData = callable<[{ steamUserID: string, storeName: string }], string>('GetStoreData');
+const clearStoreData = callable<[{ steamUserID: string, storeName: string }], boolean>('ClearStoreData');
 
 function normalizeSnapshot(payload: string): FriendsCacheSnapshot | null {
 	if (!payload || payload === '{}') {
@@ -25,11 +25,11 @@ function normalizeSnapshot(payload: string): FriendsCacheSnapshot | null {
 export const friendsCache = new CacheManager<FriendsCacheSnapshot>(
 	'Friends',
 	async (steamUserID: string) => {
-		const payload = await getFriendsCache({ steamUserID });
+		const payload = await getStoreData({ steamUserID, storeName: 'friends' });
 		return normalizeSnapshot(payload);
 	},
 	async (steamUserID: string) => {
-		const success = await clearFriendsCacheBackend({ steamUserID });
+		const success = await clearStoreData({ steamUserID, storeName: 'friends' });
 		return isTruthy(success);
 	}
 );

@@ -1,11 +1,12 @@
 import { log, logError } from "../../lib/logger";
 import { showModal, ConfirmModal, callable } from "@steambrew/client";
 
-const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
+const setStoreData = callable<[{ payloadJson: string, steamUserID: string, storeName: string }], boolean>('SetStoreData');
 
 const enableConsent = async (steamUserID: string) => {
     try {
-        const result = await setConsent({ steamUserID: steamUserID, consent: true });
+        const payload = JSON.stringify({ allowed: true, timestamp: Math.floor(Date.now() / 1000) });
+        const result = await setStoreData({ payloadJson: payload, steamUserID: steamUserID, storeName: 'consent' });
         if (result) {
             log("User consent stored successfully");
         }

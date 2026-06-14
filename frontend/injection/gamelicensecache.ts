@@ -3,9 +3,9 @@ import { callable } from '@steambrew/client';
 import { CacheManager } from '../../lib/framework/CacheManager';
 import { isTruthy } from '../../lib/framework/truthy';
 
-const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
-const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
-const clearCacheBackend = callable<[{ steamUserID: string }], boolean>('ClearCache');
+const hasStoreData = callable<[{ steamUserID: string, storeName: string }], boolean>('HasStoreData');
+const getStoreData = callable<[{ steamUserID: string, storeName: string }], string>('GetStoreData');
+const clearStoreData = callable<[{ steamUserID: string, storeName: string }], boolean>('ClearStoreData');
 
 export interface GameLicenseEntry {
 	date: string;
@@ -31,7 +31,7 @@ export interface UserLicenseCache {
 export const gameLicenseCache = new CacheManager<UserLicenseCache>(
 	'GameLicense',
 	async (steamUserID) => {
-		const isPopulated = await isGameLicenseCachePopulated({ steamUserID });
+		const isPopulated = await hasStoreData({ steamUserID, storeName: 'licenses' });
 		
 		if (!isTruthy(isPopulated)) {
 			return {
@@ -41,7 +41,7 @@ export const gameLicenseCache = new CacheManager<UserLicenseCache>(
 			};
 		}
 
-		const entriesJson = await getAllCacheEntries({ steamUserID });
+		const entriesJson = await getStoreData({ steamUserID, storeName: 'licenses' });
 		const dataObj: any = entriesJson ? JSON.parse(entriesJson) : {};
 		
 		let byAppIdMap: Map<string, GameLicenseEntry>;
@@ -62,7 +62,7 @@ export const gameLicenseCache = new CacheManager<UserLicenseCache>(
 		};
 	},
 	async (steamUserID) => {
-		const success = await clearCacheBackend({ steamUserID });
+		const success = await clearStoreData({ steamUserID, storeName: 'licenses' });
 		return isTruthy(success);
 	},
 	(data) => data !== null && data.isPopulated

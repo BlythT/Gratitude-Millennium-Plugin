@@ -10,8 +10,8 @@ export const DEFAULT_SETTINGS: GratitudeSettings = {
 	showFriendPickerSteamUrl: false,
 };
 
-const getUiSettings = callable<[{ steamUserID: string }], string>('GetUiSettings');
-const setUiSettings = callable<[{ payloadJson: string }], boolean>('SetUiSettings');
+const getStoreData = callable<[{ steamUserID: string, storeName: string }], string>('GetStoreData');
+const setStoreData = callable<[{ payloadJson: string, steamUserID: string, storeName: string }], boolean>('SetStoreData');
 
 type SettingsKey = keyof GratitudeSettings;
 
@@ -49,7 +49,7 @@ class SettingsCache {
 		}
 
 		try {
-			const payload = await getUiSettings({ steamUserID });
+			const payload = await getStoreData({ steamUserID, storeName: 'settings' });
 			const parsed = payload ? JSON.parse(payload) : {};
 			const settings = normalizeSettings(parsed);
 			this.cache.set(steamUserID, { settings, isLoaded: true });
@@ -72,11 +72,10 @@ class SettingsCache {
 		this.cache.set(steamUserID, { settings: nextSettings, isLoaded: true });
 
 		try {
-			return await setUiSettings({
-				payloadJson: JSON.stringify({
-					steamUserID,
-					settings: nextSettings,
-				}),
+			return await setStoreData({
+				payloadJson: JSON.stringify(nextSettings),
+				steamUserID,
+				storeName: 'settings',
 			});
 		} catch (error) {
 			logError(`Error saving UI settings for user ${steamUserID}:`, error);

@@ -16,8 +16,7 @@ import { type LicenseMatch } from './types';
 import { useSettings } from './settings';
 
 // Declare backend functions
-const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
-const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
+const hasStoreData = callable<[{ steamUserID: string, storeName: string }], boolean>('HasStoreData');
 
 const SettingsContent = () => {
 	const steamUserID = getCurrentAccountID();
@@ -28,8 +27,8 @@ const SettingsContent = () => {
 	const [settings, setSetting] = useSettings(steamUserID);
 
 	const checkCache = async () => {
-		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() }).then((populated) => {
-			log('Response from IsGameLicenseCachePopulated:', populated);
+		return await hasStoreData({ steamUserID: getCurrentAccountID(), storeName: 'licenses' }).then((populated) => {
+			log('Response from HasStoreData(licenses):', populated);
 			return populated;
 		}).catch((error) => {
 			logError('Error checking if cache is populated:', error);
@@ -147,7 +146,7 @@ async function onPopupCreation(popup: any) {
 			consentModalShown = true;
 			try {
 				const currentUserID = getCurrentAccountID();
-				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
+				const userConsented = await hasStoreData({ steamUserID: currentUserID, storeName: 'consent' });
 				if (!isTruthy(userConsented)) {
 					showConsentModal(currentUserID);
 				}

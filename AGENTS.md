@@ -49,6 +49,14 @@ graph TD
     end
 ```
 
+### The Backend-as-a-Persistent-Bridge
+
+Due to Millennium's sandbox isolation, the WebKit scrapers cannot communicate directly with the React Frontend. To bridge this gap, WebKit pushes scraped data to the Lua Backend, which persists it to disk. The Frontend then retrieves this data from the Backend. This "Backend-as-a-bridge" architecture is essential for two reasons:
+1. It safely crosses the isolated Chromium sandbox boundaries.
+2. It ensures all data is persisted to the local file system so caches remain populated across Steam restarts.
+
+The backend acts as a dumb, generic disk adapter (`SyncStoreData` / `GetStoreData`), while all domain logic (normalization, consent checking, in-memory caching) happens natively in the TypeScript sandboxes.
+
 ### Context Breakdown
 
 | Context | Main File / Folder | Environment & Execution Context | Capabilities & Limits |
