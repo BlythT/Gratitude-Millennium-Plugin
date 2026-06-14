@@ -1,6 +1,9 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
 import { log, logError } from '../lib/logger';
-import { setupObserver, onMainContentReady_Register } from './injection/observer';
+import { injectionEngine } from './lib/framework/InjectionEngine';
+import { GiftBadge, type GiftBadgeData } from './components/GiftBadge';
+import { detectAppId, detectGameName } from './utils/dom';
+import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
 import { isTruthy } from './utils/truthy';
 import { gameLicenseCache } from './injection/gamelicensecache';
 import { friendsCache } from './injection/friendscache';
@@ -8,7 +11,7 @@ import { giverCache } from './injection/givercache';
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
-import { POPUPS } from './types';
+import { POPUPS, SELECTORS, type LicenseMatch } from './types';
 import { useSettings } from './settings';
 
 // Declare backend functions
@@ -145,30 +148,100 @@ async function onPopupCreation(popup: any) {
 	if (isMainWindow || isBigPictureWindow) {
 		log('Setting up observer for window:', popup.m_strName);
 
-		// Register callback to show consent modal when main content loads
-		onMainContentReady_Register(async () => {
-			if (!consentModalShown) {
-				consentModalShown = true;
-				try {
-					const currentUserID = getCurrentAccountID();
-					// Check if user has already consented
-					const userConsented = await hasUserConsented({ steamUserID: currentUserID });
-					if (!isTruthy(userConsented)) {
-						showConsentModal(currentUserID);
-					}
-				} catch (error) {
-					logError('Error checking consent:', error);
+		if (!consentModalShown) {
+			consentModalShown = true;
+			try {
+				const currentUserID = getCurrentAccountID();
+				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
+				if (!isTruthy(userConsented)) {
+					showConsentModal(currentUserID);
 				}
+			} catch (error) {
+				logError('Error checking consent:', error);
 			}
-		});
+		}
 
 		// Set up observer for library patching
 		const doc = popup.m_popup?.document;
 		if (doc?.body) {
-			setupObserver(doc);
+			injectionEngine.start(doc);
 		}
 	}
 }
+
+injectionEngine.register({
+	id: 'gifted-badge',
+	selector: [SELECTORS.standard.tooltipContainer, SELECTORS.bigPicture.tooltipContainer],
+	insertAfterSelector: [SELECTORS.standard.playtimeTooltip, SELECTORS.bigPicture.playtimeTooltip],
+	component: GiftBadge,
+	getDataSync: (doc: Document): GiftBadgeData | null => {
+		const steamID = getCurrentAccountID();
+		if (!steamID) return null;
+
+		const gameName = detectGameName(doc);
+		if (!gameName) return null;
+
+		const licenseDataMap = gameLicenseCache.getDataSync(steamID);
+		if (!licenseDataMap) return null;
+
+		let match: LicenseMatch | null = null;
+		const appId = detectAppId(doc);
+		if (appId) {
+			const license = licenseDataMap.byAppId.get(String(appId));
+			if (license) {
+				match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
+			}
+		}
+
+		if (!match) {
+			const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
+			if (fuzzyMatch) {
+				match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
+			}
+		}
+
+		let giver = null;
+		if (match) {
+			giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
+		}
+
+		return { gameName, steamUserID: steamID, match, giver, doc };
+	},
+	getDataAsync: async (doc: Document): Promise<GiftBadgeData | null> => {
+		const steamID = getCurrentAccountID();
+		if (!steamID) return null;
+
+		const gameName = detectGameName(doc);
+		if (!gameName) return null;
+
+		const licenseDataMap = await gameLicenseCache.getData(steamID);
+		if (!licenseDataMap) return null;
+
+		let match: LicenseMatch | null = null;
+		const appId = detectAppId(doc);
+		if (appId) {
+			const license = licenseDataMap.byAppId.get(String(appId));
+			if (license) {
+				match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
+			}
+		}
+
+		if (!match) {
+			const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
+			if (fuzzyMatch) {
+				match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
+			}
+		}
+
+		await giverCache.getAll(steamID);
+		let giver = null;
+		if (match) {
+			giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
+		}
+
+		return { gameName, steamUserID: steamID, match, giver, doc };
+	}
+});
 
 // Initialize: check for existing main window and register callback for new ones
 function initializePopupHandling() {
