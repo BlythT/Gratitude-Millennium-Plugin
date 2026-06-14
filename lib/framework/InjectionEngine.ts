@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { InjectionConfig } from './types';
-import { log, logError } from '../../../lib/logger';
+import { log, logError } from '../logger';
 
 interface InjectedNode {
   container: HTMLElement | null;
@@ -99,27 +99,30 @@ class InjectionEngine {
         insertTarget = afterTarget;
     }
 
-    const syncData = config.getDataSync ? config.getDataSync(doc) : undefined;
+    const dataOrPromise = config.getData(doc);
     
-    if (syncData !== undefined && syncData !== null) {
-      this.inject(config, insertTarget, syncData, doc);
-    } else {
-      // Async path or intentional null
+    const isPromise = dataOrPromise && typeof (dataOrPromise as any).then === 'function';
+
+    if (isPromise) {
       this.injectedNodes.set(config.id, { container: null, reactRoot: null, teardownObserver: null, isFetching: true });
       
-      config.getDataAsync(doc)
-        .then(asyncData => {
-           if (!insertTarget.isConnected) {
-              this.injectedNodes.delete(config.id);
-              return;
-           }
-           this.injectedNodes.delete(config.id);
-           this.inject(config, insertTarget, asyncData, doc);
-        })
-        .catch(err => {
-           this.injectedNodes.delete(config.id);
-           logError(`[InjectionEngine] Error getting async data for ${config.id}:`, err);
-        });
+      (dataOrPromise as Promise<any>).then(asyncData => {
+        if (!insertTarget.isConnected) {
+          this.injectedNodes.delete(config.id);
+          return;
+        }
+        this.injectedNodes.delete(config.id);
+        if (asyncData !== null) {
+          this.inject(config, insertTarget, asyncData, doc);
+        }
+      }).catch(err => {
+        this.injectedNodes.delete(config.id);
+        logError(`[InjectionEngine] Error getting async data for ${config.id}:`, err);
+      });
+    } else {
+      if (dataOrPromise !== null) {
+        this.inject(config, insertTarget, dataOrPromise, doc);
+      }
     }
   }
 

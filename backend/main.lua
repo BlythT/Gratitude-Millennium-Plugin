@@ -29,87 +29,7 @@ local function table_size(t)
     return count
 end
 
-local function save_cache_to_file()
-    return cacheStore:save(GameLicenseCache)
-end
 
-local function load_cache_from_file()
-    local loadedCache = cacheStore:load(nil)
-    if loadedCache and next(loadedCache) ~= nil then
-        -- Migrate to new structure if needed
-        GameLicenseCache = {}
-        for steamUserID, userCache in pairs(loadedCache) do
-            if type(userCache) == "table" then
-                if userCache.byAppId or userCache.byName then
-                    GameLicenseCache[steamUserID] = {
-                        byAppId = userCache.byAppId or {},
-                        byName = userCache.byName or {}
-                    }
-                else
-                    -- Migrate old name-only cache
-                    GameLicenseCache[steamUserID] = {
-                        byAppId = {},
-                        byName = userCache
-                    }
-                end
-            end
-        end
-        return true
-    end
-    return false
-end
-
-local function save_consent_to_file()
-    return consentStore:save(consentState)
-end
-
-local function load_consent_from_file()
-    local loaded = consentStore:load(nil)
-    if loaded and next(loaded) ~= nil then
-        consentState = loaded
-        return true
-    end
-    return false
-end
-
-local function save_givers_to_file()
-    return giverStore:save(GiverStore)
-end
-
-local function load_givers_from_file()
-    local loaded = giverStore:load(nil)
-    if loaded and next(loaded) ~= nil then
-        GiverStore = loaded
-        return true
-    end
-    return false
-end
-
-local function save_friends_to_file()
-    return friendsStore:save(FriendsCacheStore)
-end
-
-local function load_friends_from_file()
-    local loaded = friendsStore:load(nil)
-    if loaded and next(loaded) ~= nil then
-        FriendsCacheStore = loaded
-        return true
-    end
-    return false
-end
-
-local function save_settings_to_file()
-    return settingsStore:save(SettingsStore)
-end
-
-local function load_settings_from_file()
-    local loaded = settingsStore:load(nil)
-    if loaded and next(loaded) ~= nil then
-        SettingsStore = loaded
-        return true
-    end
-    return false
-end
 
 local function ensure_account_store(store, steamUserID)
     if not store[steamUserID] then
@@ -286,7 +206,7 @@ function SetGameLicenseData(licenseData, steamUserID)
 
         -- Only save if user has consented
         if consentState[steamUserID] and consentState[steamUserID].allowed then
-            save_cache_to_file()
+            cacheStore:save(GameLicenseCache)
         else
             logger:info("User " .. steamUserID .. " has not given consent, skipping cache save")
         end
@@ -340,7 +260,7 @@ function ClearCache(steamUserID)
     logger:info("ClearCache called for Steam ID: " .. steamUserID)
 
     GameLicenseCache[steamUserID] = nil
-    save_cache_to_file()
+    cacheStore:save(GameLicenseCache)
 
     logger:info("Cache cleared for Steam ID: " .. steamUserID)
     return true
@@ -364,7 +284,7 @@ function SetConsent(consent, steamUserID)
 
     consentState[steamUserID].allowed = consent
     consentState[steamUserID].timestamp = os.time()
-    save_consent_to_file()
+    consentStore:save(consentState)
     return true
 end
 
@@ -446,7 +366,7 @@ function UpsertGiverData(payloadJson, steamUserID)
     local accountStore = ensure_account_store(GiverStore, steamUserID)
     accountStore[normalizedPayload.licenseKey] = normalizedPayload
 
-    if not save_givers_to_file() then
+    if not giverStore:save(GiverStore) then
         return false, "Failed to save giver store"
     end
 
@@ -479,7 +399,7 @@ function DeleteGiverData(licenseKey, steamUserID)
         end
     end
 
-    if not save_givers_to_file() then
+    if not giverStore:save(GiverStore) then
         return false
     end
 
@@ -546,7 +466,7 @@ function SetFriendsCache(friendsJson, steamUserID)
         updatedAt = os.time(),
     }
 
-    if not save_friends_to_file() then
+    if not friendsStore:save(FriendsCacheStore) then
         return false, "Failed to save friends cache"
     end
 
@@ -564,7 +484,7 @@ function ClearFriendsCache(steamUserID)
 
     FriendsCacheStore[steamUserID] = nil
 
-    if not save_friends_to_file() then
+    if not friendsStore:save(FriendsCacheStore) then
         return false
     end
 
@@ -605,7 +525,7 @@ function SetUiSettings(payloadJson)
 
     SettingsStore[steamUserID] = normalizedSettingsOrError
 
-    if not save_settings_to_file() then
+    if not settingsStore:save(SettingsStore) then
         return false, "Failed to save settings store"
     end
 
@@ -618,11 +538,39 @@ local function on_load()
     logger:info("Comparing millennium version: " .. millennium.cmp_version(millennium.version(), "2.29.3"))
 
     -- Load existing cache and consent data from disk
-    load_cache_from_file()
-    load_consent_from_file()
-    load_givers_from_file()
-    load_friends_from_file()
-    load_settings_from_file()
+    local loadedCache = cacheStore:load(nil)
+    if loadedCache and next(loadedCache) ~= nil then
+        -- Migrate to new structure if needed
+        GameLicenseCache = {}
+        for steamUserID, userCache in pairs(loadedCache) do
+            if type(userCache) == "table" then
+                if userCache.byAppId or userCache.byName then
+                    GameLicenseCache[steamUserID] = {
+                        byAppId = userCache.byAppId or {},
+                        byName = userCache.byName or {}
+                    }
+                else
+                    -- Migrate old name-only cache
+                    GameLicenseCache[steamUserID] = {
+                        byAppId = {},
+                        byName = userCache
+                    }
+                end
+            end
+        end
+    end
+
+    local loadedConsent = consentStore:load(nil)
+    if loadedConsent and next(loadedConsent) ~= nil then consentState = loadedConsent end
+    
+    local loadedGivers = giverStore:load(nil)
+    if loadedGivers and next(loadedGivers) ~= nil then GiverStore = loadedGivers end
+    
+    local loadedFriends = friendsStore:load(nil)
+    if loadedFriends and next(loadedFriends) ~= nil then FriendsCacheStore = loadedFriends end
+    
+    local loadedSettings = settingsStore:load(nil)
+    if loadedSettings and next(loadedSettings) ~= nil then SettingsStore = loadedSettings end
 
     -- TODO: Remove these manual hooks once Millennium commit 84d912263ba08f07b101957481c98cb5ff7ffbb4 is released.
     -- An earlier Millennium update unintentionally broke automatic WebKit injection for Steam URLs by excluding 
@@ -641,11 +589,11 @@ local function on_unload()
     logger:info("Plugin unloaded")
 
     -- Save cache and consent one last time before unloading
-    save_cache_to_file()
-    save_consent_to_file()
-    save_givers_to_file()
-    save_friends_to_file()
-    save_settings_to_file()
+    cacheStore:save(GameLicenseCache)
+    consentStore:save(consentState)
+    giverStore:save(GiverStore)
+    friendsStore:save(FriendsCacheStore)
+    settingsStore:save(SettingsStore)
 end
 
 -- Called when the Steam UI has fully loaded.

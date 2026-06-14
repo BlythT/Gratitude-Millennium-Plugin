@@ -4,7 +4,7 @@ import { log, logError } from '../../lib/logger';
 import { friendsCache } from '../injection/friendscache';
 import { giverCache } from '../injection/givercache';
 import { useSettings, type GratitudeSettings } from '../settings';
-import { isTruthy } from '../utils/truthy';
+import { isTruthy } from '../../lib/framework/truthy';
 import type { FriendRecord, FriendsCacheSnapshot, GiverData, GiverSource } from '../types';
 
 type GiverModalOptions = {

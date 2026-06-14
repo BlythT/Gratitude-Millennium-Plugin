@@ -1,5 +1,5 @@
-import { SELECTORS } from '../types';
-import { log } from '../../lib/logger';
+import { SELECTORS } from './steam-constants';
+import { log } from '../logger';
 
 export function detectGameName(doc: Document): string | null {
   let nameElem = doc.querySelector(SELECTORS.standard.gameName);
