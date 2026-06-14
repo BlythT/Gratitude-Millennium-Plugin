@@ -1,9 +1,10 @@
 import { ConfirmModal, DialogButton, ScrollPanel, TextField, showModal } from '@steambrew/client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { log, logError } from '../../lib/logger';
 import { friendsCache } from '../injection/friendscache';
 import { giverCache } from '../injection/givercache';
 import { useSettings, type GratitudeSettings } from '../settings';
+import { isTruthy } from '../utils/truthy';
 import type { FriendRecord, FriendsCacheSnapshot, GiverData, GiverSource } from '../types';
 
 type GiverModalOptions = {
@@ -71,11 +72,6 @@ const detailLabelStyle = {
 const modalContentWidthStyle = {
 	width: '440px',
 	maxWidth: '100%',
-} as const;
-
-const ghostFieldContainerStyle = {
-	position: 'relative',
-	width: '100%',
 } as const;
 
 
@@ -220,7 +216,7 @@ function GiverModalContent({
 	const [isSaving, setIsSaving] = useState(false);
 	const [statusMessage, setStatusMessage] = useState<string | null>(null);
 	const [isEditing, setIsEditing] = useState(!existingGiver);
-	const displayNameFieldRef = useRef<HTMLDivElement | null>(null);
+
 
 	useEffect(() => {
 		let disposed = false;
@@ -319,7 +315,7 @@ function GiverModalContent({
 				source,
 			});
 
-			if (success) {
+			if (isTruthy(success)) {
 				log(`Giver modal save succeeded for license ${licenseKey}`);
 				onSaved?.();
 				closeModal();
@@ -345,7 +341,7 @@ function GiverModalContent({
 
 		try {
 			const success = await giverCache.remove(steamUserID, licenseKey);
-			if (success) {
+			if (isTruthy(success)) {
 				log(`Delete giver succeeded for ${licenseKey}, invoking onDeleted callback`);
 				onDeleted?.();
 				log(`onDeleted callback finished for ${licenseKey}, closing modal`);
@@ -375,27 +371,8 @@ function GiverModalContent({
 		}
 	};
 
-	useEffect(() => {
-		const wrapper = displayNameFieldRef.current;
-		if (!wrapper) {
-			return undefined;
-		}
 
-		const input = wrapper.querySelector('input');
-		if (!input) {
-			return undefined;
-		}
 
-		const onKeyDown = (event: Event) => {
-			handleDisplayNameKeyDown(event as unknown as { key: string; preventDefault: () => void });
-		};
-
-		input.addEventListener('keydown', onKeyDown);
-
-		return () => {
-			input.removeEventListener('keydown', onKeyDown);
-		};
-	}, [canAcceptTopSuggestion, topSuggestedFriend, topSuggestedLabel, displayName]);
 
 	const linkedProfileUrl = buildProfileUrl(existingGiver);
 	const linkedFriend = findLinkedFriend(friendsSnapshot, existingGiver);
@@ -486,7 +463,7 @@ function GiverModalContent({
 				<div>{gameTitle}</div>
 			</div>
 			<div>
-				<div ref={displayNameFieldRef} style={ghostFieldContainerStyle}>
+				<div onKeyDownCapture={handleDisplayNameKeyDown as unknown as React.KeyboardEventHandler<HTMLDivElement>}>
 					<TextField
 						label={(
 							<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>

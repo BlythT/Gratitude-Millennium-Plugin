@@ -1,5 +1,6 @@
 import { callable } from '@steambrew/client';
 import { log, logError } from '../../lib/logger';
+import { isTruthy } from '../utils/truthy';
 
 // Backend callable functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
@@ -72,7 +73,7 @@ class GameLicenseCache {
 			// First check if backend cache is populated
 			const isPopulated = await isGameLicenseCachePopulated({ steamUserID });
 			
-			if (!isPopulated) {
+			if (!isTruthy(isPopulated)) {
 				log(`Backend cache not populated for user ${steamUserID}`);
 				const emptyCache = {
 					byAppId: new Map<string, GameLicenseEntry>(),
@@ -130,7 +131,7 @@ class GameLicenseCache {
 		try {
 			const success = await clearCacheBackend({ steamUserID });
 			
-			if (success) {
+			if (isTruthy(success)) {
 				this.cache.delete(steamUserID);
 				log(`Cache cleared for user ${steamUserID}`);
 			}

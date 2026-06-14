@@ -1,6 +1,8 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
 import { log, logError } from '../lib/logger';
 import { setupObserver, onMainContentReady_Register } from './injection/observer';
+import { isTruthy } from './utils/truthy';
+import { gameLicenseCache } from './injection/gamelicensecache';
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
@@ -10,7 +12,6 @@ import { useSettings } from './settings';
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
 const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
-const clearCache = callable<[{ steamUserID: string }], boolean>('ClearCache');
 const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
 
 const SettingsContent = () => {
@@ -45,8 +46,8 @@ const SettingsContent = () => {
 
 	const handleClearCache = async () => {
 		try {
-			const success = await clearCache({ steamUserID: getCurrentAccountID() });
-			if (success) {
+			const success = await gameLicenseCache.clearCache(getCurrentAccountID());
+			if (isTruthy(success)) {
 				log('Cache cleared successfully');
 				setEntryCount(0);
 			}
@@ -133,7 +134,7 @@ async function onPopupCreation(popup: any) {
 					const currentUserID = getCurrentAccountID();
 					// Check if user has already consented
 					const userConsented = await hasUserConsented({ steamUserID: currentUserID });
-					if (!userConsented) {
+					if (!isTruthy(userConsented)) {
 						showConsentModal(currentUserID);
 					}
 				} catch (error) {
