@@ -69,10 +69,10 @@ const SafeTooltip = ({ toolTipContent, fallbackText, children }: SafeTooltipProp
 const GiftedTooltipContent = ({ giver, date }: { giver: GiverData | null; date: string }) => {
   return (
     <div style={{ padding: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <div style={{ fontWeight: 'bold' }}>{giver ? `Gifted by ${giver.displayName}` : 'Gifted Game'}</div>
-      {giver?.notes && <div style={{ fontSize: '11px', opacity: 0.8, maxWidth: '200px', wordBreak: 'break-word' }}>{giver.notes}</div>}
-      <div style={{ fontSize: '11px', opacity: 0.6 }}>Acquired: {date}</div>
-      {!giver && <div style={{ fontSize: '10px', opacity: 0.5, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '4px', marginTop: '2px' }}>Click to record gifter info</div>}
+      <div style={{ fontWeight: 500 }}>{giver ? `Gifted by ${giver.displayName}` : 'Gifted Game'}</div>
+      {giver?.notes && <div style={{ fontSize: '12px', opacity: 0.8, maxWidth: '200px', wordBreak: 'break-word' }}>{giver.notes}</div>}
+      <div style={{ fontSize: '12px', opacity: 0.8 }}>Acquired: {date}</div>
+      {!giver && <div style={{ fontSize: '11px', opacity: 0.6, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '4px', marginTop: '2px' }}>Click to record gifter info</div>}
     </div>
   );
 };
@@ -80,8 +80,8 @@ const GiftedTooltipContent = ({ giver, date }: { giver: GiverData | null; date: 
 const MissingDataTooltipContent = () => {
   return (
     <div style={{ padding: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-      <div style={{ fontWeight: 'bold' }}>License data not found</div>
-      <div style={{ fontSize: '11px', opacity: 0.8 }}>Click to refresh (opens store page)</div>
+      <div style={{ fontWeight: 500 }}>License data not found</div>
+      <div style={{ fontSize: '12px', opacity: 0.8 }}>Click to refresh (opens store page)</div>
     </div>
   );
 };
