@@ -1,5 +1,5 @@
 import { callable } from '@steambrew/client';
-import { log } from '../../lib/logger';
+
 import { CacheManager } from './CacheManager';
 import { isTruthy } from '../utils/truthy';
 

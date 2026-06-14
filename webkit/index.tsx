@@ -279,12 +279,18 @@ function getFriendDisplayName(row) {
 function getFriendAlias(row, displayName, profileUrl) {
 	const aliases = new Set();
 
-	const nicknameHint = row.querySelector('.player_nickname_hint');
-	if (nicknameHint && nicknameHint.textContent) {
-		const nick = nicknameHint.textContent.trim().replace(/^\((.*)\)$/, '$1').trim();
-		if (nick && displayName && nick.toLowerCase() !== displayName.toLowerCase()) {
-			aliases.add(nick);
-		}
+	const dataSearch = row.getAttribute('data-search');
+	if (dataSearch && displayName) {
+		const parts = dataSearch.split(' ; ');
+		const lowerDisplay = displayName.toLowerCase();
+
+		[parts[0], parts[2]].forEach((part) => {
+			if (!part) return;
+			const name = part.trim();
+			if (name && name.toLowerCase() !== lowerDisplay) {
+				aliases.add(name);
+			}
+		});
 	}
 
 	const profileSlug = getProfileSlug(profileUrl);
