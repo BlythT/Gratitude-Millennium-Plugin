@@ -717,6 +717,13 @@ local function on_load()
     load_friends_from_file()
     load_settings_from_file()
 
+    -- TODO: Remove these manual hooks once Millennium commit 84d912263ba08f07b101957481c98cb5ff7ffbb4 is released.
+    -- An earlier Millennium update unintentionally broke automatic WebKit injection for Steam URLs by excluding 
+    -- them from `is_valid_target_url`. Until the upstream fix is released, we must manually hook the Store and 
+    -- Community pages to ensure our WebKit scripts are loaded.
+    millennium.add_browser_js("", ".*store\\.steampowered\\.com.*")
+    millennium.add_browser_js("", ".*steamcommunity\\.com.*")
+
     logger:info("Gratitude plugin loaded with Millennium version " .. millennium.version())
     millennium.ready()
 end

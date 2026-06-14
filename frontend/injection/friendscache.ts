@@ -1,5 +1,6 @@
 import { callable } from '@steambrew/client';
 import { log, logError } from '../../lib/logger';
+import { isTruthy } from '../utils/truthy';
 import type { FriendRecord, FriendsCacheSnapshot } from '../types';
 
 const getFriendsCache = callable<[{ steamUserID: string }], string>('GetFriendsCache');
@@ -38,7 +39,7 @@ class FriendsCache {
 
 		try {
 			const exists = await hasFriendsCache({ steamUserID });
-			if (!exists) {
+			if (!isTruthy(exists)) {
 				this.cache.set(steamUserID, {
 					snapshot: null,
 					isLoaded: true,
@@ -69,7 +70,7 @@ class FriendsCache {
 	async clearCache(steamUserID: string): Promise<boolean> {
 		try {
 			const success = await clearFriendsCacheBackend({ steamUserID });
-			if (success) {
+			if (isTruthy(success)) {
 				this.cache.delete(steamUserID);
 			}
 			return success;

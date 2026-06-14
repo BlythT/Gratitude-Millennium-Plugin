@@ -232,9 +232,18 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
     return true;
   }
 
-  if (existingDisplay && (existingDisplay.dataset.missing || forceRefresh)) {
-    log('Removing existing display before refresh');
+  if (existingDisplay && forceRefresh) {
+    log('Removing existing display for force refresh');
     existingDisplay.remove();
+  } else if (existingDisplay && existingDisplay.dataset.missing) {
+    if (gameLicenseCache.getDataSync(steamID)) {
+      log('Removing existing missing display because cache is now populated');
+      existingDisplay.remove();
+    } else {
+      // Missing display already exists and cache is still empty.
+      // Don't modify the DOM to prevent infinite observer loops, and don't fetch again.
+      return false;
+    }
   }
 
   try {

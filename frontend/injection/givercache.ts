@@ -1,5 +1,6 @@
 import { callable } from '@steambrew/client';
 import { log, logError } from '../../lib/logger';
+import { isTruthy } from '../utils/truthy';
 import type { GiverData } from '../types';
 
 const getAllGiverData = callable<[{ steamUserID: string }], string>('GetAllGiverData');
@@ -66,7 +67,7 @@ class GiverCache {
 				steamUserID,
 			});
 
-			if (success) {
+			if (isTruthy(success)) {
 				log(`Upsert succeeded for user ${steamUserID} and license ${giverData.licenseKey}, reloading cache`);
 				await this.getAll(steamUserID, true);
 			}
@@ -84,7 +85,7 @@ class GiverCache {
 			const success = await deleteGiverData({ steamUserID, licenseKey });
 			log(`Delete backend call completed for user ${steamUserID} and license ${licenseKey}: success=${success}`);
 
-			if (success) {
+			if (isTruthy(success)) {
 				const cached = this.cache.get(steamUserID);
 				if (cached?.entries.has(licenseKey)) {
 					log(`Removing giver entry for license ${licenseKey} from frontend cache before reload`);
