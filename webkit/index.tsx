@@ -277,21 +277,13 @@ function getFriendDisplayName(row) {
 }
 
 function getFriendAlias(row, displayName, profileUrl) {
-	const dataSearch = row.getAttribute('data-search');
 	const aliases = new Set();
 
-	if (dataSearch) {
-		const normalizedSegments = dataSearch
-			.split(/[;\n|]+/)
-			.map((segment) => segment.trim())
-			.filter(Boolean);
-
-		for (const segment of normalizedSegments) {
-			const loweredSegment = segment.toLowerCase();
-			if (displayName && loweredSegment === displayName.toLowerCase()) {
-				continue;
-			}
-			aliases.add(segment);
+	const nicknameHint = row.querySelector('.player_nickname_hint');
+	if (nicknameHint && nicknameHint.textContent) {
+		const nick = nicknameHint.textContent.trim().replace(/^\((.*)\)$/, '$1').trim();
+		if (nick && displayName && nick.toLowerCase() !== displayName.toLowerCase()) {
+			aliases.add(nick);
 		}
 	}
 

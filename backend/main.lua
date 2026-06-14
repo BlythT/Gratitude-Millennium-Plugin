@@ -5,26 +5,19 @@ local io = require("io")
 local fs = require("fs")
 local utils = require("utils")
 
-local CACHE_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_cache.json")
-local CONSENT_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_consent.json")
-local GIVER_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_givers.json")
-local FRIENDS_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_friends.json")
-local SETTINGS_FILE_PATH = fs.join(utils.get_backend_path(), "gratitude_settings.json")
+local JsonStore = require("lib.JsonStore")
 
--- Global cache for license data (indexed by Steam ID, then game name)
--- Structure: { [steamUserID] = { [gameName] = { date, acquisition }, [gameName2] = { ... } }, ... }    
+local cacheStore = JsonStore.new("gratitude_cache.json", "Game license cache")
+local consentStore = JsonStore.new("gratitude_consent.json", "Consent state")
+local giverStore = JsonStore.new("gratitude_givers.json", "Giver store")
+local friendsStore = JsonStore.new("gratitude_friends.json", "Friends cache")
+local settingsStore = JsonStore.new("gratitude_settings.json", "Settings store")
+
+-- Global caches (in-memory)
 local GameLicenseCache = {}
-
--- Consent state (per Steam ID)
 local consentState = {}
-
--- Giver metadata keyed by Steam ID, then license key
 local GiverStore = {}
-
--- Cached Steam friends keyed by Steam ID
 local FriendsCacheStore = {}
-
--- UI settings keyed by Steam ID
 local SettingsStore = {}
 
 -- Helper function to count table entries
@@ -36,90 +29,13 @@ local function table_size(t)
     return count
 end
 
-local function save_json(path, data, description)
-    if not path then
-        logger:error("No valid path provided for " .. description .. " file")
-        return false
-    end
-
-    if fs.exists(path) then
-        logger:info(description .. " file already exists at " .. path .. ", overwriting")
-    else
-        logger:info("Saving " .. description .. " to new file at " .. path)
-    end
-
-    -- Encode first - if this fails, we haven't touched the file yet
-    local success, encoded = pcall(json.encode, data)
-    if not success then
-        logger:error("Failed to encode " .. description .. " data: " .. tostring(encoded))
-        return false
-    end
-
-    local file, err = io.open(path, "w")
-    if not file then
-        logger:error("Failed to open " .. description .. " file for writing: " .. tostring(err))
-        return false
-    end
-
-    -- Write the data and explicitly check for errors
-    local write_success, write_err = pcall(function()
-        file:write(encoded)
-    end)
-
-    file:close()
-
-    if not write_success then
-        logger:error("Failed to write " .. description .. " file: " .. tostring(write_err))
-        return false
-    end
-
-    logger:info(description .. " saved successfully")
-    return true
-end
-
-local function load_json(path, description)
-    if not path then
-        logger:error("No valid path provided for " .. description .. " file")
-        return nil
-    end
-
-    if not fs.exists(path) then
-        logger:info(description .. " file doesn't exist at " .. path)
-        return nil
-    end
-
-    local file, err = io.open(path, "r")
-    if not file then
-        logger:error("Failed to open " .. description .. " file for reading: " .. tostring(err))
-        return nil
-    end
-
-    local content = file:read("*all")
-    file:close()
-
-    if content and #content > 0 then
-        local success, decoded = pcall(json.decode, content)
-        if success then
-            logger:info(description .. " loaded successfully from " .. path)
-            return decoded
-        else
-            logger:error("Failed to decode " .. description .. " JSON: " .. tostring(decoded))
-            return nil
-        end
-    else
-        logger:info(description .. " file is empty at " .. path)
-        return nil
-    end
-end
-
 local function save_cache_to_file()
-    return save_json(CACHE_FILE_PATH, GameLicenseCache, "Game license cache")
+    return cacheStore:save(GameLicenseCache)
 end
 
 local function load_cache_from_file()
-    local loadedCache = load_json(CACHE_FILE_PATH, "Game license cache")
-    if loadedCache then
-        logger:info("Game license cache loaded successfully from file")
+    local loadedCache = cacheStore:load(nil)
+    if loadedCache and next(loadedCache) ~= nil then
         -- Migrate to new structure if needed
         GameLicenseCache = {}
         for steamUserID, userCache in pairs(loadedCache) do
@@ -140,67 +56,58 @@ local function load_cache_from_file()
         end
         return true
     end
-    logger:info("Load failed or no existing game license cache found, starting with empty cache")
     return false
 end
 
 local function save_consent_to_file()
-    return save_json(CONSENT_FILE_PATH, consentState, "Consent state")
+    return consentStore:save(consentState)
 end
 
 local function load_consent_from_file()
-    local loadedConsent = load_json(CONSENT_FILE_PATH, "Consent state")
-    if loadedConsent then
-        logger:info("Consent state loaded successfully from file")
-        consentState = loadedConsent
+    local loaded = consentStore:load(nil)
+    if loaded and next(loaded) ~= nil then
+        consentState = loaded
         return true
     end
-    logger:info("Load failed or no existing consent state found, starting with empty consent state")
     return false
 end
 
 local function save_givers_to_file()
-    return save_json(GIVER_FILE_PATH, GiverStore, "Giver store")
+    return giverStore:save(GiverStore)
 end
 
 local function load_givers_from_file()
-    local loadedGivers = load_json(GIVER_FILE_PATH, "Giver store")
-    if loadedGivers then
-        logger:info("Giver store loaded successfully from file")
-        GiverStore = loadedGivers
+    local loaded = giverStore:load(nil)
+    if loaded and next(loaded) ~= nil then
+        GiverStore = loaded
         return true
     end
-    logger:info("Load failed or no existing giver store found, starting with empty giver store")
     return false
 end
 
 local function save_friends_to_file()
-    return save_json(FRIENDS_FILE_PATH, FriendsCacheStore, "Friends cache")
+    return friendsStore:save(FriendsCacheStore)
 end
 
 local function load_friends_from_file()
-    local loadedFriends = load_json(FRIENDS_FILE_PATH, "Friends cache")
-    if loadedFriends then
-        logger:info("Friends cache loaded successfully from file")
-        FriendsCacheStore = loadedFriends
+    local loaded = friendsStore:load(nil)
+    if loaded and next(loaded) ~= nil then
+        FriendsCacheStore = loaded
         return true
     end
-    logger:info("Load failed or no existing friends cache found, starting with empty friends cache")
     return false
 end
 
 local function save_settings_to_file()
-    return save_json(SETTINGS_FILE_PATH, SettingsStore, "Settings store")
+    return settingsStore:save(SettingsStore)
 end
 
 local function load_settings_from_file()
-    local loadedSettings = load_json(SETTINGS_FILE_PATH, "Settings store")
-    if loadedSettings then
-        logger:info("Settings store loaded successfully from file")
-        SettingsStore = loadedSettings
+    local loaded = settingsStore:load(nil)
+    if loaded and next(loaded) ~= nil then
+        SettingsStore = loaded
         return true
     end
-    logger:info("Load failed or no existing settings store found, starting with empty settings store")
     return false
 end
 

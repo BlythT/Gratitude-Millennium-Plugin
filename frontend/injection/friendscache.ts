@@ -1,16 +1,10 @@
 import { callable } from '@steambrew/client';
-import { log, logError } from '../../lib/logger';
-import { isTruthy } from '../utils/truthy';
+import { CacheManager } from './CacheManager';
 import type { FriendRecord, FriendsCacheSnapshot } from '../types';
+import { isTruthy } from '../utils/truthy';
 
 const getFriendsCache = callable<[{ steamUserID: string }], string>('GetFriendsCache');
-const hasFriendsCache = callable<[{ steamUserID: string }], boolean>('HasFriendsCache');
 const clearFriendsCacheBackend = callable<[{ steamUserID: string }], boolean>('ClearFriendsCache');
-
-interface UserFriendsCache {
-	snapshot: FriendsCacheSnapshot | null;
-	isLoaded: boolean;
-}
 
 function normalizeSnapshot(payload: string): FriendsCacheSnapshot | null {
 	if (!payload || payload === '{}') {
@@ -28,61 +22,14 @@ function normalizeSnapshot(payload: string): FriendsCacheSnapshot | null {
 	};
 }
 
-class FriendsCache {
-	private cache: Map<string, UserFriendsCache> = new Map();
-
-	async getData(steamUserID: string, forceReload = false): Promise<FriendsCacheSnapshot | null> {
-		const cached = this.cache.get(steamUserID);
-		if (cached && cached.isLoaded && !forceReload) {
-			return cached.snapshot;
-		}
-
-		try {
-			const exists = await hasFriendsCache({ steamUserID });
-			if (!isTruthy(exists)) {
-				this.cache.set(steamUserID, {
-					snapshot: null,
-					isLoaded: true,
-				});
-				return null;
-			}
-
-			const snapshot = normalizeSnapshot(await getFriendsCache({ steamUserID }));
-			this.cache.set(steamUserID, {
-				snapshot,
-				isLoaded: true,
-			});
-
-			log(
-				`Loaded ${snapshot?.friends.length ?? 0} cached friends for user ${steamUserID}`,
-			);
-			return snapshot;
-		} catch (error) {
-			logError(`Error loading friends cache for user ${steamUserID}:`, error);
-			return null;
-		}
+export const friendsCache = new CacheManager<FriendsCacheSnapshot>(
+	'Friends',
+	async (steamUserID) => {
+		const payload = await getFriendsCache({ steamUserID });
+		return normalizeSnapshot(payload);
+	},
+	async (steamUserID) => {
+		const success = await clearFriendsCacheBackend({ steamUserID });
+		return isTruthy(success);
 	}
-
-	getDataSync(steamUserID: string): FriendsCacheSnapshot | null | undefined {
-		return this.cache.get(steamUserID)?.snapshot;
-	}
-
-	async clearCache(steamUserID: string): Promise<boolean> {
-		try {
-			const success = await clearFriendsCacheBackend({ steamUserID });
-			if (isTruthy(success)) {
-				this.cache.delete(steamUserID);
-			}
-			return success;
-		} catch (error) {
-			logError(`Error clearing friends cache for user ${steamUserID}:`, error);
-			return false;
-		}
-	}
-
-	invalidate(steamUserID: string): void {
-		this.cache.delete(steamUserID);
-	}
-}
-
-export const friendsCache = new FriendsCache();
+);
