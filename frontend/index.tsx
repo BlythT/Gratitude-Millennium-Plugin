@@ -1,23 +1,22 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
 import { log, logError } from '../lib/logger';
-import { injectionEngine } from './lib/framework/InjectionEngine';
+import { injectionEngine } from '../lib/framework/InjectionEngine';
 import { GiftBadge, type GiftBadgeData } from './components/GiftBadge';
-import { detectAppId, detectGameName } from './utils/dom';
+import { detectAppId, detectGameName } from '../lib/framework/steam-context';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
-import { isTruthy } from './utils/truthy';
-import { gameLicenseCache } from './injection/gamelicensecache';
+import { isTruthy } from '../lib/framework/truthy';
+import { gameLicenseCache, type UserLicenseCache } from './injection/gamelicensecache';
 import { friendsCache } from './injection/friendscache';
 import { giverCache } from './injection/givercache';
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
-import { POPUPS, SELECTORS, type LicenseMatch } from './types';
+import { POPUPS, SELECTORS } from '../lib/framework/steam-constants';
+import { type LicenseMatch } from './types';
 import { useSettings } from './settings';
 
 // Declare backend functions
-const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
-const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
-const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
+const hasStoreData = callable<[{ steamUserID: string, storeName: string }], boolean>('HasStoreData');
 
 const SettingsContent = () => {
 	const steamUserID = getCurrentAccountID();
@@ -28,8 +27,8 @@ const SettingsContent = () => {
 	const [settings, setSetting] = useSettings(steamUserID);
 
 	const checkCache = async () => {
-		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() }).then((populated) => {
-			log('Response from IsGameLicenseCachePopulated:', populated);
+		return await hasStoreData({ steamUserID: getCurrentAccountID(), storeName: 'licenses' }).then((populated) => {
+			log('Response from HasStoreData(licenses):', populated);
 			return populated;
 		}).catch((error) => {
 			logError('Error checking if cache is populated:', error);
@@ -40,13 +39,8 @@ const SettingsContent = () => {
 	const updateEntryCount = async () => {
 		try {
 			const steamID = getCurrentAccountID();
-			const data = await getAllCacheEntries({ steamUserID: steamID });
-			const entries = data ? JSON.parse(data) : {};
-			if (entries.byName) {
-				setLicenseCount(Object.keys(entries.byName).length);
-			} else {
-				setLicenseCount(Object.keys(entries).length);
-			}
+			const data = await gameLicenseCache.getData(steamID);
+			setLicenseCount(data?.byName?.size || 0);
 
 			const friendsData = await friendsCache.getData(steamID);
 			setFriendCount(friendsData?.friends?.length || 0);
@@ -152,7 +146,7 @@ async function onPopupCreation(popup: any) {
 			consentModalShown = true;
 			try {
 				const currentUserID = getCurrentAccountID();
-				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
+				const userConsented = await hasStoreData({ steamUserID: currentUserID, storeName: 'consent' });
 				if (!isTruthy(userConsented)) {
 					showConsentModal(currentUserID);
 				}
@@ -169,77 +163,78 @@ async function onPopupCreation(popup: any) {
 	}
 }
 
+function resolveBadgeData(
+	doc: Document,
+	steamID: string,
+	gameName: string,
+	licenseDataMap: UserLicenseCache,
+	giverCacheInstance: typeof giverCache
+): GiftBadgeData | null {
+	if (!licenseDataMap.isPopulated) {
+		return { status: 'missing-cache', gameName, steamUserID: steamID, match: null, giver: null, doc };
+	}
+
+	let match: LicenseMatch | null = null;
+	const appId = detectAppId(doc);
+	if (appId) {
+		const license = licenseDataMap.byAppId.get(String(appId));
+		if (license) {
+			match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
+		}
+	}
+
+	if (!match) {
+		const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
+		if (fuzzyMatch) {
+			match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
+		}
+	}
+
+	if (!match || match.data.acquisition !== "Gift/Guest Pass") {
+		return null;
+	}
+
+	let giver = null;
+	if (match) {
+		giver = giverCacheInstance.getEntrySync(steamID, match.licenseKey, gameName);
+	}
+
+	return {
+		status: 'gift',
+		gameName,
+		steamUserID: steamID,
+		match,
+		giver,
+		doc
+	};
+}
+
 injectionEngine.register({
 	id: 'gifted-badge',
 	selector: [SELECTORS.standard.tooltipContainer, SELECTORS.bigPicture.tooltipContainer],
 	insertAfterSelector: [SELECTORS.standard.playtimeTooltip, SELECTORS.bigPicture.playtimeTooltip],
 	component: GiftBadge,
-	getDataSync: (doc: Document): GiftBadgeData | null => {
+	getData: (doc: Document): GiftBadgeData | null | Promise<GiftBadgeData | null> => {
 		const steamID = getCurrentAccountID();
 		if (!steamID) return null;
 
 		const gameName = detectGameName(doc);
 		if (!gameName) return null;
 
-		const licenseDataMap = gameLicenseCache.getDataSync(steamID);
-		if (!licenseDataMap) return null;
-
-		let match: LicenseMatch | null = null;
-		const appId = detectAppId(doc);
-		if (appId) {
-			const license = licenseDataMap.byAppId.get(String(appId));
-			if (license) {
-				match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
-			}
+		// Mixed sync/async wrapper pattern for Zero Layout Shift
+		// We try synchronously first. If populated, we return sync (ZLS).
+		const cachedLicenses = gameLicenseCache.getDataSync(steamID);
+		if (cachedLicenses && cachedLicenses.isPopulated) {
+			return resolveBadgeData(doc, steamID, gameName, cachedLicenses, giverCache);
 		}
 
-		if (!match) {
-			const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
-			if (fuzzyMatch) {
-				match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
-			}
-		}
-
-		let giver = null;
-		if (match) {
-			giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
-		}
-
-		return { gameName, steamUserID: steamID, match, giver, doc };
-	},
-	getDataAsync: async (doc: Document): Promise<GiftBadgeData | null> => {
-		const steamID = getCurrentAccountID();
-		if (!steamID) return null;
-
-		const gameName = detectGameName(doc);
-		if (!gameName) return null;
-
-		const licenseDataMap = await gameLicenseCache.getData(steamID);
-		if (!licenseDataMap) return null;
-
-		let match: LicenseMatch | null = null;
-		const appId = detectAppId(doc);
-		if (appId) {
-			const license = licenseDataMap.byAppId.get(String(appId));
-			if (license) {
-				match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
-			}
-		}
-
-		if (!match) {
-			const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
-			if (fuzzyMatch) {
-				match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
-			}
-		}
-
-		await giverCache.getAll(steamID);
-		let giver = null;
-		if (match) {
-			giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
-		}
-
-		return { gameName, steamUserID: steamID, match, giver, doc };
+		// Otherwise, drop to async flow.
+		return (async () => {
+			const licenseDataMap = await gameLicenseCache.getData(steamID);
+			if (!licenseDataMap) return null;
+			await giverCache.getAll(steamID);
+			return resolveBadgeData(doc, steamID, gameName, licenseDataMap, giverCache);
+		})();
 	}
 });
 

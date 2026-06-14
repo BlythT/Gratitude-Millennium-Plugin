@@ -1,4 +1,4 @@
-import { log, logError } from '../../lib/logger';
+import { log, logError } from '../logger';
 
 interface CacheEntry<T> {
 	data: T | null;
@@ -12,6 +12,7 @@ export class CacheManager<T> {
 		private name: string,
 		private fetcher: (steamUserID: string) => Promise<T | null>,
 		private clearer?: (steamUserID: string) => Promise<boolean>,
+		private shouldCache?: (data: T | null) => boolean
 	) {}
 
 	async getData(steamUserID: string, forceReload = false): Promise<T | null> {
@@ -22,7 +23,10 @@ export class CacheManager<T> {
 
 		try {
 			const data = await this.fetcher(steamUserID);
-			this.cache.set(steamUserID, { data, isLoaded: true });
+			const canCache = this.shouldCache ? this.shouldCache(data) : true;
+			if (canCache) {
+				this.cache.set(steamUserID, { data, isLoaded: true });
+			}
 			log(`Loaded ${this.name} cache for user ${steamUserID}`);
 			return data;
 		} catch (error) {

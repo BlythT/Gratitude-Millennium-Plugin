@@ -4,8 +4,8 @@ import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
 
-const setGameLicenseData = callable('SetGameLicenseData');
-const setFriendsCache = callable('SetFriendsCache');
+const getStoreData = callable('GetStoreData');
+const setStoreData = callable('SetStoreData');
 
 export default async function WebkitMain() {
 	log('WebkitMain loaded');
@@ -71,6 +71,18 @@ async function fetchOwnedGames(doc) {
 }
 
 async function maybeSyncLicenses(steamUserID) {
+	try {
+		const consentJson = await getStoreData({ storeName: 'consent', steamUserID });
+		const consent = consentJson ? JSON.parse(consentJson) : null;
+		if (!consent || !consent.allowed) {
+			log('User has not granted consent. Aborting license sync.');
+			return;
+		}
+	} catch (error) {
+		logError('Failed to check consent status:', error);
+		return;
+	}
+
 	const html = await fetchPage('https://store.steampowered.com/account/licenses/?l=english');
 	if (!html) {
 		log('Failed to fetch Steam Licenses.');
@@ -137,7 +149,7 @@ async function maybeSyncLicenses(steamUserID) {
 	};
 
 	try {
-		await setGameLicenseData({ licenseData: JSON.stringify(payload), steamUserID });
+		await setStoreData({ storeName: 'licenses', payloadJson: JSON.stringify(payload), steamUserID });
 		log('License data sent to backend successfully.');
 	} catch (error) {
 		logError('Error sending license data to backend:', error);
@@ -165,11 +177,19 @@ async function maybeSyncFriends(steamUserID) {
 		return;
 	}
 
-	const friends = parseFriendsList(friendList);
-	log(`Parsed ${friends.length} Steam friends`);
+	const rawFriends = parseFriendsList(friendList);
+	log(`Parsed ${rawFriends.length} Steam friends`);
+
+	const now = Math.floor(Date.now() / 1000);
+	const friends = rawFriends.map(f => ({ ...f, updatedAt: now }));
+	
+	const payload = {
+		friends,
+		updatedAt: now,
+	};
 
 	try {
-		await setFriendsCache({ friendsJson: JSON.stringify(friends), steamUserID });
+		await setStoreData({ storeName: 'friends', payloadJson: JSON.stringify(payload), steamUserID });
 		log('Friends cache sent to backend successfully.');
 	} catch (error) {
 		logError('Error sending friends cache to backend:', error);
