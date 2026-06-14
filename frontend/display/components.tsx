@@ -123,14 +123,14 @@ const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: Badge
       title={TooltipComponent ? undefined : tooltipText}
     >
       <div 
-        className={`${UI_CLASSES.iconContainer} Focusable`}
+        className={UI_CLASSES.iconContainer} 
         onClick={onIconClick}
         style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
       >
         {icon}
       </div>
       <div 
-        className={`${UI_CLASSES.textContainer} Focusable`}
+        className={UI_CLASSES.textContainer} 
         onClick={onTextClick}
         style={{ cursor: 'pointer' }}
       >
