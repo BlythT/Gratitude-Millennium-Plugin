@@ -1,10 +1,9 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
 import { findModuleDetailsByExport } from '@steambrew/client';
 import { UI_CLASSES, type GiverData, type LicenseMatch } from '../types';
 import { log } from '../../lib/logger';
 import confetti from 'canvas-confetti';
-import { showGiverModal } from '../components/GiverModal';
+import { showGiverModal } from './GiverModal';
 
 let Tooltip: any = null;
 let searchedTooltip = false;
@@ -26,10 +25,6 @@ function getTooltipComponent(): any {
     }
   }
   return Tooltip;
-}
-
-function createDisplayId(gameName: string): string {
-  return 'gratitude-' + gameName.toLowerCase().replace(/[^a-z0-9]/g, '-');
 }
 
 let confettiTimeout: any = null;
@@ -74,23 +69,6 @@ function fireConfetti(doc: Document) {
     }
     confettiTimeout = null;
   }, 5000);
-}
-
-export interface ExplictlyRootedElement extends HTMLElement {
-  __reactRoot?: any;
-}
-
-export function unmountDisplay(element: HTMLElement): void {
-  const rooted = element as ExplictlyRootedElement;
-  if (rooted.__reactRoot) {
-    try {
-      log('Unmounting React root for element:', element.id);
-      rooted.__reactRoot.unmount();
-    } catch (err) {
-      log('Error unmounting React root:', err);
-    }
-    delete rooted.__reactRoot;
-  }
 }
 
 const GiftIcon = () => (
@@ -146,135 +124,72 @@ const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: Badge
   return content;
 };
 
-interface GiftedBadgeProps {
-  doc: Document;
+export interface GiftBadgeData {
   gameName: string;
-  match: LicenseMatch;
-  giver: GiverData | null;
   steamUserID: string;
-  onGiverUpdated: () => void;
+  match: LicenseMatch | null;
+  giver: GiverData | null;
+  doc: Document;
+  onGiverUpdated?: () => void;
 }
 
-const GiftedBadge = ({ doc, gameName, match, giver, steamUserID, onGiverUpdated }: GiftedBadgeProps) => {
-  const data = match.data;
+export const GiftBadge: React.FC<{ data: GiftBadgeData | null }> = ({ data }) => {
+  if (!data) return null; // Wait for initial payload
+  
+  if (!data.match) {
+    const handleMissingClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      window.open("steam://store/");
+    };
+
+    return (
+      <Badge
+        icon={<QuestionIcon />}
+        tooltipText="License data not found. Click to refresh (opens store page)."
+        valueText="Loading..."
+        onIconClick={handleMissingClick}
+        onTextClick={handleMissingClick}
+      />
+    );
+  }
+  
+  if (data.match.data.acquisition !== "Gift/Guest Pass") {
+    return null; // Not a gifted game, render nothing
+  }
 
   const handleConfetti = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    fireConfetti(doc);
+    fireConfetti(data.doc);
   };
 
   const handleManageGiver = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     showGiverModal({
-      parentWindow: doc.defaultView ?? window,
-      steamUserID,
-      gameTitle: gameName,
-      licenseKey: match.licenseKey,
-      giftDate: data.date,
-      existingGiver: giver,
-      onSaved: onGiverUpdated,
-      onDeleted: onGiverUpdated,
+      parentWindow: data.doc.defaultView ?? window,
+      steamUserID: data.steamUserID,
+      gameTitle: data.gameName,
+      licenseKey: data.match!.licenseKey,
+      giftDate: data.match!.data.date,
+      existingGiver: data.giver,
+      onSaved: () => data.onGiverUpdated?.(),
+      onDeleted: () => data.onGiverUpdated?.(),
     });
   };
 
-  const tooltipText = giver 
-    ? `Gifted by ${giver.displayName} on ${data.date}${giver.notes ? ` - ${giver.notes}` : ''}` 
-    : `Gifted on ${data.date} - Click to record gifter info`;
+  const tooltipText = data.giver 
+    ? `Gifted by ${data.giver.displayName} on ${data.match.data.date}${data.giver.notes ? ` - ${data.giver.notes}` : ''}` 
+    : `Gifted on ${data.match.data.date} - Click to record gifter info`;
 
   return (
     <Badge
       icon={<GiftIcon />}
       tooltipText={tooltipText}
-      valueText={data.date}
+      valueText={data.match.data.date}
       onIconClick={handleConfetti}
       onTextClick={handleManageGiver}
     />
   );
 };
-
-const MissingDataBadge = () => {
-  const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    window.open("steam://store/");
-  };
-
-  const tooltipText = 'License data not found. Click to refresh (opens store page).';
-
-  return (
-    <Badge
-      icon={<QuestionIcon />}
-      tooltipText={tooltipText}
-      valueText="Loading..."
-      onIconClick={handleClick}
-      onTextClick={handleClick}
-    />
-  );
-};
-
-export function createDisplay(
-  doc: Document,
-  gameName: string,
-  match: LicenseMatch,
-  giver: GiverData | null,
-  steamUserID: string,
-  onGiverUpdated: () => void,
-): HTMLElement | null {
-  const data = match.data;
-  log('Creating display with data:', data);
-
-  if (data?.acquisition !== "Gift/Guest Pass") {
-    log("Not a gift:", data);
-    const placeholder = doc.createElement('div') as ExplictlyRootedElement;
-    placeholder.id = createDisplayId(gameName);
-    placeholder.style.display = 'none';
-    return placeholder;
-  }
-
-  const container = doc.createElement('div') as ExplictlyRootedElement;
-  container.id = createDisplayId(gameName);
-  container.className = UI_CLASSES.displayContainer;
-  container.style.display = 'contents';
-  
-  const root = (ReactDOM as any).createRoot(container);
-  root.render(
-    <GiftedBadge
-      doc={doc}
-      gameName={gameName}
-      match={match}
-      giver={giver}
-      steamUserID={steamUserID}
-      onGiverUpdated={onGiverUpdated}
-    />
-  );
-
-  container.__reactRoot = root;
-  log('Created display container:', container);
-  return container;
-}
-
-export function createMissingDataDisplay(doc: Document, gameName: string): HTMLElement | null {
-  log('Creating missing data display for:', gameName);
-  
-  const container = doc.createElement('div') as ExplictlyRootedElement;
-  container.id = createDisplayId(gameName);
-  container.className = UI_CLASSES.displayContainer;
-  container.dataset.missing = 'true';
-  container.style.display = 'contents';
-
-  const root = (ReactDOM as any).createRoot(container);
-  root.render(
-    <MissingDataBadge />
-  );
-
-  container.__reactRoot = root;
-  log('Created missing data display container:', container);
-  return container;
-}
-
-export function getExistingDisplay(doc: Document, gameName: string): HTMLElement | null {
-  return doc.getElementById(createDisplayId(gameName));
-}
-

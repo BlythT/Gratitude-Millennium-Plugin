@@ -1,0 +1,399 @@
+﻿commit 30645949a22c7791d310d6799b1f46401543e6b6
+Author: Tim Blyth <timmblyth@gmail.com>
+Date:   Sun Jun 14 20:21:07 2026 +1200
+
+    Refactor React Tooltip integration to resolve memory leaks and layout alignment
+
+diff --git a/frontend/display/components.tsx b/frontend/display/components.tsx
+index 672547c..b8eef51 100644
+--- a/frontend/display/components.tsx
++++ b/frontend/display/components.tsx
+@@ -1,35 +1,61 @@
+ import React from 'react';
+ import ReactDOM from 'react-dom';
+ import { findModuleDetailsByExport } from '@steambrew/client';
+-import { ICONS, UI_CLASSES, type GiverData, type LicenseMatch } from '../types';
++import { UI_CLASSES, type GiverData, type LicenseMatch } from '../types';
+ import { log } from '../../lib/logger';
+ import confetti from 'canvas-confetti';
+ import { showGiverModal } from '../components/GiverModal';
+ 
+-// Find Steam's native Tooltip component
+-const Tooltip = findModuleDetailsByExport(
+-  (m) =>
+-    m?.toString?.()?.includes(`divProps`) &&
+-    m?.toString?.()?.includes(`tooltipProps`) &&
+-    m?.toString?.()?.includes(`toolTipContent`) &&
+-    m?.toString?.()?.includes(`tool-tip-source`),
+-)?.[1];
++let Tooltip: any = null;
++let searchedTooltip = false;
++
++function getTooltipComponent(): any {
++  if (!searchedTooltip) {
++    searchedTooltip = true;
++    try {
++      Tooltip = findModuleDetailsByExport(
++        (m) =>
++          m?.toString?.()?.includes(`divProps`) &&
++          m?.toString?.()?.includes(`tooltipProps`) &&
++          m?.toString?.()?.includes(`toolTipContent`) &&
++          m?.toString?.()?.includes(`tool-tip-source`),
++      )?.[1];
++      log('Resolved Steam native Tooltip component:', Tooltip ? 'Success' : 'Not Found');
++    } catch (e) {
++      log('Error resolving native Tooltip:', e);
++    }
++  }
++  return Tooltip;
++}
+ 
+ function createDisplayId(gameName: string): string {
+   return 'gratitude-' + gameName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+ }
+ 
++let confettiTimeout: any = null;
++
+ function fireConfetti(doc: Document) {
+   log("fired confetti!");
+ 
+-  const canvas = doc.createElement('canvas');
+-  canvas.style.position = 'fixed';
+-  canvas.style.inset = '0';
+-  canvas.style.width = '100vw';
+-  canvas.style.height = '100vh';
+-  canvas.style.zIndex = '99999';
+-  canvas.style.pointerEvents = 'none';
+-  doc.body.appendChild(canvas);
++  const CANVAS_ID = 'gratitude-confetti-canvas';
++  let canvas = doc.getElementById(CANVAS_ID) as HTMLCanvasElement | null;
++
++  if (!canvas) {
++    canvas = doc.createElement('canvas');
++    canvas.id = CANVAS_ID;
++    canvas.style.position = 'fixed';
++    canvas.style.inset = '0';
++    canvas.style.width = '100vw';
++    canvas.style.height = '100vh';
++    canvas.style.zIndex = '99999';
++    canvas.style.pointerEvents = 'none';
++    doc.body.appendChild(canvas);
++  } else {
++    if (confettiTimeout) {
++      clearTimeout(confettiTimeout);
++      confettiTimeout = null;
++    }
++  }
+ 
+   const myConfetti = confetti.create(canvas, {
+     resize: true,
+@@ -42,28 +68,82 @@ function fireConfetti(doc: Document) {
+     origin: { y: 0.6 },
+   });
+ 
+-  // Cleanup
+-  setTimeout(() => {
+-    if (canvas.parentElement) {
++  confettiTimeout = setTimeout(() => {
++    if (canvas && canvas.parentElement) {
+       doc.body.removeChild(canvas);
+     }
++    confettiTimeout = null;
+   }, 5000);
+ }
+ 
+-interface SafeTooltipProps {
+-  toolTipContent: React.ReactNode;
+-  fallbackText: string;
+-  children?: React.ReactElement;
++export interface ExplictlyRootedElement extends HTMLElement {
++  __reactRoot?: any;
++}
++
++export function unmountDisplay(element: HTMLElement): void {
++  const rooted = element as ExplictlyRootedElement;
++  if (rooted.__reactRoot) {
++    try {
++      log('Unmounting React root for element:', element.id);
++      rooted.__reactRoot.unmount();
++    } catch (err) {
++      log('Error unmounting React root:', err);
++    }
++    delete rooted.__reactRoot;
++  }
++}
++
++const GiftIcon = () => (
++  <svg stroke="currentColor" fill="currentColor" strokeWidth="0" viewBox="0 0 512 512" height="30" width="30" xmlns="http://www.w3.org/2000/svg">
++    <path fill="none" d="M346 110a34 34 0 0 0-68 0v34h34a34 34 0 0 0 34-34zm-112 0a34 34 0 1 0-34 34h34z" />
++    <path d="M234 144h44v112h164a22 22 0 0 0 22-22v-68a22 22 0 0 0-22-22h-59.82A77.95 77.95 0 0 0 256 55.79 78 78 0 0 0 129.81 144H70a22 22 0 0 0-22 22v68a22 22 0 0 0 22 22h164zm44-34a34 34 0 1 1 34 34h-34zm-112 0a34 34 0 1 1 68 0v34h-34a34 34 0 0 1-34-34zm112 370h132a22 22 0 0 0 22-22V288H278zM80 458a22 22 0 0 0 22 22h132V288H80z" />
++  </svg>
++);
++
++const QuestionIcon = () => (
++  <svg stroke="currentColor" fill="currentColor" strokeWidth="0" viewBox="0 0 384 512" height="30" width="30" xmlns="http://www.w3.org/2000/svg">
++    <path d="M202.021 0C122.202 0 70.503 32.703 29.914 91.026c-7.363 10.58-5.093 25.086 5.178 32.874l43.138 32.709c10.373 7.865 25.132 6.026 33.253-4.148 25.049-31.381 43.63-49.449 82.757-49.449 30.764 0 68.816 19.799 68.816 49.631 0 22.552-18.617 34.134-48.993 51.164-35.423 19.86-82.299 44.576-82.299 106.405V320c0 13.255 10.745 24 24 24h72.471c13.255 0 24-10.745 24-24v-5.773c0-42.86 125.268-44.645 125.268-160.627C377.504 66.256 286.902 0 202.021 0zM192 373.459c-38.196 0-69.271 31.075-69.271 69.271 0 38.195 31.075 69.27 69.271 69.27s69.271-31.075 69.271-69.271-31.075-69.27-69.271-69.27z" />
++  </svg>
++);
++
++interface BadgeProps {
++  icon: React.ReactNode;
++  tooltipText: string;
++  valueText: string;
++  onIconClick: (e: React.MouseEvent) => void;
++  onTextClick: (e: React.MouseEvent) => void;
+ }
+ 
+-const SafeTooltip = ({ toolTipContent, fallbackText, children }: SafeTooltipProps) => {
+-  if (!children) return null;
+-  if (Tooltip) {
+-    return <Tooltip toolTipContent={toolTipContent}>{children}</Tooltip>;
++const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: BadgeProps) => {
++  const TooltipComponent = getTooltipComponent();
++
++  const content = (
++    <div 
++      className={`${UI_CLASSES.displayContainer} _3pS8kMrtScuY1Qf-W8tmRV Panel`}
++      title={TooltipComponent ? undefined : tooltipText}
++    >
++      <div 
++        className={UI_CLASSES.iconContainer} 
++        onClick={onIconClick}
++        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
++      >
++        {icon}
++      </div>
++      <div 
++        className={UI_CLASSES.textContainer} 
++        onClick={onTextClick}
++        style={{ cursor: 'pointer' }}
++      >
++        <div className={UI_CLASSES.label}>Gifted</div>
++        <div className={UI_CLASSES.value}>{valueText}</div>
++      </div>
++    </div>
++  );
++
++  if (TooltipComponent) {
++    return <TooltipComponent toolTipContent={tooltipText}>{content}</TooltipComponent>;
+   }
+-  return React.cloneElement(children, {
+-    title: fallbackText
+-  } as any);
++  return content;
+ };
+ 
+ interface GiftedBadgeProps {
+@@ -104,57 +184,33 @@ const GiftedBadge = ({ doc, gameName, match, giver, steamUserID, onGiverUpdated
+     : `Gifted on ${data.date} - Click to record gifter info`;
+ 
+   return (
+-    <>
+-      <SafeTooltip toolTipContent={tooltipText} fallbackText={tooltipText}>
+-        <div 
+-          className={UI_CLASSES.iconContainer} 
+-          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+-          onClick={handleConfetti}
+-          dangerouslySetInnerHTML={{ __html: ICONS.gift }}
+-        />
+-      </SafeTooltip>
+-      <SafeTooltip toolTipContent={tooltipText} fallbackText={tooltipText}>
+-        <div 
+-          className={UI_CLASSES.textContainer} 
+-          style={{ cursor: 'pointer' }}
+-          onClick={handleManageGiver}
+-        >
+-          <div className={UI_CLASSES.label}>Gifted</div>
+-          <div className={UI_CLASSES.value}>{data.date}</div>
+-        </div>
+-      </SafeTooltip>
+-    </>
++    <Badge
++      icon={<GiftIcon />}
++      tooltipText={tooltipText}
++      valueText={data.date}
++      onIconClick={handleConfetti}
++      onTextClick={handleManageGiver}
++    />
+   );
+ };
+ 
+ const MissingDataBadge = () => {
+-  const handleClick = () => {
++  const handleClick = (e: React.MouseEvent) => {
++    e.preventDefault();
++    e.stopPropagation();
+     window.open("steam://store/");
+   };
+ 
+   const tooltipText = 'License data not found. Click to refresh (opens store page).';
+ 
+   return (
+-    <>
+-      <SafeTooltip toolTipContent={tooltipText} fallbackText={tooltipText}>
+-        <div 
+-          className={UI_CLASSES.iconContainer}
+-          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+-          onClick={handleClick}
+-          dangerouslySetInnerHTML={{ __html: ICONS.question }}
+-        />
+-      </SafeTooltip>
+-      <SafeTooltip toolTipContent={tooltipText} fallbackText={tooltipText}>
+-        <div 
+-          className={UI_CLASSES.textContainer} 
+-          style={{ cursor: 'pointer' }}
+-          onClick={handleClick}
+-        >
+-          <div className={UI_CLASSES.label}>Gifted</div>
+-          <div className={UI_CLASSES.value}>Loading...</div>
+-        </div>
+-      </SafeTooltip>
+-    </>
++    <Badge
++      icon={<QuestionIcon />}
++      tooltipText={tooltipText}
++      valueText="Loading..."
++      onIconClick={handleClick}
++      onTextClick={handleClick}
++    />
+   );
+ };
+ 
+@@ -171,19 +227,17 @@ export function createDisplay(
+ 
+   if (data?.acquisition !== "Gift/Guest Pass") {
+     log("Not a gift:", data);
+-    const placeholder = doc.createElement('div');
++    const placeholder = doc.createElement('div') as ExplictlyRootedElement;
+     placeholder.id = createDisplayId(gameName);
+     placeholder.style.display = 'none';
+     return placeholder;
+   }
+ 
+-  const container = doc.createElement('div');
++  const container = doc.createElement('div') as ExplictlyRootedElement;
+   container.id = createDisplayId(gameName);
+   container.className = UI_CLASSES.displayContainer;
+-  container.style.contain = 'layout';
+-  container.style.contentVisibility = 'auto';
++  container.style.display = 'contents';
+   
+-  // Render using ReactDOM.createRoot (matching size-on-disk pattern)
+   const root = (ReactDOM as any).createRoot(container);
+   root.render(
+     <GiftedBadge
+@@ -196,6 +250,7 @@ export function createDisplay(
+     />
+   );
+ 
++  container.__reactRoot = root;
+   log('Created display container:', container);
+   return container;
+ }
+@@ -203,16 +258,18 @@ export function createDisplay(
+ export function createMissingDataDisplay(doc: Document, gameName: string): HTMLElement | null {
+   log('Creating missing data display for:', gameName);
+   
+-  const container = doc.createElement('div');
++  const container = doc.createElement('div') as ExplictlyRootedElement;
+   container.id = createDisplayId(gameName);
+   container.className = UI_CLASSES.displayContainer;
+   container.dataset.missing = 'true';
++  container.style.display = 'contents';
+ 
+   const root = (ReactDOM as any).createRoot(container);
+   root.render(
+     <MissingDataBadge />
+   );
+ 
++  container.__reactRoot = root;
+   log('Created missing data display container:', container);
+   return container;
+ }
+@@ -220,3 +277,4 @@ export function createMissingDataDisplay(doc: Document, gameName: string): HTMLE
+ export function getExistingDisplay(doc: Document, gameName: string): HTMLElement | null {
+   return doc.getElementById(createDisplayId(gameName));
+ }
++
+diff --git a/frontend/injection/observer.ts b/frontend/injection/observer.ts
+index 6e2645e..d78f4bf 100644
+--- a/frontend/injection/observer.ts
++++ b/frontend/injection/observer.ts
+@@ -1,7 +1,7 @@
+ // Modified from https://github.com/jcdoll/hltb-millennium-plugin
+ import { log } from '../../lib/logger';
+ import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
+-import { createDisplay, createMissingDataDisplay, getExistingDisplay } from '../display/components';
++import { createDisplay, createMissingDataDisplay, getExistingDisplay, unmountDisplay } from '../display/components';
+ import { getCurrentAccountID } from '../../lib/steamid';
+ import { gameLicenseCache } from './gamelicensecache';
+ import { giverCache } from './givercache';
+@@ -11,6 +11,7 @@ let observer: MutationObserver | null = null;
+ let onMainContentReady: ((doc: Document) => void) | null = null;
+ let mainContentDetected = false;
+ let lastProcessedGame: string | null = null;
++let activeDisplayElement: HTMLElement | null = null;
+ 
+ function logGamePageScan(
+ 	gameName: string | null,
+@@ -25,6 +26,10 @@ export function resetState(): void {
+   log('Resetting state');
+   mainContentDetected = false;
+   lastProcessedGame = null;
++  if (activeDisplayElement) {
++    unmountDisplay(activeDisplayElement);
++    activeDisplayElement = null;
++  }
+   if (observer) {
+     observer.disconnect();
+     observer = null;
+@@ -187,6 +192,13 @@ export function detectAppId(doc: Document): number | null {
+ }
+ 
+ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
++  // Check if active display element was detached from DOM and unmount if so
++  if (activeDisplayElement && !activeDisplayElement.isConnected) {
++    log('Active display element was detached from DOM, unmounting React root');
++    unmountDisplay(activeDisplayElement);
++    activeDisplayElement = null;
++  }
++
+   // Check if main content is ready and trigger callback
+   checkMainContentReady(doc);
+ 
+@@ -234,11 +246,19 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
+ 
+   if (existingDisplay && forceRefresh) {
+     log('Removing existing display for force refresh');
++    unmountDisplay(existingDisplay);
+     existingDisplay.remove();
++    if (activeDisplayElement === existingDisplay) {
++      activeDisplayElement = null;
++    }
+   } else if (existingDisplay && existingDisplay.dataset.missing) {
+     if (gameLicenseCache.getDataSync(steamID)) {
+       log('Removing existing missing display because cache is now populated');
++      unmountDisplay(existingDisplay);
+       existingDisplay.remove();
++      if (activeDisplayElement === existingDisplay) {
++        activeDisplayElement = null;
++      }
+     } else {
+       // Missing display already exists and cache is still empty.
+       // Don't modify the DOM to prevent infinite observer loops, and don't fetch again.
+@@ -256,6 +276,7 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
+       }
+ 
+       insertAfterTarget.after(missingDisplay);
++      activeDisplayElement = missingDisplay;
+       logGamePageScan(gameName, 'missing-cache-display-inserted', { forceRefresh });
+       return true;
+     }
+@@ -307,6 +328,7 @@ function handleGamePageSync(doc: Document, forceRefresh = false): boolean {
+     }
+ 
+     insertAfterTarget.after(display);
++    activeDisplayElement = display;
+     logGamePageScan(gameName, 'display-inserted', {
+       forceRefresh,
+       licenseKey: match.licenseKey,
