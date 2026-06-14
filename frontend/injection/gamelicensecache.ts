@@ -19,6 +19,15 @@ export interface UserLicenseCache {
 	isPopulated: boolean;
 }
 
+/**
+ * Read-through cache for game license data.
+ * 
+ * Design optimized for append-only data:
+ * - Once loaded, cache is valid forever (data never changes or gets removed)
+ * - No TTL or expiration needed
+ * - No need to check backend for updates
+ * - Only invalidates on explicit clear
+ */
 class GameLicenseCache {
 	private manager = new CacheManager<UserLicenseCache>(
 		'GameLicense',
