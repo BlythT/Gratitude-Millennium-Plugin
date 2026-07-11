@@ -1,9 +1,10 @@
 import React from 'react';
 import { findModuleDetailsByExport } from '@steambrew/client';
 import { UI_CLASSES, type GiverData, type LicenseMatch } from '../types';
-import { log } from '../../lib/logger';
+import { log, logDebug } from '../../lib/logger';
 import confetti from 'canvas-confetti';
 import { showGiverModal } from './GiverModal';
+import { gameLicenseCache } from '../injection/gamelicensecache';
 
 let Tooltip: any = null;
 let searchedTooltip = false;
@@ -134,12 +135,17 @@ export interface GiftBadgeData {
 }
 
 export const GiftBadge: React.FC<{ data: GiftBadgeData | null }> = ({ data }) => {
-  if (!data) return null; // Wait for initial payload
+  if (!data) {
+    logDebug(`[GiftBadge] Render aborted: Initial data payload is null.`);
+    return null; // Wait for initial payload
+  }
   
   if (!data.match) {
+    logDebug(`[GiftBadge] Rendering Question icon because no cache match was found for "${data.gameName}".`);
     const handleMissingClick = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      gameLicenseCache.invalidate(data.steamUserID);
       window.open("steam://store/");
     };
 
@@ -155,8 +161,11 @@ export const GiftBadge: React.FC<{ data: GiftBadgeData | null }> = ({ data }) =>
   }
   
   if (data.match.data.acquisition !== "Gift/Guest Pass") {
+    logDebug(`[GiftBadge] Render aborted: Found game "${data.gameName}" in cache but acquisition is "${data.match.data.acquisition}" (not Gift).`);
     return null; // Not a gifted game, render nothing
   }
+
+  logDebug(`[GiftBadge] Rendering Gift icon for "${data.gameName}".`);
 
   const handleConfetti = (e: React.MouseEvent) => {
     e.preventDefault();

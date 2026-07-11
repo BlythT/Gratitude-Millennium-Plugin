@@ -11,7 +11,9 @@ export function detectGameName(doc: Document): string | null {
   return nameElem?.textContent?.trim() || null;
 }
 
-export function detectAppId(doc: Document): number | null {
+
+
+function getAppIdFromDataAttribute(doc: Document): number | null {
   const appIdElement = doc.querySelector('[data-appid]');
   if (appIdElement) {
     const appIdAttr = appIdElement.getAttribute('data-appid');
@@ -23,13 +25,16 @@ export function detectAppId(doc: Document): number | null {
       }
     }
   }
+  return null;
+}
 
+function getAppIdFromLinks(doc: Document): number | null {
   const links = doc.querySelectorAll('a[href]');
   for (const link of Array.from(links)) {
     const href = link.getAttribute('href');
     if (!href) continue;
 
-    const match = href.match(/(?:steam:\/\/rungameid\/|steam:\/\/store\/|steam:\/\/url\/StorePage\/|steam:\/\/url\/StoreAppPage\/|store\.steampowered\.com\/app\/|steamcommunity\.com\/app\/)(\d+)/i);
+    const match = href.match(/(?:steam:\/\/nav\/games\/details\/|steam:\/\/rungameid\/|steam:\/\/store\/|steam:\/\/url\/StorePage\/|steam:\/\/url\/StoreAppPage\/|store\.steampowered\.com\/app\/|steamcommunity\.com\/app\/)(\d+)/i);
     if (match) {
       const parsed = parseInt(match[1], 10);
       if (!isNaN(parsed) && parsed > 0) {
@@ -38,6 +43,37 @@ export function detectAppId(doc: Document): number | null {
       }
     }
   }
+  return null;
+}
 
+function getAppIdFromImages(doc: Document): number | null {
+  const images = doc.querySelectorAll('img[src]');
+  for (const img of Array.from(images)) {
+    const src = img.getAttribute('src');
+    if (!src) continue;
+    
+    // Steam sometimes uses /apps/appid/ or /assets/appid/ in image URLs
+    const match = src.match(/\/(?:apps|assets)\/(\d+)\//i);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        log('Detected App ID from image src:', parsed, src);
+        return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+export function detectAppId(doc: Document): number | null {
+  const strategies = [getAppIdFromDataAttribute, getAppIdFromLinks, getAppIdFromImages];
+  
+  for (const strategy of strategies) {
+    const id = strategy(doc);
+    if (id !== null) {
+      return id;
+    }
+  }
+  
   return null;
 }

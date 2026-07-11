@@ -6,6 +6,7 @@ export interface InjectionConfig<T = any> {
   insertAfterSelector?: string | string[];
   component: React.FC<{ data: T | null }>;
   alignment?: Partial<CSSStyleDeclaration>;
-  getDataAsync: (doc: Document) => Promise<T | null>;
+  observeData?: (doc: Document, onUpdate: (data: T | null) => void) => () => void;
+  getDataAsync?: (doc: Document) => Promise<T | null>;
   getDataSync?: (doc: Document) => T | null;
 }

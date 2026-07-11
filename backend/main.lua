@@ -259,10 +259,24 @@ function SetGameLicenseData(licenseData, steamUserID)
 
     if decodedData then
         if type(decodedData) == "table" and (decodedData.byAppId or decodedData.byName) then
-            GameLicenseCache[steamUserID] = {
-                byAppId = decodedData.byAppId or {},
-                byName = decodedData.byName or {}
-            }
+            if decodedData.isFirstPage or not GameLicenseCache[steamUserID] then
+                GameLicenseCache[steamUserID] = {
+                    byAppId = {},
+                    byName = {}
+                }
+            end
+            
+            for k, v in pairs(decodedData.byAppId or {}) do
+                GameLicenseCache[steamUserID].byAppId[k] = v
+            end
+            for k, v in pairs(decodedData.byName or {}) do
+                GameLicenseCache[steamUserID].byName[k] = v
+            end
+            
+            if decodedData.totalLicenses then
+                GameLicenseCache[steamUserID].totalLicenses = decodedData.totalLicenses
+            end
+            
             local byAppIdSize = table_size(GameLicenseCache[steamUserID].byAppId)
             local byNameSize = table_size(GameLicenseCache[steamUserID].byName)
             logger:info(string.format("Cached %d byAppId and %d byName license entries for user %s", byAppIdSize, byNameSize, steamUserID))

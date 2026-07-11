@@ -1,11 +1,11 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
-import { log, logError } from '../lib/logger';
+import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
 import { GiftBadge, type GiftBadgeData } from './components/GiftBadge';
 import { detectAppId, detectGameName } from './utils/dom';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
 import { isTruthy } from './utils/truthy';
-import { gameLicenseCache } from './injection/gamelicensecache';
+import { gameLicenseCache, type UserLicenseCache } from './injection/gamelicensecache';
 import { friendsCache } from './injection/friendscache';
 import { giverCache } from './injection/givercache';
 import { useState, useEffect } from 'react';
@@ -174,72 +174,75 @@ injectionEngine.register({
 	selector: [SELECTORS.standard.tooltipContainer, SELECTORS.bigPicture.tooltipContainer],
 	insertAfterSelector: [SELECTORS.standard.playtimeTooltip, SELECTORS.bigPicture.playtimeTooltip],
 	component: GiftBadge,
-	getDataSync: (doc: Document): GiftBadgeData | null => {
+	observeData: (doc: Document, onUpdate: (data: GiftBadgeData | null) => void) => {
 		const steamID = getCurrentAccountID();
-		if (!steamID) return null;
+		if (!steamID) {
+			onUpdate(null);
+			return () => {};
+		}
 
 		const gameName = detectGameName(doc);
-		if (!gameName) return null;
+		if (!gameName) {
+			onUpdate(null);
+			return () => {};
+		}
 
-		const licenseDataMap = gameLicenseCache.getDataSync(steamID);
-		if (!licenseDataMap) return null;
-
-		let match: LicenseMatch | null = null;
 		const appId = detectAppId(doc);
-		if (appId) {
-			const license = licenseDataMap.byAppId.get(String(appId));
-			if (license) {
-				match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
+
+		const evaluate = (licenseDataMap: UserLicenseCache | null) => {
+			logDebug(`[Badge Evaluation] Starting evaluation for game: "${gameName}" (AppID: ${appId})`);
+			let match: LicenseMatch | null = null;
+			
+			if (licenseDataMap) {
+				logDebug(`[Badge Evaluation] Cache populated status: ${licenseDataMap.isPopulated}. Total cached AppIDs: ${licenseDataMap.byAppId.size}, Total cached Names: ${licenseDataMap.byName.size}`);
+				if (appId) {
+					const license = licenseDataMap.byAppId.get(String(appId));
+					if (license) {
+						logDebug(`[Badge Evaluation] Found exact AppID match for ${appId}`);
+						match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
+					}
+				}
+
+				if (!match) {
+					const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
+					if (fuzzyMatch) {
+						logDebug(`[Badge Evaluation] Found fuzzy name match (${fuzzyMatch.matchType}) for "${gameName}" -> "${fuzzyMatch.licenseKey}"`);
+						match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data as any, matchType: fuzzyMatch.matchType };
+					}
+				}
+			} else {
+				logDebug(`[Badge Evaluation] Cache data is missing or not yet loaded.`);
 			}
-		}
 
-		if (!match) {
-			const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
-			if (fuzzyMatch) {
-				match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
+			if (!match) {
+				logDebug(`[Badge Evaluation] No match found in cache for "${gameName}". Emitting empty match state.`);
+			} else {
+				logDebug(`[Badge Evaluation] Game acquisition type: "${match.data.acquisition}".`);
 			}
-		}
 
-		let giver = null;
-		if (match) {
-			giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
-		}
-
-		return { gameName, steamUserID: steamID, match, giver, doc };
-	},
-	getDataAsync: async (doc: Document): Promise<GiftBadgeData | null> => {
-		const steamID = getCurrentAccountID();
-		if (!steamID) return null;
-
-		const gameName = detectGameName(doc);
-		if (!gameName) return null;
-
-		const licenseDataMap = await gameLicenseCache.getData(steamID);
-		if (!licenseDataMap) return null;
-
-		let match: LicenseMatch | null = null;
-		const appId = detectAppId(doc);
-		if (appId) {
-			const license = licenseDataMap.byAppId.get(String(appId));
-			if (license) {
-				match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
+			let giver = null;
+			if (match) {
+				giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
 			}
-		}
 
-		if (!match) {
-			const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
-			if (fuzzyMatch) {
-				match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
+			return { gameName, steamUserID: steamID, match, giver, doc };
+		};
+
+		let currentLicenses: UserLicenseCache | null = null;
+
+		const unsubscribe = gameLicenseCache.observe(steamID, (licenseDataMap: UserLicenseCache | null) => {
+			currentLicenses = licenseDataMap;
+			onUpdate(evaluate(licenseDataMap));
+		});
+
+		// Also refresh giver cache and re-evaluate if it finishes asynchronously
+		giverCache.getAll(steamID).then(() => {
+			if (currentLicenses) {
+				onUpdate(evaluate(currentLicenses));
 			}
-		}
+		});
 
-		await giverCache.getAll(steamID);
-		let giver = null;
-		if (match) {
-			giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
-		}
-
-		return { gameName, steamUserID: steamID, match, giver, doc };
+		return unsubscribe;
 	}
 });
 

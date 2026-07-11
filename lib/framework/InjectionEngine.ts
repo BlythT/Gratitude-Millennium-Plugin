@@ -1,13 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { InjectionConfig } from './types';
-import { log, logError } from '../../../lib/logger';
+import { log, logError, logDebug } from '../../../lib/logger';
 
 interface InjectedNode {
   container: HTMLElement | null;
   reactRoot: any | null;
   teardownObserver: MutationObserver | null;
   isFetching: boolean;
+  unsubscribe?: () => void;
 }
 
 class InjectionEngine {
@@ -99,11 +100,55 @@ class InjectionEngine {
         insertTarget = afterTarget;
     }
 
+    if (config.observeData) {
+      logDebug(`[InjectionEngine] Initializing observer stream for ${config.id}`);
+      this.injectedNodes.set(config.id, { container: null, reactRoot: null, teardownObserver: null, isFetching: true });
+      
+      const unsubscribe = config.observeData(doc, (data) => {
+          logDebug(`[InjectionEngine] Received data update for ${config.id}: ${data ? 'populated' : 'null'}`);
+          const node = this.injectedNodes.get(config.id);
+          if (!node) {
+              logDebug(`[InjectionEngine] Node ${config.id} not found in state during update.`);
+              return;
+          }
+          
+          if (!insertTarget.isConnected) {
+              logDebug(`[InjectionEngine] Target container is no longer connected. Cleaning up ${config.id}.`);
+              this.cleanupInjected(config.id, node);
+              this.injectedNodes.delete(config.id);
+              return;
+          }
+
+          if (data === null || data === undefined) {
+              logDebug(`[InjectionEngine] Update data is null. Unmounting existing component for ${config.id}.`);
+              if (node.reactRoot) {
+                  this.cleanupInjected(config.id, node);
+                  this.injectedNodes.delete(config.id);
+              }
+              return;
+          }
+
+          if (!node.reactRoot) {
+              logDebug(`[InjectionEngine] React root missing for ${config.id}. Injecting new component.`);
+              this.inject(config, insertTarget, data, doc);
+          } else {
+              logDebug(`[InjectionEngine] Updating existing React root for ${config.id}.`);
+              node.reactRoot.render(React.createElement(config.component, { data }));
+          }
+      });
+      
+      const node = this.injectedNodes.get(config.id);
+      if (node) {
+          node.unsubscribe = unsubscribe;
+      }
+      return;
+    }
+
     const syncData = config.getDataSync ? config.getDataSync(doc) : undefined;
     
     if (syncData !== undefined && syncData !== null) {
       this.inject(config, insertTarget, syncData, doc);
-    } else {
+    } else if (config.getDataAsync) {
       // Async path or intentional null
       this.injectedNodes.set(config.id, { container: null, reactRoot: null, teardownObserver: null, isFetching: true });
       
@@ -124,7 +169,8 @@ class InjectionEngine {
   }
 
   private inject(config: InjectionConfig, target: HTMLElement, data: any, doc: Document) {
-    if (this.injectedNodes.has(config.id)) return;
+    const existing = this.injectedNodes.get(config.id);
+    if (existing && existing.reactRoot) return;
     
     if (config.alignment && target.parentElement) {
       Object.assign(target.parentElement.style, config.alignment);
@@ -153,12 +199,16 @@ class InjectionEngine {
        teardownObserver.observe(container.parentElement, { childList: true });
     }
 
-    this.injectedNodes.set(config.id, { container, reactRoot: root, teardownObserver, isFetching: false });
+    const unsubscribe = existing ? existing.unsubscribe : undefined;
+    this.injectedNodes.set(config.id, { container, reactRoot: root, teardownObserver, isFetching: false, unsubscribe });
     log(`[InjectionEngine] Injected component for ${config.id}`);
   }
 
   private cleanupInjected(id: string, injected: InjectedNode) {
     log(`[InjectionEngine] Cleaning up injected node ${id}`);
+    if (injected.unsubscribe) {
+      injected.unsubscribe();
+    }
     if (injected.teardownObserver) {
       injected.teardownObserver.disconnect();
     }
