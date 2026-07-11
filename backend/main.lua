@@ -6,6 +6,7 @@ local fs = require("fs")
 local utils = require("utils")
 
 local JsonStore = require("lib.JsonStore")
+local cache_merger = require("lib.cache_merger")
 
 local cacheStore = JsonStore.new("gratitude_cache.json", "Game license cache")
 local consentStore = JsonStore.new("gratitude_consent.json", "Consent state")
@@ -258,29 +259,13 @@ function SetGameLicenseData(licenseData, steamUserID)
     end
 
     if decodedData then
-        if type(decodedData) == "table" and (decodedData.byAppId or decodedData.byName) then
-            GameLicenseCache[steamUserID] = {
-                byAppId = decodedData.byAppId or {},
-                byName = decodedData.byName or {}
-            }
-            local byAppIdSize = table_size(GameLicenseCache[steamUserID].byAppId)
-            local byNameSize = table_size(GameLicenseCache[steamUserID].byName)
+        local currentCache = GameLicenseCache[steamUserID]
+        local updatedCache, byAppIdSize, byNameSize, isNewFormat = cache_merger.merge_license_page(currentCache, decodedData)
+        GameLicenseCache[steamUserID] = updatedCache
+        
+        if isNewFormat then
             logger:info(string.format("Cached %d byAppId and %d byName license entries for user %s", byAppIdSize, byNameSize, steamUserID))
         else
-            -- Fallback for old format (flat array)
-            GameLicenseCache[steamUserID] = {
-                byAppId = {},
-                byName = {}
-            }
-            for _, license in ipairs(decodedData) do
-                if license.item then
-                    GameLicenseCache[steamUserID].byName[license.item] = {
-                        date = license.date,
-                        acquisition = license.acquisition
-                    }
-                end
-            end
-            local byNameSize = table_size(GameLicenseCache[steamUserID].byName)
             logger:info(string.format("Cached %d license entries in legacy format for user %s", byNameSize, steamUserID))
         end
 

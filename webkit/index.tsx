@@ -5,6 +5,7 @@ import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
 
 const setGameLicenseData = callable('SetGameLicenseData');
+const getGameLicenseData = callable('GetGameLicenseData');
 const setFriendsCache = callable('SetFriendsCache');
 
 export default async function WebkitMain() {
@@ -70,78 +71,139 @@ async function fetchOwnedGames(doc) {
 	}
 }
 
-async function maybeSyncLicenses(steamUserID) {
-	const html = await fetchPage('https://store.steampowered.com/account/licenses/?l=english');
-	if (!html) {
-		log('Failed to fetch Steam Licenses.');
-		return;
-	}
-
-	log('Fetched Steam Licenses HTML (l=english)');
-
-	const parser = new DOMParser();
-	const doc = parser.parseFromString(html, 'text/html');
-	const table = doc.querySelector('table.account_table');
-	if (!table) {
-		log('account_table not found in the HTML.');
-		return;
-	}
-
-	log('Found account_table');
-
-	const licenses = parseLicenseTable(table);
-	log(`Parsed ${licenses.length} License Data entries`);
-
-	// Try to fetch owned games list
-	const ownedGames = await fetchOwnedGames(doc);
-	log(`Fetched ${ownedGames.length} owned games from Web API`);
-
-	const byAppId = {};
-	const byName = {};
-
-	// Create Map of owned games for fuzzy matching: Name -> { appid }
-	const gamesMap = new Map();
-	ownedGames.forEach((game) => {
-		if (game.name && game.appid) {
-			gamesMap.set(game.name, { appid: game.appid });
+async function shouldSkipSync(steamUserID, expectedTotal) {
+	if (expectedTotal <= 0) return false;
+	try {
+		const existingCacheStr = await getGameLicenseData(steamUserID);
+		if (existingCacheStr) {
+			const existingCache = JSON.parse(existingCacheStr);
+			if (existingCache && existingCache.totalLicenses === expectedTotal) {
+				log(`Total licenses (${expectedTotal}) unchanged from backend cache. Skipping full sync.`);
+				return true;
+			}
 		}
-	});
+	} catch (err) {
+		logError('Error checking backend cache for optimization:', err);
+	}
+	return false;
+}
 
-	// Process and match each license
-	licenses.forEach((license) => {
-		if (!license.item) return;
+async function* fetchAllLicensePages(startUrl) {
+	let currentUrl = startUrl;
+	let hasNextPage = true;
+	let pageCount = 1;
+	const parser = new DOMParser();
 
-		// Save under byName for compatibility/fallback
-		byName[license.item] = {
-			date: license.date,
-			acquisition: license.acquisition,
-		};
+	log(`Fetching Steam Licenses HTML (l=english, offset=0)`);
 
-		// Try to match license name to an App ID
-		const match = fuzzyMatchLicenseName(gamesMap, license.item);
-		if (match && match.data?.appid) {
-			const appId = match.data.appid;
-			byAppId[appId] = {
+	while (hasNextPage) {
+		const html = await fetchPage(currentUrl);
+		if (!html) {
+			log(`Failed to fetch Steam Licenses at page ${pageCount}.`);
+			break;
+		}
+
+		const doc = parser.parseFromString(html, 'text/html');
+		yield { doc, pageCount };
+
+		const nextButton = doc.querySelector('.license_paginator_next');
+		if (nextButton && nextButton.getAttribute('href')) {
+			const href = nextButton.getAttribute('href');
+			currentUrl = `https://store.steampowered.com/account/licenses/${href}`;
+			pageCount++;
+			// Small delay to be polite to Steam servers
+			await new Promise(r => setTimeout(r, 300));
+		} else {
+			hasNextPage = false;
+		}
+	}
+}
+
+async function maybeSyncLicenses(steamUserID) {
+	const startUrl = 'https://store.steampowered.com/account/licenses/?l=english';
+	let totalLicensesFromPage = 0;
+	let ownedGames = [];
+	let gamesMap = new Map();
+	let totalParsed = 0;
+
+	for await (const { doc, pageCount } of fetchAllLicensePages(startUrl)) {
+		// 1. If we are on page 1, fetch ownedGames so we have them, and check cache optimization
+		if (pageCount === 1) {
+			// Extract total licenses from paginator
+			const paginatorSpan = doc.querySelector('.license_paginator_ctn span');
+			if (paginatorSpan) {
+				const match = paginatorSpan.textContent?.match(/of\s+(\d+)/i);
+				if (match) {
+					totalLicensesFromPage = parseInt(match[1], 10);
+				}
+			}
+
+			if (await shouldSkipSync(steamUserID, totalLicensesFromPage)) {
+				return;
+			}
+
+			ownedGames = await fetchOwnedGames(doc);
+			log(`Fetched ${ownedGames.length} owned games from Web API`);
+			
+			// Create Map of owned games for fuzzy matching: Name -> { appid }
+			ownedGames.forEach((game) => {
+				if (game.name && game.appid) {
+					gamesMap.set(game.name, { appid: game.appid });
+				}
+			});
+		}
+
+		const table = doc.querySelector('table.account_table');
+		if (!table) {
+			log(`account_table not found in the HTML at page ${pageCount}.`);
+			break;
+		}
+
+		const licenses = parseLicenseTable(table);
+		totalParsed += licenses.length;
+		log(`Parsed ${licenses.length} License Data entries from page ${pageCount}`);
+
+		const byAppId = {};
+		const byName = {};
+
+		// Process and match each license
+		licenses.forEach((license) => {
+			if (!license.item) return;
+
+			// Save under byName for compatibility/fallback
+			byName[license.item] = {
 				date: license.date,
 				acquisition: license.acquisition,
-				name: license.item,
 			};
+
+			// Try to match license name to an App ID
+			const match = fuzzyMatchLicenseName(gamesMap, license.item);
+			if (match && match.data?.appid) {
+				const appId = match.data.appid;
+				byAppId[appId] = {
+					date: license.date,
+					acquisition: license.acquisition,
+					name: license.item,
+				};
+			}
+		});
+
+		const payload = {
+			byAppId,
+			byName,
+			totalLicenses: totalLicensesFromPage || totalParsed,
+			isFirstPage: pageCount === 1
+		};
+
+		try {
+			await setGameLicenseData({ licenseData: JSON.stringify(payload), steamUserID });
+			log(`Incrementally sent page ${pageCount} license data to backend successfully.`);
+		} catch (error) {
+			logError(`Error sending page ${pageCount} license data to backend:`, error);
 		}
-	});
-
-	log(`Mapped ${Object.keys(byAppId).length} licenses to App IDs, and ${Object.keys(byName).length} by name`);
-
-	const payload = {
-		byAppId,
-		byName,
-	};
-
-	try {
-		await setGameLicenseData({ licenseData: JSON.stringify(payload), steamUserID });
-		log('License data sent to backend successfully.');
-	} catch (error) {
-		logError('Error sending license data to backend:', error);
 	}
+
+	log(`Finished fetching pages. Total parsed licenses: ${totalParsed}`);
 }
 
 async function maybeSyncFriends(steamUserID) {

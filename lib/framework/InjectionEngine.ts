@@ -1,13 +1,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { InjectionConfig } from './types';
-import { log, logError } from '../../../lib/logger';
+import { log, logError, logDebug } from '../../../lib/logger';
 
 interface InjectedNode {
   container: HTMLElement | null;
   reactRoot: any | null;
   teardownObserver: MutationObserver | null;
-  isFetching: boolean;
 }
 
 class InjectionEngine {
@@ -77,9 +76,6 @@ class InjectionEngine {
     const existing = this.injectedNodes.get(config.id);
     
     if (existing) {
-      if (existing.isFetching) {
-        return; // Currently fetching async data
-      }
       if (existing.container && !existing.container.isConnected) {
          // Container was removed from DOM by Steam
          this.cleanupInjected(config.id, existing);
@@ -99,33 +95,10 @@ class InjectionEngine {
         insertTarget = afterTarget;
     }
 
-    const syncData = config.getDataSync ? config.getDataSync(doc) : undefined;
-    
-    if (syncData !== undefined && syncData !== null) {
-      this.inject(config, insertTarget, syncData, doc);
-    } else {
-      // Async path or intentional null
-      this.injectedNodes.set(config.id, { container: null, reactRoot: null, teardownObserver: null, isFetching: true });
-      
-      config.getDataAsync(doc)
-        .then(asyncData => {
-           if (!insertTarget.isConnected) {
-              this.injectedNodes.delete(config.id);
-              return;
-           }
-           this.injectedNodes.delete(config.id);
-           this.inject(config, insertTarget, asyncData, doc);
-        })
-        .catch(err => {
-           this.injectedNodes.delete(config.id);
-           logError(`[InjectionEngine] Error getting async data for ${config.id}:`, err);
-        });
-    }
+    this.inject(config, insertTarget, doc);
   }
 
-  private inject(config: InjectionConfig, target: HTMLElement, data: any, doc: Document) {
-    if (this.injectedNodes.has(config.id)) return;
-    
+  private inject(config: InjectionConfig, target: HTMLElement, doc: Document) {
     if (config.alignment && target.parentElement) {
       Object.assign(target.parentElement.style, config.alignment);
     }
@@ -137,7 +110,7 @@ class InjectionEngine {
     target.after(container);
     
     const root = (ReactDOM as any).createRoot(container);
-    root.render(React.createElement(config.component, { data }));
+    root.render(React.createElement(config.component, { doc }));
 
     const teardownObserver = new MutationObserver(() => {
       if (!container.isConnected) {
@@ -153,7 +126,7 @@ class InjectionEngine {
        teardownObserver.observe(container.parentElement, { childList: true });
     }
 
-    this.injectedNodes.set(config.id, { container, reactRoot: root, teardownObserver, isFetching: false });
+    this.injectedNodes.set(config.id, { container, reactRoot: root, teardownObserver });
     log(`[InjectionEngine] Injected component for ${config.id}`);
   }
 

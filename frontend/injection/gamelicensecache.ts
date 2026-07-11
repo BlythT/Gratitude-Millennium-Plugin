@@ -85,6 +85,16 @@ class GameLicenseCache {
 		return data && data.isPopulated ? data : null;
 	}
 
+	observe(steamUserID: string, listener: (data: UserLicenseCache | null) => void): () => void {
+		return this.manager.observe(steamUserID, (data) => {
+			if (data && data.isPopulated) {
+				listener(data);
+			} else {
+				listener(null);
+			}
+		});
+	}
+
 	async clearCache(steamUserID: string): Promise<boolean> {
 		return await this.manager.clearCache(steamUserID);
 	}
