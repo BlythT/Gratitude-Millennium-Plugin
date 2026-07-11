@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { findModuleDetailsByExport } from '@steambrew/client';
 import { UI_CLASSES, type GiverData, type LicenseMatch } from '../types';
 import { log, logDebug } from '../../lib/logger';
 import confetti from 'canvas-confetti';
 import { showGiverModal } from './GiverModal';
-import { gameLicenseCache } from '../injection/gamelicensecache';
+import { gameLicenseCache, type UserLicenseCache } from '../injection/gamelicensecache';
+import { giverCache } from '../injection/givercache';
+import { getCurrentAccountID } from '../../lib/steamid';
+import { detectGameName, detectAppId } from '../utils/dom';
+import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
 
 let Tooltip: any = null;
 let searchedTooltip = false;
@@ -125,27 +129,68 @@ const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: Badge
   return content;
 };
 
-export interface GiftBadgeData {
-  gameName: string;
-  steamUserID: string;
-  match: LicenseMatch | null;
-  giver: GiverData | null;
-  doc: Document;
-  onGiverUpdated?: () => void;
-}
-
-export const GiftBadge: React.FC<{ data: GiftBadgeData | null }> = ({ data }) => {
-  if (!data) {
-    logDebug(`[GiftBadge] Render aborted: Initial data payload is null.`);
-    return null; // Wait for initial payload
-  }
+export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
+  const [forceRender, setForceRender] = useState(0);
+  const steamID = getCurrentAccountID();
   
-  if (!data.match) {
-    logDebug(`[GiftBadge] Rendering Question icon because no cache match was found for "${data.gameName}".`);
+  // We grab these synchronously on mount so we don't tear on DOM changes
+  const [domData] = useState(() => {
+    return {
+      gameName: detectGameName(doc),
+      appId: detectAppId(doc)
+    };
+  });
+
+  const { gameName, appId } = domData;
+
+  const [licenseDataMap, setLicenseDataMap] = useState<UserLicenseCache | null>(
+    () => steamID ? gameLicenseCache.getDataSync(steamID) || null : null
+  );
+
+  useEffect(() => {
+    if (!steamID) return;
+    return gameLicenseCache.observe(steamID, (data) => {
+      setLicenseDataMap(data);
+    });
+  }, [steamID]);
+
+  useEffect(() => {
+    if (steamID) {
+       giverCache.getAll(steamID).then(() => {
+          setForceRender(n => n + 1); // trigger re-render to pick up new giver data
+       });
+    }
+  }, [steamID]);
+
+  if (!steamID || !gameName) {
+    return null;
+  }
+
+  if (!licenseDataMap) {
+    logDebug(`[GiftBadge] Render aborted: Cache data is missing or not yet loaded.`);
+    return null; 
+  }
+
+  let match: LicenseMatch | null = null;
+  if (appId) {
+    const license = licenseDataMap.byAppId.get(String(appId));
+    if (license) {
+      match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
+    }
+  }
+  if (!match) {
+    const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
+    if (fuzzyMatch) {
+      match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data as any, matchType: fuzzyMatch.matchType };
+    }
+  }
+
+  if (!match) {
+    logDebug(`[GiftBadge] Rendering Question icon because no cache match was found for "${gameName}".`);
     const handleMissingClick = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      gameLicenseCache.invalidate(data.steamUserID);
+      gameLicenseCache.invalidate(steamID);
       window.open("steam://store/");
     };
 
@@ -160,43 +205,45 @@ export const GiftBadge: React.FC<{ data: GiftBadgeData | null }> = ({ data }) =>
     );
   }
   
-  if (data.match.data.acquisition !== "Gift/Guest Pass") {
-    logDebug(`[GiftBadge] Render aborted: Found game "${data.gameName}" in cache but acquisition is "${data.match.data.acquisition}" (not Gift).`);
+  if (match.data.acquisition !== "Gift/Guest Pass") {
+    logDebug(`[GiftBadge] Render aborted: Found game "${gameName}" in cache but acquisition is "${match.data.acquisition}" (not Gift).`);
     return null; // Not a gifted game, render nothing
   }
 
-  logDebug(`[GiftBadge] Rendering Gift icon for "${data.gameName}".`);
+  const giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
+
+  logDebug(`[GiftBadge] Rendering Gift icon for "${gameName}".`);
 
   const handleConfetti = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    fireConfetti(data.doc);
+    fireConfetti(doc);
   };
 
   const handleManageGiver = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     showGiverModal({
-      parentWindow: data.doc.defaultView ?? window,
-      steamUserID: data.steamUserID,
-      gameTitle: data.gameName,
-      licenseKey: data.match!.licenseKey,
-      giftDate: data.match!.data.date,
-      existingGiver: data.giver,
-      onSaved: () => data.onGiverUpdated?.(),
-      onDeleted: () => data.onGiverUpdated?.(),
+      parentWindow: doc.defaultView ?? window,
+      steamUserID: steamID,
+      gameTitle: gameName,
+      licenseKey: match!.licenseKey,
+      giftDate: match!.data.date,
+      existingGiver: giver,
+      onSaved: () => setForceRender(n => n + 1),
+      onDeleted: () => setForceRender(n => n + 1),
     });
   };
 
-  const tooltipText = data.giver 
-    ? `Gifted by ${data.giver.displayName} on ${data.match.data.date}${data.giver.notes ? ` - ${data.giver.notes}` : ''}` 
-    : `Gifted on ${data.match.data.date} - Click to record gifter info`;
+  const tooltipText = giver 
+    ? `Gifted by ${giver.displayName} on ${match.data.date}${giver.notes ? ` - ${giver.notes}` : ''}` 
+    : `Gifted on ${match.data.date} - Click to record gifter info`;
 
   return (
     <Badge
       icon={<GiftIcon />}
       tooltipText={tooltipText}
-      valueText={data.match.data.date}
+      valueText={match.data.date}
       onIconClick={handleConfetti}
       onTextClick={handleManageGiver}
     />

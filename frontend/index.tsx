@@ -1,17 +1,15 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
-import { log, logError, logDebug } from '../lib/logger';
+import { log, logError } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
-import { GiftBadge, type GiftBadgeData } from './components/GiftBadge';
-import { detectAppId, detectGameName } from './utils/dom';
-import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
+import { GiftBadge } from './components/GiftBadge';
 import { isTruthy } from './utils/truthy';
-import { gameLicenseCache, type UserLicenseCache } from './injection/gamelicensecache';
+import { gameLicenseCache } from './injection/gamelicensecache';
 import { friendsCache } from './injection/friendscache';
 import { giverCache } from './injection/givercache';
 import { useState, useEffect } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
-import { POPUPS, SELECTORS, type LicenseMatch } from './types';
+import { POPUPS, SELECTORS } from './types';
 import { useSettings } from './settings';
 
 // Declare backend functions
@@ -173,77 +171,7 @@ injectionEngine.register({
 	id: 'gifted-badge',
 	selector: [SELECTORS.standard.tooltipContainer, SELECTORS.bigPicture.tooltipContainer],
 	insertAfterSelector: [SELECTORS.standard.playtimeTooltip, SELECTORS.bigPicture.playtimeTooltip],
-	component: GiftBadge,
-	observeData: (doc: Document, onUpdate: (data: GiftBadgeData | null) => void) => {
-		const steamID = getCurrentAccountID();
-		if (!steamID) {
-			onUpdate(null);
-			return () => {};
-		}
-
-		const gameName = detectGameName(doc);
-		if (!gameName) {
-			onUpdate(null);
-			return () => {};
-		}
-
-		const appId = detectAppId(doc);
-
-		const evaluate = (licenseDataMap: UserLicenseCache | null) => {
-			logDebug(`[Badge Evaluation] Starting evaluation for game: "${gameName}" (AppID: ${appId})`);
-			let match: LicenseMatch | null = null;
-			
-			if (licenseDataMap) {
-				logDebug(`[Badge Evaluation] Cache populated status: ${licenseDataMap.isPopulated}. Total cached AppIDs: ${licenseDataMap.byAppId.size}, Total cached Names: ${licenseDataMap.byName.size}`);
-				if (appId) {
-					const license = licenseDataMap.byAppId.get(String(appId));
-					if (license) {
-						logDebug(`[Badge Evaluation] Found exact AppID match for ${appId}`);
-						match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
-					}
-				}
-
-				if (!match) {
-					const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
-					if (fuzzyMatch) {
-						logDebug(`[Badge Evaluation] Found fuzzy name match (${fuzzyMatch.matchType}) for "${gameName}" -> "${fuzzyMatch.licenseKey}"`);
-						match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data as any, matchType: fuzzyMatch.matchType };
-					}
-				}
-			} else {
-				logDebug(`[Badge Evaluation] Cache data is missing or not yet loaded.`);
-			}
-
-			if (!match) {
-				logDebug(`[Badge Evaluation] No match found in cache for "${gameName}". Emitting empty match state.`);
-			} else {
-				logDebug(`[Badge Evaluation] Game acquisition type: "${match.data.acquisition}".`);
-			}
-
-			let giver = null;
-			if (match) {
-				giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
-			}
-
-			return { gameName, steamUserID: steamID, match, giver, doc };
-		};
-
-		let currentLicenses: UserLicenseCache | null = null;
-
-		const unsubscribe = gameLicenseCache.observe(steamID, (licenseDataMap: UserLicenseCache | null) => {
-			currentLicenses = licenseDataMap;
-			onUpdate(evaluate(licenseDataMap));
-		});
-
-		// Also refresh giver cache and re-evaluate if it finishes asynchronously
-		giverCache.getAll(steamID).then(() => {
-			if (currentLicenses) {
-				onUpdate(evaluate(currentLicenses));
-			}
-		});
-
-		return unsubscribe;
-	}
+	component: GiftBadge
 });
 
 // Initialize: check for existing main window and register callback for new ones

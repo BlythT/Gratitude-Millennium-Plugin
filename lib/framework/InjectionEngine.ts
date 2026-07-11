@@ -7,8 +7,6 @@ interface InjectedNode {
   container: HTMLElement | null;
   reactRoot: any | null;
   teardownObserver: MutationObserver | null;
-  isFetching: boolean;
-  unsubscribe?: () => void;
 }
 
 class InjectionEngine {
@@ -78,9 +76,6 @@ class InjectionEngine {
     const existing = this.injectedNodes.get(config.id);
     
     if (existing) {
-      if (existing.isFetching) {
-        return; // Currently fetching async data
-      }
       if (existing.container && !existing.container.isConnected) {
          // Container was removed from DOM by Steam
          this.cleanupInjected(config.id, existing);
@@ -100,78 +95,10 @@ class InjectionEngine {
         insertTarget = afterTarget;
     }
 
-    if (config.observeData) {
-      logDebug(`[InjectionEngine] Initializing observer stream for ${config.id}`);
-      this.injectedNodes.set(config.id, { container: null, reactRoot: null, teardownObserver: null, isFetching: true });
-      
-      const unsubscribe = config.observeData(doc, (data) => {
-          logDebug(`[InjectionEngine] Received data update for ${config.id}: ${data ? 'populated' : 'null'}`);
-          const node = this.injectedNodes.get(config.id);
-          if (!node) {
-              logDebug(`[InjectionEngine] Node ${config.id} not found in state during update.`);
-              return;
-          }
-          
-          if (!insertTarget.isConnected) {
-              logDebug(`[InjectionEngine] Target container is no longer connected. Cleaning up ${config.id}.`);
-              this.cleanupInjected(config.id, node);
-              this.injectedNodes.delete(config.id);
-              return;
-          }
-
-          if (data === null || data === undefined) {
-              logDebug(`[InjectionEngine] Update data is null. Unmounting existing component for ${config.id}.`);
-              if (node.reactRoot) {
-                  this.cleanupInjected(config.id, node);
-                  this.injectedNodes.delete(config.id);
-              }
-              return;
-          }
-
-          if (!node.reactRoot) {
-              logDebug(`[InjectionEngine] React root missing for ${config.id}. Injecting new component.`);
-              this.inject(config, insertTarget, data, doc);
-          } else {
-              logDebug(`[InjectionEngine] Updating existing React root for ${config.id}.`);
-              node.reactRoot.render(React.createElement(config.component, { data }));
-          }
-      });
-      
-      const node = this.injectedNodes.get(config.id);
-      if (node) {
-          node.unsubscribe = unsubscribe;
-      }
-      return;
-    }
-
-    const syncData = config.getDataSync ? config.getDataSync(doc) : undefined;
-    
-    if (syncData !== undefined && syncData !== null) {
-      this.inject(config, insertTarget, syncData, doc);
-    } else if (config.getDataAsync) {
-      // Async path or intentional null
-      this.injectedNodes.set(config.id, { container: null, reactRoot: null, teardownObserver: null, isFetching: true });
-      
-      config.getDataAsync(doc)
-        .then(asyncData => {
-           if (!insertTarget.isConnected) {
-              this.injectedNodes.delete(config.id);
-              return;
-           }
-           this.injectedNodes.delete(config.id);
-           this.inject(config, insertTarget, asyncData, doc);
-        })
-        .catch(err => {
-           this.injectedNodes.delete(config.id);
-           logError(`[InjectionEngine] Error getting async data for ${config.id}:`, err);
-        });
-    }
+    this.inject(config, insertTarget, doc);
   }
 
-  private inject(config: InjectionConfig, target: HTMLElement, data: any, doc: Document) {
-    const existing = this.injectedNodes.get(config.id);
-    if (existing && existing.reactRoot) return;
-    
+  private inject(config: InjectionConfig, target: HTMLElement, doc: Document) {
     if (config.alignment && target.parentElement) {
       Object.assign(target.parentElement.style, config.alignment);
     }
@@ -183,7 +110,7 @@ class InjectionEngine {
     target.after(container);
     
     const root = (ReactDOM as any).createRoot(container);
-    root.render(React.createElement(config.component, { data }));
+    root.render(React.createElement(config.component, { doc }));
 
     const teardownObserver = new MutationObserver(() => {
       if (!container.isConnected) {
@@ -199,16 +126,12 @@ class InjectionEngine {
        teardownObserver.observe(container.parentElement, { childList: true });
     }
 
-    const unsubscribe = existing ? existing.unsubscribe : undefined;
-    this.injectedNodes.set(config.id, { container, reactRoot: root, teardownObserver, isFetching: false, unsubscribe });
+    this.injectedNodes.set(config.id, { container, reactRoot: root, teardownObserver });
     log(`[InjectionEngine] Injected component for ${config.id}`);
   }
 
   private cleanupInjected(id: string, injected: InjectedNode) {
     log(`[InjectionEngine] Cleaning up injected node ${id}`);
-    if (injected.unsubscribe) {
-      injected.unsubscribe();
-    }
     if (injected.teardownObserver) {
       injected.teardownObserver.disconnect();
     }

@@ -259,7 +259,7 @@ function SetGameLicenseData(licenseData, steamUserID)
 
     if decodedData then
         if type(decodedData) == "table" and (decodedData.byAppId or decodedData.byName) then
-            if decodedData.isFirstPage or not GameLicenseCache[steamUserID] then
+            if not GameLicenseCache[steamUserID] then
                 GameLicenseCache[steamUserID] = {
                     byAppId = {},
                     byName = {}
