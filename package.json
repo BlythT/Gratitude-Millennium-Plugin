@@ -3,7 +3,8 @@
 		"dev": "millennium-ttc --build dev",
 		"build": "millennium-ttc --build prod",
 		"match:licenses": "node ./tools/license-match-report.mjs",
-		"release": "node ./tools/release.mjs"
+		"release": "node ./tools/release.mjs",
+		"test:lua": "lua tools/test_cache_merger.lua"
 	},
 	"devDependencies": {
 		"@babel/preset-env": "^7.28.3",
