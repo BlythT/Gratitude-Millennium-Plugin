@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { findModuleDetailsByExport } from '@steambrew/client';
 import { UI_CLASSES, type LicenseMatch } from '../types';
 import { log, logDebug } from '../../lib/logger';
 import confetti from 'canvas-confetti';
@@ -10,27 +9,7 @@ import { getCurrentAccountID } from '../../lib/steamid';
 import { detectGameName, detectAppId } from '../utils/dom';
 import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
 
-let Tooltip: React.ComponentType<any> | null = null;
-let searchedTooltip = false;
-
-function getTooltipComponent(): React.ComponentType<any> | null {
-  if (!searchedTooltip) {
-    searchedTooltip = true;
-    try {
-      Tooltip = findModuleDetailsByExport(
-        (m) =>
-          m?.toString?.()?.includes(`divProps`) &&
-          m?.toString?.()?.includes(`tooltipProps`) &&
-          m?.toString?.()?.includes(`toolTipContent`) &&
-          m?.toString?.()?.includes(`tool-tip-source`),
-      )?.[1];
-      log('Resolved Steam native Tooltip component:', Tooltip ? 'Success' : 'Not Found');
-    } catch (e) {
-      log('Error resolving native Tooltip:', e);
-    }
-  }
-  return Tooltip;
-}
+import { SteamTooltip } from './SteamTooltip';
 
 let confettiTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -98,35 +77,29 @@ interface BadgeProps {
 }
 
 const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: BadgeProps) => {
-  const TooltipComponent = getTooltipComponent();
-
-  const content = (
-    <div 
-      className={`${UI_CLASSES.displayContainer} _3pS8kMrtScuY1Qf-W8tmRV Panel`}
-      title={TooltipComponent ? undefined : tooltipText}
-    >
+  return (
+    <SteamTooltip toolTipContent={tooltipText}>
       <div 
-        className={UI_CLASSES.iconContainer} 
-        onClick={onIconClick}
-        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+        className={`${UI_CLASSES.displayContainer} _3pS8kMrtScuY1Qf-W8tmRV Panel`}
       >
-        {icon}
+        <div 
+          className={UI_CLASSES.iconContainer} 
+          onClick={onIconClick}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+        >
+          {icon}
+        </div>
+        <div 
+          className={UI_CLASSES.textContainer} 
+          onClick={onTextClick}
+          style={{ cursor: 'pointer' }}
+        >
+          <div className={UI_CLASSES.label}>Gifted</div>
+          <div className={UI_CLASSES.value}>{valueText}</div>
+        </div>
       </div>
-      <div 
-        className={UI_CLASSES.textContainer} 
-        onClick={onTextClick}
-        style={{ cursor: 'pointer' }}
-      >
-        <div className={UI_CLASSES.label}>Gifted</div>
-        <div className={UI_CLASSES.value}>{valueText}</div>
-      </div>
-    </div>
+    </SteamTooltip>
   );
-
-  if (TooltipComponent) {
-    return <TooltipComponent toolTipContent={tooltipText}>{content}</TooltipComponent>;
-  }
-  return content;
 };
 
 export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
