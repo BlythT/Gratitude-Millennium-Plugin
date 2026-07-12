@@ -1,5 +1,5 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
-import { log, logError } from '../lib/logger';
+import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
 import { GiftBadge } from './components/GiftBadge';
 import { isTruthy } from './utils/truthy';
@@ -15,7 +15,7 @@ import { useSettings } from './settings';
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
 const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
-const hasUserConsented = callable<[{ steamUserID: string }], any>('HasUserConsented');
+const hasUserConsented = callable<[{ steamUserID: string }], boolean | string>('HasUserConsented');
 const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
 const SettingsContent = () => {
 	const steamUserID = getCurrentAccountID();
@@ -27,7 +27,7 @@ const SettingsContent = () => {
 	const [settings, setSetting] = useSettings(steamUserID);
 
 	useEffect(() => {
-		hasUserConsented({ steamUserID }).then((consented: any) => {
+		hasUserConsented({ steamUserID }).then((consented) => {
 			setHasConsent(consented === true || consented === 'true');
 		}).catch(error => {
 			logError('Error checking consent in settings:', error);
@@ -179,12 +179,16 @@ async function onPopupCreation(popup: any) {
 			consentModalShown = true;
 			try {
 				const currentUserID = getCurrentAccountID();
-				const userConsented = await hasUserConsented({ steamUserID: currentUserID }) as any;
-				log('RAW IPC RETURN hasUserConsented:', JSON.stringify(userConsented), 'type:', typeof userConsented);
+				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
+				logDebug('RAW IPC RETURN hasUserConsented:', JSON.stringify(userConsented), 'type:', typeof userConsented);
 				if (userConsented === null || userConsented === undefined || userConsented === 'null') {
-					window.setTimeout(() => {
+					const timeoutId = window.setTimeout(() => {
 						showConsentModal(currentUserID, popup.window);
 					}, 2500);
+
+					popup.window.addEventListener('beforeunload', () => {
+						window.clearTimeout(timeoutId);
+					});
 				}
 			} catch (error) {
 				logError('Error checking consent:', error);
