@@ -16,14 +16,23 @@ import { useSettings } from './settings';
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
 const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
 const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
-
+const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
 const SettingsContent = () => {
 	const steamUserID = getCurrentAccountID();
 	const [isLoading, setIsLoading] = useState(true);
 	const [licenseCount, setLicenseCount] = useState(0);
 	const [friendCount, setFriendCount] = useState(0);
 	const [giverCount, setGiverCount] = useState(0);
+	const [hasConsent, setHasConsent] = useState<boolean | null>(true);
 	const [settings, setSetting] = useSettings(steamUserID);
+
+	useEffect(() => {
+		hasUserConsented({ steamUserID }).then((consented) => {
+			setHasConsent(consented === true);
+		}).catch(error => {
+			logError('Error checking consent in settings:', error);
+		});
+	}, [steamUserID]);
 
 	const checkCache = async () => {
 		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() }).then((populated) => {
@@ -91,6 +100,26 @@ const SettingsContent = () => {
 
 	return (
 		<>
+			{hasConsent === false && (
+				<Field
+					label="Plugin Disabled: Data Access Denied"
+					description="Gratitude cannot function without permission to read your Steam license history. Please grant permission to re-enable the plugin."
+					bottomSeparator="standard"
+					childrenLayout="below"
+				>
+					<DialogButton onClick={async () => {
+						try {
+							await setConsent({ steamUserID, consent: true });
+							setHasConsent(true);
+							window.open("steam://store/");
+						} catch (error) {
+							logError('Error granting consent from settings:', error);
+						}
+					}}>
+						Grant Permission
+					</DialogButton>
+				</Field>
+			)}
 			<ToggleField
 				label="Show Steam links"
 				description="Show and edit profile links and IDs."
@@ -151,8 +180,8 @@ async function onPopupCreation(popup: any) {
 			try {
 				const currentUserID = getCurrentAccountID();
 				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
-				if (!isTruthy(userConsented)) {
-					showConsentModal(currentUserID);
+				if (userConsented === null || userConsented === undefined) {
+					showConsentModal(currentUserID, popup.window);
 				}
 			} catch (error) {
 				logError('Error checking consent:', error);

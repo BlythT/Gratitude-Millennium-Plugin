@@ -16,19 +16,15 @@ const enableConsent = async (steamUserID: string) => {
 
 let consentAnswered = false;
 
-export const showConsentModal = async (steamUserID: string) => {
+export const showConsentModal = async (steamUserID: string, mainWindow: Window) => {
     if (consentAnswered) {
         log("User already answered consent, not showing again");
         return;
     }
 
     try {
-        // @ts-ignore - g_PopupManager exists on window but isn't typed
-        const desktopPopup = window.g_PopupManager?.GetExistingPopup?.('SP Desktop_uid0');
-        const mainWindow = desktopPopup?.window;
-
         if (!mainWindow) {
-            log("Could not get main window for consent modal");
+            log("No main window provided for consent modal");
             return;
         }
 
@@ -52,6 +48,9 @@ export const showConsentModal = async (steamUserID: string) => {
                     consentAnswered = true;
                     consentModalWindow?.Close();
                     log("consent modal declined");
+                    setConsent({ steamUserID: steamUserID, consent: false }).catch((error) => {
+                        logError("Error storing consent denial:", error);
+                    });
                 }}
             />,
             mainWindow,
