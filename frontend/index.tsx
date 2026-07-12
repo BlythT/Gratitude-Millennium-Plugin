@@ -15,7 +15,7 @@ import { useSettings } from './settings';
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
 const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
-const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
+const hasUserConsented = callable<[{ steamUserID: string }], any>('HasUserConsented');
 const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
 const SettingsContent = () => {
 	const steamUserID = getCurrentAccountID();
@@ -27,8 +27,8 @@ const SettingsContent = () => {
 	const [settings, setSetting] = useSettings(steamUserID);
 
 	useEffect(() => {
-		hasUserConsented({ steamUserID }).then((consented) => {
-			setHasConsent(consented === true);
+		hasUserConsented({ steamUserID }).then((consented: any) => {
+			setHasConsent(consented === true || consented === 'true');
 		}).catch(error => {
 			logError('Error checking consent in settings:', error);
 		});
@@ -179,8 +179,9 @@ async function onPopupCreation(popup: any) {
 			consentModalShown = true;
 			try {
 				const currentUserID = getCurrentAccountID();
-				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
-				if (userConsented === null || userConsented === undefined) {
+				const userConsented = await hasUserConsented({ steamUserID: currentUserID }) as any;
+				log('RAW IPC RETURN hasUserConsented:', JSON.stringify(userConsented), 'type:', typeof userConsented);
+				if (userConsented === null || userConsented === undefined || userConsented === 'null') {
 					showConsentModal(currentUserID, popup.window);
 				}
 			} catch (error) {
