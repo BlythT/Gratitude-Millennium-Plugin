@@ -182,7 +182,9 @@ async function onPopupCreation(popup: any) {
 				const userConsented = await hasUserConsented({ steamUserID: currentUserID }) as any;
 				log('RAW IPC RETURN hasUserConsented:', JSON.stringify(userConsented), 'type:', typeof userConsented);
 				if (userConsented === null || userConsented === undefined || userConsented === 'null') {
-					showConsentModal(currentUserID, popup.window);
+					window.setTimeout(() => {
+						showConsentModal(currentUserID, popup.window);
+					}, 2500);
 				}
 			} catch (error) {
 				logError('Error checking consent:', error);
