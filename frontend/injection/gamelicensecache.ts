@@ -82,16 +82,12 @@ class GameLicenseCache {
 
 	getDataSync(steamUserID: string): UserLicenseCache | null {
 		const data = this.manager.getDataSync(steamUserID);
-		return data && data.isPopulated ? data : null;
+		return data || null;
 	}
 
 	observe(steamUserID: string, listener: (data: UserLicenseCache | null) => void): () => void {
 		return this.manager.observe(steamUserID, (data) => {
-			if (data && data.isPopulated) {
-				listener(data);
-			} else {
-				listener(null);
-			}
+			listener(data);
 		});
 	}
 
