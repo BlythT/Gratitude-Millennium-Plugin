@@ -164,7 +164,7 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
       e.preventDefault();
       e.stopPropagation();
       gameLicenseCache.invalidate(steamID);
-      window.open("steam://store/");
+      window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
     };
 
     return (

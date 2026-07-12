@@ -111,7 +111,7 @@ const SettingsContent = () => {
 						try {
 							await setConsent({ steamUserID, consent: true });
 							setHasConsent(true);
-							window.open("steam://store/");
+							window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
 						} catch (error) {
 							logError('Error granting consent from settings:', error);
 						}

@@ -238,7 +238,7 @@ function GiverModalContent({
 	};
 
 	const handleRefreshFriends = () => {
-		window.open('steam://openurl/https://steamcommunity.com/my/friends/');
+		window.open('steam://openurl/https://steamcommunity.com/my/friends/?gratitude_sync=1');
 		closeModal();
 	};
 
