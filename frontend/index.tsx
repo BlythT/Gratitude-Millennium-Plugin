@@ -163,8 +163,16 @@ const SettingsContent = () => {
 
 let consentModalShown = false;
 
+interface SteamPopup {
+	m_strName: string;
+	m_popup?: {
+		document: Document;
+	} | null;
+	window: Window;
+}
+
 // Popup callback to handle main window initialization
-async function onPopupCreation(popup: any) {
+async function onPopupCreation(popup: SteamPopup) {
 	if (!popup) {
 		return;
 	}

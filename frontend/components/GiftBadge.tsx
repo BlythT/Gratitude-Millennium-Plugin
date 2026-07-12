@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { findModuleDetailsByExport } from '@steambrew/client';
-import { UI_CLASSES, type GiverData, type LicenseMatch } from '../types';
+import { UI_CLASSES, type LicenseMatch } from '../types';
 import { log, logDebug } from '../../lib/logger';
 import confetti from 'canvas-confetti';
 import { showGiverModal } from './GiverModal';
@@ -10,10 +10,10 @@ import { getCurrentAccountID } from '../../lib/steamid';
 import { detectGameName, detectAppId } from '../utils/dom';
 import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
 
-let Tooltip: any = null;
+let Tooltip: React.ComponentType<any> | null = null;
 let searchedTooltip = false;
 
-function getTooltipComponent(): any {
+function getTooltipComponent(): React.ComponentType<any> | null {
   if (!searchedTooltip) {
     searchedTooltip = true;
     try {
@@ -32,7 +32,7 @@ function getTooltipComponent(): any {
   return Tooltip;
 }
 
-let confettiTimeout: any = null;
+let confettiTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function fireConfetti(doc: Document) {
   log("fired confetti!");
@@ -130,7 +130,7 @@ const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: Badge
 };
 
 export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
-  const [forceRender, setForceRender] = useState(0);
+  const [_forceRender, setForceRender] = useState(0);
   const steamID = getCurrentAccountID();
   
   // We grab these synchronously on mount so we don't tear on DOM changes
@@ -181,7 +181,7 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
   if (!match) {
     const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
     if (fuzzyMatch) {
-      match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data as any, matchType: fuzzyMatch.matchType };
+      match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
     }
   }
 

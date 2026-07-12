@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { InjectionConfig } from './types';
-import { log, logError, logDebug } from '../../../lib/logger';
+import { log, logError } from '../../../lib/logger';
 
 interface InjectedNode {
   container: HTMLElement | null;
