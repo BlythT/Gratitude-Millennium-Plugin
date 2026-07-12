@@ -1,5 +1,5 @@
-import { ConfirmModal, DialogButton, TextField, showModal } from '@steambrew/client';
-import { useEffect, useState } from 'react';
+import { ConfirmModal, DialogButton, DialogLabel, TextField, showModal } from '@steambrew/client';
+import React, { useEffect, useState, ReactNode } from 'react';
 import { log, logError } from '../../lib/logger';
 import { friendsCache } from '../injection/friendscache';
 import { giverCache } from '../injection/givercache';
@@ -34,9 +34,9 @@ function LinkIndicator({ title }: { title: string }) {
 	return (
 		<span
 			title={title}
-			style={{ display: 'inline-flex', width: '14px', height: '14px', opacity: 0.8, flex: '0 0 auto' }}
+			style={{ display: 'inline-flex', width: '16px', height: '16px', color: '#66c0f4', opacity: 1, flex: '0 0 auto' }}
 		>
-			<svg viewBox="0 0 512 512" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ width: '14px', height: '14px' }}>
+			<svg viewBox="0 0 512 512" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ width: '16px', height: '16px' }}>
 				<path
 					fill="none"
 					stroke="currentColor"
@@ -195,6 +195,20 @@ function selectFriendFields(friend: FriendRecord): SelectedFriendFields {
 	};
 }
 
+interface FormGroupProps {
+	label: ReactNode;
+	children?: ReactNode;
+}
+
+function FormGroup({ label, children }: FormGroupProps) {
+	return (
+		<div className="DialogInputLabelGroup _DialogLayout">
+			<DialogLabel>{label}</DialogLabel>
+			{children}
+		</div>
+	);
+}
+
 function FriendSuggestionItem({
 	friend,
 	settings,
@@ -282,10 +296,10 @@ function FriendSuggestionDropdown({
 			}}
 			style={{
 				position: 'absolute',
-				top: '112px',
+				top: '128px',
 				left: 0,
 				right: 0,
-				bottom: '24px',
+				bottom: '16px',
 				zIndex: 100,
 				background: '#1d2730', // A matching dark Steam-like color
 				border: '1px solid rgba(255,255,255,0.12)',
@@ -297,12 +311,12 @@ function FriendSuggestionDropdown({
 			<div style={{ display: 'grid', gap: '6px', padding: '8px' }}>
 				{isLoading ? (
 					<div style={{ padding: '12px', fontSize: '12px', opacity: 0.75 }}>
-						Loading cached friends...
+						Loading friends...
 					</div>
 				) : !friendsSnapshot ? (
 					<div style={{ display: 'grid', gap: '8px', padding: '8px' }}>
 						<div style={{ fontSize: '12px', opacity: 0.75 }}>
-							No local friends cache yet.
+							No friends list found.
 						</div>
 						<div style={{ display: 'flex', justifyContent: 'flex-start' }}>
 							<DialogButton onClick={onRefreshFriends}>
@@ -322,7 +336,7 @@ function FriendSuggestionDropdown({
 				) : (
 					<div style={{ display: 'grid', gap: '8px', padding: '8px' }}>
 						<div style={{ fontSize: '12px', opacity: 0.75 }}>
-							No cached friends match.
+							No matching friends found.
 						</div>
 						<div style={{ display: 'flex', justifyContent: 'flex-start' }}>
 							<DialogButton onClick={onRefreshFriends}>
@@ -426,7 +440,6 @@ function GiverModalContent({
 		setDisplayName(fields.displayName);
 		setProfileField(fields.profileUrl ?? fields.steamID64 ?? '');
 		setSource(fields.source);
-		setStatusMessage(`Selected ${friend.displayName} from your cached friends.`);
 	};
 
 	const handleSave = async () => {
@@ -605,119 +618,94 @@ function GiverModalContent({
 	);
 
 	const renderEditorView = () => (
-		<div style={{ display: 'grid', gap: '12px', position: 'relative', ...modalContentWidthStyle }}>
-			<div>
-				<div style={{ fontSize: '12px', opacity: 0.7 }}>Game</div>
-				<div>{gameTitle}</div>
-			</div>
-			<div
-				onFocus={() => setIsDropdownOpen(true)}
-				onBlur={(e: React.FocusEvent<HTMLDivElement>) => {
-					if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-						setIsDropdownOpen(false);
-					}
-				}}
-			>
-				<div onKeyDownCapture={handleDisplayNameKeyDown as unknown as React.KeyboardEventHandler<HTMLDivElement>}>
-					<TextField
-						label={(
-							<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-								<span>Display Name</span>
-								{isLinkedFriend ? (
-									<LinkIndicator title="Linked to a cached Steam friend" />
-								) : null}
-							</span>
-						)}
-						value={displayName}
-						onChange={(event) => updateDisplayName(event.currentTarget.value)}
-						inlineControls={(
-							<SteamTooltip toolTipContent="Search Gmail for gift email">
-								<button
-									type="button"
-									onClick={handleEmailSearch}
-									style={{
-										background: 'none',
-										border: 'none',
-										padding: 0,
-										margin: '0 8px',
-										color: 'inherit',
-										cursor: 'pointer',
-										display: 'inline-flex',
-										alignItems: 'center',
-										opacity: 0.6,
-										transition: 'opacity 0.2s',
-									}}
-									onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '1'; }}
-									onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '0.6'; }}
-								>
-									<svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '18px', height: '18px' }}>
-										<path d="m18.73 5.41-1.28 1L12 10.46 6.55 6.37l-1.28-1A2 2 0 0 0 2 7.05v11.59A1.36 1.36 0 0 0 3.36 20h3.19v-7.72L12 16.37l5.45-4.09V20h3.19A1.36 1.36 0 0 0 22 18.64V7.05a2 2 0 0 0-3.27-1.64z"></path>
-									</svg>
-								</button>
-							</SteamTooltip>
-						)}
-					/>
-				</div>
-				<div
-					style={{
-						fontSize: '12px',
-						lineHeight: '20px',
-						height: '20px',
-						opacity: 0.65,
-						marginTop: '6px',
-						display: 'flex',
-						alignItems: 'center',
-					}}
-				>
-					{canAcceptTopSuggestion ? (
-						<>
-							<span>Press </span>
-							<kbd
-								style={{
-									padding: '1px 6px',
-									borderRadius: '4px',
-									border: '1px solid rgba(255,255,255,0.18)',
-									background: 'rgba(255,255,255,0.08)',
-									color: 'inherit',
-									fontSize: '11px',
-									lineHeight: '16px',
-									fontFamily: 'inherit',
-									display: 'inline-flex',
-									alignItems: 'center',
-								}}
-							>
-								Tab
-							</kbd>
-							<span>&nbsp;to autocomplete&nbsp;</span>
-							<span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>
-								{topSuggestedLabel}
-							</span>
-							<span>.</span>
-						</>
-					) : (
-						<span style={{ opacity: 0.72 }}>
-							Start typing to see friend suggestions.
-						</span>
-					)}
-				</div>
-				<FriendSuggestionDropdown
-					isOpen={isDropdownOpen}
-					isLoading={isLoadingFriends}
-					friendsSnapshot={friendsSnapshot}
-					filteredFriends={filteredFriends}
-					settings={settings}
-					onSelectFriend={(friend) => {
-						handleSelectFriend(friend);
-						setIsDropdownOpen(false);
-					}}
-					onRefreshFriends={handleRefreshFriends}
-				/>
-			</div>
+		<div className="giver-modal-editor-container" style={{ display: 'flex', flexDirection: 'column', position: 'relative', paddingTop: '12px', ...modalContentWidthStyle }}>
+			<style>{`
+				.giver-modal-editor-container > .DialogInputLabelGroup:last-of-type {
+					margin-bottom: 0 !important;
+				}
+			`}</style>
+			<FormGroup label="Game">
+				<div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.82)' }}>{gameTitle}</div>
+			</FormGroup>
 			<TextField
-				label="Notes"
-				value={notes}
-				onChange={(event) => setNotes(event.currentTarget.value)}
+				label={(
+					<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+						<span>Display Name</span>
+						{isLinkedFriend ? (
+							<LinkIndicator title="Linked to Steam Profile" />
+						) : null}
+					</span>
+				)}
+				value={displayName}
+				onChange={(event) => updateDisplayName(event.currentTarget.value)}
+				onFocus={() => setIsDropdownOpen(true)}
+				onBlur={() => {
+					// Delay closing to allow dropdown item clicks to execute first
+					setTimeout(() => setIsDropdownOpen(false), 150);
+				}}
+				onKeyDown={handleDisplayNameKeyDown}
+				inlineControls={(
+					<SteamTooltip toolTipContent="Search Gmail for gift email">
+						<button
+							type="button"
+							onClick={handleEmailSearch}
+							style={{
+								background: 'none',
+								border: 'none',
+								padding: 0,
+								margin: '0 8px',
+								color: 'inherit',
+								cursor: 'pointer',
+								display: 'inline-flex',
+								alignItems: 'center',
+								opacity: 0.6,
+								transition: 'opacity 0.2s',
+							}}
+							onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '1'; }}
+							onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '0.6'; }}
+						>
+							<svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '18px', height: '18px' }}>
+								<path d="m18.73 5.41-1.28 1L12 10.46 6.55 6.37l-1.28-1A2 2 0 0 0 2 7.05v11.59A1.36 1.36 0 0 0 3.36 20h3.19v-7.72L12 16.37l5.45-4.09V20h3.19A1.36 1.36 0 0 0 22 18.64V7.05a2 2 0 0 0-3.27-1.64z"></path>
+							</svg>
+						</button>
+					</SteamTooltip>
+				)}
 			/>
+			<FriendSuggestionDropdown
+				isOpen={isDropdownOpen}
+				isLoading={isLoadingFriends}
+				friendsSnapshot={friendsSnapshot}
+				filteredFriends={filteredFriends}
+				settings={settings}
+				onSelectFriend={(friend) => {
+					handleSelectFriend(friend);
+					setIsDropdownOpen(false);
+				}}
+				onRefreshFriends={handleRefreshFriends}
+			/>
+			<FormGroup label="Notes">
+				<textarea
+					value={notes}
+					onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(event.target.value)}
+					rows={3}
+					style={{
+						background: 'rgba(0, 0, 0, 0.2)',
+						border: '1px solid rgba(255, 255, 255, 0.12)',
+						borderRadius: '4px',
+						color: 'inherit',
+						padding: '8px 10px',
+						fontFamily: 'inherit',
+						fontSize: '13px',
+						resize: 'vertical',
+						outline: 'none',
+						transition: 'border-color 0.2s',
+						width: '100%',
+						boxSizing: 'border-box',
+					}}
+					onFocus={(e: React.FocusEvent<HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'; }}
+					onBlur={(e: React.FocusEvent<HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'; }}
+				/>
+			</FormGroup>
 			{settings.showFriendPickerSteamUrl ? (
 				<TextField
 					label="Steam Profile URL / ID"
