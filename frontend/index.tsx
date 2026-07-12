@@ -18,7 +18,7 @@ const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameL
 const hasUserConsented = callable<[{ steamUserID: string }], boolean | string>('HasUserConsented');
 const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
 const SettingsContent = () => {
-	const steamUserID = getCurrentAccountID();
+	const steamUserID = getCurrentAccountID() || '';
 	const [isLoading, setIsLoading] = useState(true);
 	const [licenseCount, setLicenseCount] = useState(0);
 	const [friendCount, setFriendCount] = useState(0);
@@ -35,7 +35,7 @@ const SettingsContent = () => {
 	}, [steamUserID]);
 
 	const checkCache = async () => {
-		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() }).then((populated) => {
+		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() || '' }).then((populated) => {
 			log('Response from IsGameLicenseCachePopulated:', populated);
 			return populated;
 		}).catch((error) => {
@@ -46,7 +46,7 @@ const SettingsContent = () => {
 
 	const updateEntryCount = async () => {
 		try {
-			const steamID = getCurrentAccountID();
+			const steamID = getCurrentAccountID() || '';
 			const data = await getAllCacheEntries({ steamUserID: steamID });
 			const entries = data ? JSON.parse(data) : {};
 			if (entries.byName) {
@@ -67,7 +67,7 @@ const SettingsContent = () => {
 
 	const handleClearCache = async () => {
 		try {
-			const steamID = getCurrentAccountID();
+			const steamID = getCurrentAccountID() || '';
 			const successLicense = await gameLicenseCache.clearCache(steamID);
 			const successFriends = await friendsCache.clearCache(steamID);
 			if (isTruthy(successLicense) || isTruthy(successFriends)) {
@@ -179,6 +179,10 @@ async function onPopupCreation(popup: any) {
 			consentModalShown = true;
 			try {
 				const currentUserID = getCurrentAccountID();
+				if (!currentUserID) {
+					logError('Could not resolve current Steam User ID during popup creation.');
+					return;
+				}
 				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
 				logDebug('RAW IPC RETURN hasUserConsented:', JSON.stringify(userConsented), 'type:', typeof userConsented);
 				if (userConsented === null || userConsented === undefined || userConsented === 'null') {

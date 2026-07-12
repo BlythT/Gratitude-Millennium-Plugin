@@ -1,4 +1,15 @@
-export function decodeHtmlEntities(value) {
+export interface LicenseData {
+	date: string;
+	acquisition: string;
+}
+
+export interface MatchResult {
+	licenseKey: string;
+	data: LicenseData;
+	matchType: string;
+}
+
+export function decodeHtmlEntities(value: string | number): string {
 	return String(value)
 		.replace(/&nbsp;/gi, ' ')
 		.replace(/&amp;/gi, '&')
@@ -13,7 +24,7 @@ export function decodeHtmlEntities(value) {
 		.replace(/&#([0-9]+);/g, (_, dec) => String.fromCodePoint(Number.parseInt(dec, 10)));
 }
 
-export function normalizeForComparison(value) {
+export function normalizeForComparison(value: string | number): string {
 	let normalized = decodeHtmlEntities(value)
 		.toLowerCase()
 		// Replace unicode Trademark (™), Registered (®), and Copyright (©) symbols with spaces
@@ -34,9 +45,7 @@ export function normalizeForComparison(value) {
 		.replace(/\b(the|a|an)\b/g, ' ');
 
 	// Static map of Roman numerals (1 to 20) to their Arabic equivalents.
-	// We use a static list instead of a generic Roman numeral parser to prevent converting
-	// standard letters/words (like 'M' for 1000, 'C' for 100, or 'D' for 500) into digits.
-	const romanMap = {
+	const romanMap: Record<string, string> = {
 		'xx': '20', 'xix': '19', 'xviii': '18', 'xvii': '17', 'xvi': '16', 'xv': '15',
 		'xiv': '14', 'xiii': '13', 'xii': '12', 'xi': '11', 'x': '10', 'ix': '9',
 		'viii': '8', 'vii': '7', 'vi': '6', 'v': '5', 'iv': '4', 'iii': '3', 'ii': '2',
@@ -44,9 +53,8 @@ export function normalizeForComparison(value) {
 	};
 	
 	// Convert Roman numerals to Arabic digits when surrounded by word boundaries.
-	normalized = normalized.replace(/\b(xx|xix|xviii|xvii|xvi|xv|xiv|xiii|xii|xi|x|ix|viii|vii|vi|v|iv|iii|ii|i)\b/g, (match, p1, offset, str) => {
+	normalized = normalized.replace(/\b(xx|xix|xviii|xvii|xvi|xv|xiv|xiii|xii|xi|x|ix|viii|vii|vi|v|iv|iii|ii|i)\b/g, (match, _p1, offset, str) => {
 		// Safeguard: Do not convert the letter 'i' if it starts the entire string
-		// (e.g., "I, Gladiator" or "I am Bread") to avoid transforming it into "1".
 		if (match === 'i' && str.slice(0, offset).trim() === '') {
 			return match;
 		}
@@ -60,9 +68,7 @@ export function normalizeForComparison(value) {
 }
 
 // Maps normalized game names to lists of their raw license/display names.
-// Keys must be normalized for fast lookups, while values must match the exact strings
-// that appear in the user's Steam licenses.
-const TITLE_ALIASES = new Map([
+const TITLE_ALIASES = new Map<string, string[]>([
 	['counter strike 2', ['Counter-Strike: Global Offensive']],
 	['warhammer 40 000 dawn of war soulstorm', ['Dawn of War: Soulstorm (NA/AU)']],
 	['totally accurate battlegrounds', ['TABG']],
@@ -83,13 +89,15 @@ const YEAR_QUALIFIER_SUFFIX_PATTERNS = [
 ];
 
 // Cache of FuzzyMatcherIndex instances keyed by the source Map object identity.
-// Since the Map might be mutated (though in practice a fresh Map is returned on
-// each load), we track the Map's size on construction. If the size changes,
-// the index will be rebuilt to avoid serving stale data.
-const matcherIndices = new WeakMap();
+const matcherIndices = new WeakMap<Map<string, LicenseData>, FuzzyMatcherIndex>();
 
 class FuzzyMatcherIndex {
-	constructor(map) {
+	map: Map<string, LicenseData>;
+	size: number;
+	normalizedExactIndex: Map<string, { key: string; value: LicenseData }[]>;
+	tokenIndex: Map<string, Set<string>>;
+
+	constructor(map: Map<string, LicenseData>) {
 		this.map = map;
 		this.size = map.size;
 		this.normalizedExactIndex = new Map();
@@ -99,23 +107,27 @@ class FuzzyMatcherIndex {
 			const normalizedKey = normalizeForComparison(key);
 			if (!normalizedKey) continue;
 
-			if (!this.normalizedExactIndex.has(normalizedKey)) {
-				this.normalizedExactIndex.set(normalizedKey, []);
+			let list = this.normalizedExactIndex.get(normalizedKey);
+			if (!list) {
+				list = [];
+				this.normalizedExactIndex.set(normalizedKey, list);
 			}
-			this.normalizedExactIndex.get(normalizedKey).push({ key, value });
+			list.push({ key, value });
 
 			const tokens = normalizedKey.split(' ').filter(Boolean);
 			for (const token of tokens) {
-				if (!this.tokenIndex.has(token)) {
-					this.tokenIndex.set(token, new Set());
+				let tokenKeys = this.tokenIndex.get(token);
+				if (!tokenKeys) {
+					tokenKeys = new Set();
+					this.tokenIndex.set(token, tokenKeys);
 				}
-				this.tokenIndex.get(token).add(key);
+				tokenKeys.add(key);
 			}
 		}
 	}
 }
 
-function getOrBuildIndex(map) {
+function getOrBuildIndex(map: Map<string, LicenseData>): FuzzyMatcherIndex {
 	let index = matcherIndices.get(map);
 	if (!index || index.size !== map.size) {
 		index = new FuzzyMatcherIndex(map);
@@ -124,8 +136,8 @@ function getOrBuildIndex(map) {
 	return index;
 }
 
-function stripSuffixes(gameName, patterns) {
-	const candidates = new Set();
+function stripSuffixes(gameName: string, patterns: RegExp[]): string[] {
+	const candidates = new Set<string>();
 	for (const pattern of patterns) {
 		const stripped = gameName.replace(pattern, '').trim();
 		if (stripped && stripped !== gameName) {
@@ -136,18 +148,21 @@ function stripSuffixes(gameName, patterns) {
 }
 
 export function fuzzyMatchLicenseName(
-	map,
-	gameName,
+	map: Map<string, LicenseData>,
+	gameName: string,
 	allowQualifierStripping = true,
 	allowYearQualifierStripping = true,
 	allowAliasLookup = true,
-) {
+): MatchResult | null {
 	if (map.has(gameName)) {
-		return {
-			licenseKey: gameName,
-			data: map.get(gameName),
-			matchType: 'exact',
-		};
+		const data = map.get(gameName);
+		if (data) {
+			return {
+				licenseKey: gameName,
+				data,
+				matchType: 'exact',
+			};
+		}
 	}
 
 	const index = getOrBuildIndex(map);
@@ -171,11 +186,14 @@ export function fuzzyMatchLicenseName(
 		if (aliasTargets) {
 			for (const target of aliasTargets) {
 				if (map.has(target)) {
-					return {
-						licenseKey: target,
-						data: map.get(target),
-						matchType: 'alias-exact',
-					};
+					const data = map.get(target);
+					if (data) {
+						return {
+							licenseKey: target,
+							data,
+							matchType: 'alias-exact',
+						};
+					}
 				}
 				const targetNormalized = normalizeForComparison(target);
 				if (targetNormalized) {
@@ -198,7 +216,7 @@ export function fuzzyMatchLicenseName(
 		return null;
 	}
 
-	const candidateKeys = new Set();
+	const candidateKeys = new Set<string>();
 	for (const token of tokens) {
 		const keys = index.tokenIndex.get(token);
 		if (keys) {
@@ -208,16 +226,15 @@ export function fuzzyMatchLicenseName(
 		}
 	}
 
-	const checkCandidateSubset = (allowReverse = true) => {
-		let bestForward = null;
-		let bestReverse = null;
+	const checkCandidateSubset = (allowReverse = true): MatchResult | null => {
+		let bestForward: MatchResult | null = null;
+		let bestReverse: MatchResult | null = null;
 		for (const key of candidateKeys) {
 			const normalizedKey = normalizeForComparison(key);
 			if (!normalizedKey) continue;
 
 			if (normalizedKey.startsWith(normalizedGameName) || normalizedKey.endsWith(normalizedGameName)) {
 				// Reject forward match if the remaining portion (suffix or prefix) starts/ends with a digit
-				// - this almost always indicates a sequel (e.g. "Sanctum" vs "Sanctum 2").
 				if (normalizedKey.startsWith(normalizedGameName)) {
 					const suffix = normalizedKey.slice(normalizedGameName.length).trimStart();
 					if (/^\d/.test(suffix)) continue;
@@ -226,26 +243,27 @@ export function fuzzyMatchLicenseName(
 					if (/\d$/.test(prefix)) continue;
 				}
 
-				if (!bestForward || key.length < bestForward.licenseKey.length) {
+				const data = map.get(key);
+				if (data && (!bestForward || key.length < bestForward.licenseKey.length)) {
 					bestForward = {
 						licenseKey: key,
-						data: map.get(key),
+						data,
 						matchType: 'normalized-forward-prefix',
 					};
 				}
 			}
 
 			if (allowReverse && (normalizedGameName.startsWith(normalizedKey) || normalizedGameName.endsWith(normalizedKey))) {
-				if (!bestReverse || key.length > bestReverse.licenseKey.length) {
+				const data = map.get(key);
+				if (data && (!bestReverse || key.length > bestReverse.licenseKey.length)) {
 					bestReverse = {
 						licenseKey: key,
-						data: map.get(key),
+						data,
 						matchType: 'normalized-reverse-prefix',
 					};
 				}
 			}
 		}
-		// Prefer forward matches (key contains entire query) over reverse (query contains entire key)
 		return bestForward || bestReverse;
 	};
 
@@ -255,12 +273,12 @@ export function fuzzyMatchLicenseName(
 	}
 
 	if (tokens.length > 1) {
-		const scored = [];
+		const scored: { key: string; jaccard: number }[] = [];
 		const querySet = new Set(tokens);
 
-		const extractNumbers = (str) => {
+		const extractNumbers = (str: string) => {
 			const matches = str.match(/\b\d+\b/g);
-			return matches ? new Set(matches) : new Set();
+			return matches ? new Set(matches) : new Set<string>();
 		};
 		const numbersGame = extractNumbers(normalizedGameName);
 
@@ -309,11 +327,14 @@ export function fuzzyMatchLicenseName(
 			});
 
 			const best = eligible[0];
-			return {
-				licenseKey: best.key,
-				data: map.get(best.key),
-				matchType: 'fuzzy-token',
-			};
+			const data = map.get(best.key);
+			if (data) {
+				return {
+					licenseKey: best.key,
+					data,
+					matchType: 'fuzzy-token',
+				};
+			}
 		}
 	}
 
@@ -334,7 +355,7 @@ export function fuzzyMatchLicenseName(
 			}
 
 			const strippedTokens = normalizedCand.split(' ').filter(Boolean);
-			const strippedCandidateKeys = new Set();
+			const strippedCandidateKeys = new Set<string>();
 			for (const token of strippedTokens) {
 				const keys = index.tokenIndex.get(token);
 				if (keys) {
@@ -347,11 +368,14 @@ export function fuzzyMatchLicenseName(
 			for (const key of strippedCandidateKeys) {
 				const normalizedKey = normalizeForComparison(key);
 				if (normalizedKey && (normalizedKey.startsWith(normalizedCand) || normalizedKey.endsWith(normalizedCand))) {
-					return {
-						licenseKey: key,
-						data: map.get(key),
-						matchType: 'stripped-normalized-forward-prefix',
-					};
+					const data = map.get(key);
+					if (data) {
+						return {
+							licenseKey: key,
+							data,
+							matchType: 'stripped-normalized-forward-prefix',
+						};
+					}
 				}
 			}
 		}
@@ -374,7 +398,7 @@ export function fuzzyMatchLicenseName(
 			}
 
 			const strippedTokens = normalizedCand.split(' ').filter(Boolean);
-			const strippedCandidateKeys = new Set();
+			const strippedCandidateKeys = new Set<string>();
 			for (const token of strippedTokens) {
 				const keys = index.tokenIndex.get(token);
 				if (keys) {
@@ -387,11 +411,14 @@ export function fuzzyMatchLicenseName(
 			for (const key of strippedCandidateKeys) {
 				const normalizedKey = normalizeForComparison(key);
 				if (normalizedKey && (normalizedKey.startsWith(normalizedCand) || normalizedKey.endsWith(normalizedCand))) {
-					return {
-						licenseKey: key,
-						data: map.get(key),
-						matchType: 'year-stripped-normalized-forward-prefix',
-					};
+					const data = map.get(key);
+					if (data) {
+						return {
+							licenseKey: key,
+							data,
+							matchType: 'year-stripped-normalized-forward-prefix',
+						};
+					}
 				}
 			}
 		}
