@@ -369,7 +369,7 @@ function HasUserConsented(steamUserID)
         return consentState[steamUserID].allowed
     end
 
-    return false
+    return nil
 end
 
 function GetGiverData(licenseKey, steamUserID)

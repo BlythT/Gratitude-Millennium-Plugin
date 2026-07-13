@@ -1,5 +1,5 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
-import { log, logError } from '../lib/logger';
+import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
 import { GiftBadge } from './components/GiftBadge';
 import { isTruthy } from './utils/truthy';
@@ -15,18 +15,27 @@ import { useSettings } from './settings';
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
 const getAllCacheEntries = callable<[{ steamUserID: string }], string>('GetGameLicenseData');
-const hasUserConsented = callable<[{ steamUserID: string }], boolean>('HasUserConsented');
-
+const hasUserConsented = callable<[{ steamUserID: string }], boolean | string>('HasUserConsented');
+const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
 const SettingsContent = () => {
-	const steamUserID = getCurrentAccountID();
+	const steamUserID = getCurrentAccountID() || '';
 	const [isLoading, setIsLoading] = useState(true);
 	const [licenseCount, setLicenseCount] = useState(0);
 	const [friendCount, setFriendCount] = useState(0);
 	const [giverCount, setGiverCount] = useState(0);
+	const [hasConsent, setHasConsent] = useState<boolean | null>(true);
 	const [settings, setSetting] = useSettings(steamUserID);
 
+	useEffect(() => {
+		hasUserConsented({ steamUserID }).then((consented) => {
+			setHasConsent(consented === true || consented === 'true');
+		}).catch(error => {
+			logError('Error checking consent in settings:', error);
+		});
+	}, [steamUserID]);
+
 	const checkCache = async () => {
-		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() }).then((populated) => {
+		return await isGameLicenseCachePopulated({ steamUserID: getCurrentAccountID() || '' }).then((populated) => {
 			log('Response from IsGameLicenseCachePopulated:', populated);
 			return populated;
 		}).catch((error) => {
@@ -37,7 +46,7 @@ const SettingsContent = () => {
 
 	const updateEntryCount = async () => {
 		try {
-			const steamID = getCurrentAccountID();
+			const steamID = getCurrentAccountID() || '';
 			const data = await getAllCacheEntries({ steamUserID: steamID });
 			const entries = data ? JSON.parse(data) : {};
 			if (entries.byName) {
@@ -58,7 +67,7 @@ const SettingsContent = () => {
 
 	const handleClearCache = async () => {
 		try {
-			const steamID = getCurrentAccountID();
+			const steamID = getCurrentAccountID() || '';
 			const successLicense = await gameLicenseCache.clearCache(steamID);
 			const successFriends = await friendsCache.clearCache(steamID);
 			if (isTruthy(successLicense) || isTruthy(successFriends)) {
@@ -91,6 +100,26 @@ const SettingsContent = () => {
 
 	return (
 		<>
+			{hasConsent === false && (
+				<Field
+					label="Plugin Disabled: Data Access Denied"
+					description="Gratitude cannot function without permission to read your Steam license history. Please grant permission to re-enable the plugin."
+					bottomSeparator="standard"
+					childrenLayout="below"
+				>
+					<DialogButton onClick={async () => {
+						try {
+							await setConsent({ steamUserID, consent: true });
+							setHasConsent(true);
+							window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
+						} catch (error) {
+							logError('Error granting consent from settings:', error);
+						}
+					}}>
+						Grant Permission
+					</DialogButton>
+				</Field>
+			)}
 			<ToggleField
 				label="Show Steam links"
 				description="Show and edit profile links and IDs."
@@ -134,8 +163,16 @@ const SettingsContent = () => {
 
 let consentModalShown = false;
 
+interface SteamPopup {
+	m_strName: string;
+	m_popup?: {
+		document: Document;
+	} | null;
+	window: Window;
+}
+
 // Popup callback to handle main window initialization
-async function onPopupCreation(popup: any) {
+async function onPopupCreation(popup: SteamPopup) {
 	if (!popup) {
 		return;
 	}
@@ -150,9 +187,20 @@ async function onPopupCreation(popup: any) {
 			consentModalShown = true;
 			try {
 				const currentUserID = getCurrentAccountID();
+				if (!currentUserID) {
+					logError('Could not resolve current Steam User ID during popup creation.');
+					return;
+				}
 				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
-				if (!isTruthy(userConsented)) {
-					showConsentModal(currentUserID);
+				logDebug('RAW IPC RETURN hasUserConsented:', JSON.stringify(userConsented), 'type:', typeof userConsented);
+				if (userConsented === null || userConsented === undefined || userConsented === 'null') {
+					const timeoutId = window.setTimeout(() => {
+						showConsentModal(currentUserID, popup.window);
+					}, 2500);
+
+					popup.window.addEventListener('beforeunload', () => {
+						window.clearTimeout(timeoutId);
+					});
 				}
 			} catch (error) {
 				logError('Error checking consent:', error);

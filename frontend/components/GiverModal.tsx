@@ -1,11 +1,12 @@
-import { ConfirmModal, DialogButton, ScrollPanel, TextField, showModal } from '@steambrew/client';
-import { useEffect, useState } from 'react';
+import { ConfirmModal, DialogLabel, TextField, showModal } from '@steambrew/client';
+import React, { useEffect, useState, ReactNode } from 'react';
 import { log, logError } from '../../lib/logger';
 import { friendsCache } from '../injection/friendscache';
 import { giverCache } from '../injection/givercache';
-import { useSettings, type GratitudeSettings } from '../settings';
+import { useSettings } from '../settings';
 import { isTruthy } from '../utils/truthy';
 import type { FriendRecord, FriendsCacheSnapshot, GiverData, GiverSource } from '../types';
+import { FriendSelector } from './FriendSelector';
 
 type GiverModalOptions = {
 	parentWindow: EventTarget;
@@ -22,30 +23,17 @@ type GiverModalProps = GiverModalOptions & {
 	closeModal: () => void;
 };
 
-type SelectedFriendFields = {
-	displayName: string;
-	steamID64?: string;
-	profileUrl?: string;
-	source: GiverSource;
-};
+interface FormGroupProps {
+	label: ReactNode;
+	children?: ReactNode;
+}
 
-function LinkIndicator({ title }: { title: string }) {
+function FormGroup({ label, children }: FormGroupProps) {
 	return (
-		<span
-			title={title}
-			style={{ display: 'inline-flex', width: '14px', height: '14px', opacity: 0.8, flex: '0 0 auto' }}
-		>
-			<svg viewBox="0 0 512 512" fill="currentColor" xmlns="http://www.w3.org/2000/svg" style={{ width: '14px', height: '14px' }}>
-				<path
-					fill="none"
-					stroke="currentColor"
-					strokeLinecap="square"
-					strokeLinejoin="round"
-					strokeWidth="48"
-					d="M200.66 352H144a96 96 0 0 1 0-192h55.41m113.18 0H368a96 96 0 0 1 0 192h-56.66m-142.27-96h175.86"
-				/>
-			</svg>
-		</span>
+		<div className="DialogInputLabelGroup _DialogLayout">
+			<DialogLabel>{label}</DialogLabel>
+			{children}
+		</div>
 	);
 }
 
@@ -130,69 +118,7 @@ function normalizeProfileField(value: string): { steamID64?: string; profileUrl?
 	return { profileUrl: trimmed };
 }
 
-function normalizeAutocompleteText(value: string): string {
-	return value
-		.toLowerCase()
-		.replace(/[()]/g, ' ')
-		.replace(/[^a-z0-9\s]+/g, ' ')
-		.replace(/\s+/g, ' ')
-		.trim();
-}
 
-function getFriendLinkLabel(friend: FriendRecord, settings: GratitudeSettings): string {
-	if (!settings.showFriendPickerSteamUrl) {
-		return '';
-	}
-
-	const rawValue = friend.profileUrl ?? friend.steamID64 ?? '';
-	if (!rawValue) {
-		return '';
-	}
-
-	if (rawValue.startsWith('https://')) {
-		return rawValue.replace(/^https?:\/\//, '');
-	}
-
-	return rawValue;
-}
-
-function getFriendDisplayLabel(friend: FriendRecord): string {
-	const aliasParts = (friend.nicknameOrAlias ?? '')
-		.split('|')
-		.map((part) => part.trim())
-		.filter(Boolean)
-		.filter((part) => !isSteamID64(part))
-		.filter((part) => {
-			const lowered = part.toLowerCase();
-			const profileUrl = friend.profileUrl?.toLowerCase() ?? '';
-
-			if (!profileUrl.includes('/id/')) {
-				return true;
-			}
-
-			const slug = profileUrl.replace(/\/+$/, '').split('/').pop();
-			return !slug || lowered !== slug;
-		});
-
-	const canonicalName = aliasParts.find(
-		(part) => part.toLowerCase() !== friend.displayName.toLowerCase(),
-	);
-
-	if (!canonicalName) {
-		return friend.displayName;
-	}
-
-	return `${canonicalName} (${friend.displayName})`;
-}
-
-function selectFriendFields(friend: FriendRecord): SelectedFriendFields {
-	return {
-		displayName: getFriendDisplayLabel(friend),
-		steamID64: friend.steamID64,
-		profileUrl: friend.profileUrl,
-		source: 'friend-cache',
-	};
-}
 
 function GiverModalContent({
 	steamUserID,
@@ -212,79 +138,31 @@ function GiverModalContent({
 	const [notes, setNotes] = useState(existingGiver?.notes ?? '');
 	const [source, setSource] = useState<GiverSource>(existingGiver?.source ?? 'manual');
 	const [friendsSnapshot, setFriendsSnapshot] = useState<FriendsCacheSnapshot | null>(null);
-	const [isLoadingFriends, setIsLoadingFriends] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
 	const [statusMessage, setStatusMessage] = useState<string | null>(null);
 	const [isEditing, setIsEditing] = useState(!existingGiver);
 
-
 	useEffect(() => {
+		if (isEditing) return;
 		let disposed = false;
 
-		const loadFriends = async () => {
+		const loadDetailFriend = async () => {
 			try {
-				friendsCache.invalidate(steamUserID);
-				const snapshot = await friendsCache.getData(steamUserID, true);
+				const snapshot = await friendsCache.getData(steamUserID, false);
 				if (!disposed) {
 					setFriendsSnapshot(snapshot);
 				}
-			} finally {
-				if (!disposed) {
-					setIsLoadingFriends(false);
-				}
+			} catch (error) {
+				logError('Error loading friend snapshot for detail view:', error);
 			}
 		};
 
-		loadFriends();
+		loadDetailFriend();
 
 		return () => {
 			disposed = true;
 		};
-	}, [steamUserID]);
-
-	const friendAssistQuery = displayName.trim();
-	const friendAssistTerms = normalizeAutocompleteText(friendAssistQuery).split(/\s+/).filter(Boolean);
-	const filteredFriends = (friendsSnapshot?.friends ?? []).filter((friend) => {
-		if (friendAssistTerms.length === 0) {
-			return true;
-		}
-
-		const haystack = normalizeAutocompleteText([
-			getFriendDisplayLabel(friend),
-			friend.displayName,
-			friend.steamID64,
-			friend.nicknameOrAlias ?? '',
-			friend.profileUrl ?? '',
-		].join(' '));
-
-		return friendAssistTerms.every((term) => haystack.includes(term));
-	});
-
-	const topSuggestedFriend = filteredFriends[0];
-	const topSuggestedLabel = topSuggestedFriend ? getFriendDisplayLabel(topSuggestedFriend) : '';
-	const canAcceptTopSuggestion = Boolean(
-		displayName.trim().length >= 2 &&
-		topSuggestedFriend &&
-		topSuggestedLabel &&
-		normalizeAutocompleteText(topSuggestedLabel) !== normalizeAutocompleteText(displayName),
-	);
-
-
-	const updateDisplayName = (nextValue: string) => {
-		setDisplayName(nextValue);
-		if (source === 'friend-cache' || profileField) {
-			setSource('manual');
-			setProfileField('');
-		}
-	};
-
-	const handleSelectFriend = (friend: FriendRecord) => {
-		const fields = selectFriendFields(friend);
-		setDisplayName(fields.displayName);
-		setProfileField(fields.profileUrl ?? fields.steamID64 ?? '');
-		setSource(fields.source);
-		setStatusMessage(`Selected ${friend.displayName} from your cached friends.`);
-	};
+	}, [steamUserID, isEditing]);
 
 	const handleSave = async () => {
 		if (!displayName.trim()) {
@@ -360,16 +238,16 @@ function GiverModalContent({
 	};
 
 	const handleRefreshFriends = () => {
-		window.open('steam://openurl/https://steamcommunity.com/my/friends/');
+		window.open('steam://openurl/https://steamcommunity.com/my/friends/?gratitude_sync=1');
 		closeModal();
 	};
 
-	const handleDisplayNameKeyDown = (event: { key: string; preventDefault: () => void }) => {
-		if (event.key === 'Tab' && canAcceptTopSuggestion && topSuggestedFriend) {
-			event.preventDefault();
-			handleSelectFriend(topSuggestedFriend);
-		}
+	const handleEmailSearch = () => {
+		const query = encodeURIComponent(`from:noreply@steampowered.com subject:"You've received a gift copy of the game" "${gameTitle}"`);
+		window.open(`steam://openurl/https://mail.google.com/mail/u/0/#search/${query}`);
 	};
+
+
 
 
 
@@ -457,74 +335,51 @@ function GiverModalContent({
 	);
 
 	const renderEditorView = () => (
-		<div style={{ display: 'grid', gap: '12px', ...modalContentWidthStyle }}>
-			<div>
-				<div style={{ fontSize: '12px', opacity: 0.7 }}>Game</div>
-				<div>{gameTitle}</div>
-			</div>
-			<div>
-				<div onKeyDownCapture={handleDisplayNameKeyDown as unknown as React.KeyboardEventHandler<HTMLDivElement>}>
-					<TextField
-						label={(
-							<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-								<span>Display Name</span>
-								{isLinkedFriend ? (
-									<LinkIndicator title="Linked to a cached Steam friend" />
-								) : null}
-							</span>
-						)}
-						value={displayName}
-						onChange={(event) => updateDisplayName(event.currentTarget.value)}
-					/>
-				</div>
-				<div
-					style={{
-						fontSize: '12px',
-						lineHeight: '20px',
-						height: '20px',
-						opacity: 0.65,
-						marginTop: '6px',
-						display: 'flex',
-						alignItems: 'center',
-					}}
-				>
-					{canAcceptTopSuggestion ? (
-						<>
-							<span>Press </span>
-							<kbd
-								style={{
-									padding: '1px 6px',
-									borderRadius: '4px',
-									border: '1px solid rgba(255,255,255,0.18)',
-									background: 'rgba(255,255,255,0.08)',
-									color: 'inherit',
-									fontSize: '11px',
-									lineHeight: '16px',
-									fontFamily: 'inherit',
-									display: 'inline-flex',
-									alignItems: 'center',
-								}}
-							>
-								Tab
-							</kbd>
-							<span>&nbsp;to autocomplete&nbsp;</span>
-							<span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>
-								{topSuggestedLabel}
-							</span>
-							<span>.</span>
-						</>
-					) : (
-						<span style={{ opacity: 0.72 }}>
-							Start typing to see friend suggestions.
-						</span>
-					)}
-				</div>
-			</div>
-			<TextField
-				label="Notes"
-				value={notes}
-				onChange={(event) => setNotes(event.currentTarget.value)}
+		<div className="giver-modal-editor-container" style={{ display: 'flex', flexDirection: 'column', position: 'relative', paddingTop: '12px', ...modalContentWidthStyle }}>
+			<style>{`
+				.giver-modal-editor-container > .DialogInputLabelGroup:last-of-type {
+					margin-bottom: 0 !important;
+				}
+			`}</style>
+			<FormGroup label="Game">
+				<div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.82)' }}>{gameTitle}</div>
+			</FormGroup>
+			<FriendSelector
+				steamUserID={steamUserID}
+				displayName={displayName}
+				onChangeDisplayName={setDisplayName}
+				profileField={profileField}
+				onChangeProfileField={setProfileField}
+				source={source}
+				onChangeSource={setSource}
+				settings={settings}
+				isLinkedFriend={isLinkedFriend}
+				onEmailSearch={handleEmailSearch}
+				onRefreshFriends={handleRefreshFriends}
 			/>
+			<FormGroup label="Notes">
+				<textarea
+					value={notes}
+					onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(event.target.value)}
+					rows={3}
+					style={{
+						background: 'rgba(0, 0, 0, 0.2)',
+						border: '1px solid rgba(255, 255, 255, 0.12)',
+						borderRadius: '4px',
+						color: 'inherit',
+						padding: '8px 10px',
+						fontFamily: 'inherit',
+						fontSize: '13px',
+						resize: 'vertical',
+						outline: 'none',
+						transition: 'border-color 0.2s',
+						width: '100%',
+						boxSizing: 'border-box',
+					}}
+					onFocus={(e: React.FocusEvent<HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'; }}
+					onBlur={(e: React.FocusEvent<HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'; }}
+				/>
+			</FormGroup>
 			{settings.showFriendPickerSteamUrl ? (
 				<TextField
 					label="Steam Profile URL / ID"
@@ -532,88 +387,6 @@ function GiverModalContent({
 					onChange={(event) => setProfileField(event.currentTarget.value)}
 				/>
 			) : null}
-			<div style={{ display: 'grid', gap: '8px', width: '100%', minWidth: 0 }}>
-				<div style={{ display: 'grid', gap: '6px' }}>
-					<div style={detailLabelStyle}>Friend Finder</div>
-					<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-						<DialogButton onClick={handleRefreshFriends} disabled={isSaving}>
-							Fetch Friends
-						</DialogButton>
-					</div>
-				</div>
-				<div style={{ fontSize: '12px', opacity: 0.7 }}>
-					{isLoadingFriends
-						? 'Loading cached friends...'
-						: friendsSnapshot
-							? friendAssistQuery
-								? `${filteredFriends.length} matching friend suggestion${filteredFriends.length === 1 ? '' : 's'}`
-								: `${friendsSnapshot.friends.length} cached friend suggestion${friendsSnapshot.friends.length === 1 ? '' : 's'}`
-							: 'No local friends cache yet. Visit a Steam Community page or use Fetch Friends, or enter a giver manually.'}
-				</div>
-				<div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', height: '220px', overflow: 'hidden' }}>
-					<ScrollPanel>
-						<div style={{ maxHeight: '220px', overflowY: 'auto' }}>
-							<div style={{ display: 'grid', gap: '8px', padding: '8px' }}>
-								{filteredFriends.length > 0 ? filteredFriends.map((friend) => {
-									const friendLinkLabel = getFriendLinkLabel(friend, settings);
-
-									return (
-									<button
-										key={friend.steamID64}
-										type="button"
-										onClick={() => handleSelectFriend(friend)}
-										style={{
-											display: 'grid',
-											gridTemplateColumns: friend.avatarUrl ? '40px minmax(0, 1fr)' : 'minmax(0, 1fr)',
-											gap: '10px',
-											padding: '10px',
-											textAlign: 'left',
-											background: 'rgba(255,255,255,0.04)',
-											border: '1px solid rgba(255,255,255,0.08)',
-											borderRadius: '8px',
-											color: 'inherit',
-											cursor: 'pointer',
-										}}
-									>
-										{friend.avatarUrl ? (
-											<img
-												src={friend.avatarUrl}
-												alt=""
-												style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' }}
-											/>
-										) : null}
-										<div style={{ display: 'grid', gap: '2px', minWidth: 0 }}>
-											<div style={{ minWidth: 0 }}>
-												{getFriendDisplayLabel(friend)}
-											</div>
-											{friendLinkLabel ? (
-												<div
-													style={{
-														fontSize: '12px',
-														opacity: 0.6,
-														minWidth: 0,
-														overflowWrap: 'anywhere',
-														wordBreak: 'break-word',
-													}}
-												>
-													{friendLinkLabel}
-												</div>
-											) : null}
-										</div>
-									</button>
-									);
-								}) : (
-									<div style={{ padding: '12px', fontSize: '12px', opacity: 0.75 }}>
-										{friendsSnapshot
-											? 'No cached friends match the current field values. Try another search or fetch friends again for a fresh cache.'
-											: 'No cached friends yet. Fetch friends to populate suggestions.'}
-									</div>
-								)}
-							</div>
-						</div>
-					</ScrollPanel>
-				</div>
-			</div>
 			{statusMessage ? (
 				<div style={{ fontSize: '12px', opacity: 0.8 }}>{statusMessage}</div>
 			) : null}

@@ -2,9 +2,12 @@
 	"scripts": {
 		"dev": "millennium-ttc --build dev",
 		"build": "millennium-ttc --build prod",
-		"match:licenses": "node ./tools/license-match-report.mjs",
+		"match:licenses": "tsx ./tools/license-match-report.mjs",
 		"release": "node ./tools/release.mjs",
-		"test:lua": "lua tools/test_cache_merger.lua"
+		"test:lua": "lua tools/test_cache_merger.lua",
+		"type-check": "tsc --project frontend/tsconfig.json --noEmit && tsc --project webkit/tsconfig.json --noEmit",
+		"lint": "eslint .",
+		"test": "vitest run"
 	},
 	"devDependencies": {
 		"@babel/preset-env": "^7.28.3",
@@ -13,7 +16,12 @@
 		"@types/canvas-confetti": "^1.9.0",
 		"@types/react": "^19.1.12",
 		"@types/react-dom": "^19.1.9",
-		"@types/webpack": "^5.28.5"
+		"@types/webpack": "^5.28.5",
+		"@typescript-eslint/eslint-plugin": "^8.63.0",
+		"@typescript-eslint/parser": "^8.63.0",
+		"eslint": "^10.7.0",
+		"tsx": "^4.23.0",
+		"vitest": "^4.1.10"
 	},
 	"type": "module",
 	"name": "millennium-plugin",

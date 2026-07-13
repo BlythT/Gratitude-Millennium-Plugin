@@ -3,6 +3,7 @@
         "outDir": ".millennium/Dist",
         "module": "ESNext",
         "target": "ES2020",
+        "strict": true,
         "jsx": "react",
         "declaration": false,
         "moduleResolution": "node",

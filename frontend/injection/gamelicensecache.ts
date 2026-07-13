@@ -43,7 +43,7 @@ class GameLicenseCache {
 			}
 
 			const entriesJson = await getAllCacheEntries({ steamUserID });
-			const dataObj: any = entriesJson ? JSON.parse(entriesJson) : {};
+			const dataObj: { byAppId?: Record<string, GameLicenseEntry>; byName?: Record<string, GameLicenseEntry> } = entriesJson ? JSON.parse(entriesJson) : {};
 			
 			let byAppIdMap: Map<string, GameLicenseEntry>;
 			let byNameMap: Map<string, GameLicenseEntry>;
@@ -53,7 +53,7 @@ class GameLicenseCache {
 				byNameMap = new Map<string, GameLicenseEntry>(Object.entries(dataObj.byName ?? {}));
 			} else {
 				byAppIdMap = new Map<string, GameLicenseEntry>();
-				byNameMap = new Map<string, GameLicenseEntry>(Object.entries(dataObj ?? {}));
+				byNameMap = new Map<string, GameLicenseEntry>(Object.entries(dataObj as unknown as Record<string, GameLicenseEntry>));
 			}
 			
 			return {
@@ -82,16 +82,12 @@ class GameLicenseCache {
 
 	getDataSync(steamUserID: string): UserLicenseCache | null {
 		const data = this.manager.getDataSync(steamUserID);
-		return data && data.isPopulated ? data : null;
+		return data || null;
 	}
 
 	observe(steamUserID: string, listener: (data: UserLicenseCache | null) => void): () => void {
 		return this.manager.observe(steamUserID, (data) => {
-			if (data && data.isPopulated) {
-				listener(data);
-			} else {
-				listener(null);
-			}
+			listener(data);
 		});
 	}
 
