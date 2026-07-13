@@ -315,24 +315,24 @@ function showSyncOverlay(title, initialStatus) {
 		left: 0;
 		width: 100vw;
 		height: 100vh;
-		background: rgba(20, 30, 40, 0.95);
+		background: rgba(20, 24, 30, 0.96);
 		color: #fff;
 		z-index: 9999999;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		font-family: system-ui, -apple-system, sans-serif;
+		font-family: 'Motiva Sans', 'Inter', system-ui, -apple-system, sans-serif;
 	`;
 
 	overlay.innerHTML = `
-		<div style="background: #1b2838; border: 1px solid #38bdf8; border-radius: 8px; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 420px; text-align: center; box-sizing: border-box;">
-			<div style="font-size: 20px; font-weight: bold; margin-bottom: 16px; color: #66c0f4; letter-spacing: 0.5px;">${title}</div>
-			<div id="gratitude-sync-status" style="font-size: 14px; margin-bottom: 20px; color: #acb2b8; line-height: 1.4;">${initialStatus}</div>
-			<div id="gratitude-sync-progress-container" style="display: none; width: 100%; background: #121820; border-radius: 4px; height: 8px; margin-bottom: 20px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05);">
-				<div id="gratitude-sync-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #38bdf8, #0ea5e9); transition: width 0.3s ease;"></div>
+		<div style="background: #182029; border: 1px solid #2d3844; border-radius: 3px; padding: 28px; box-shadow: 0 16px 32px rgba(0,0,0,0.6); width: 380px; text-align: center; box-sizing: border-box;">
+			<div style="font-size: 16px; font-weight: 500; margin-bottom: 12px; color: #fff; text-transform: uppercase; letter-spacing: 1px;">${title}</div>
+			<div id="gratitude-sync-status" style="font-size: 12px; margin-bottom: 24px; color: #8b929a; line-height: 1.5; font-weight: 400;">${initialStatus}</div>
+			<div id="gratitude-sync-progress-container" style="display: none; width: 100%; background: #202932; border-radius: 2px; height: 6px; margin-bottom: 20px; overflow: hidden;">
+				<div id="gratitude-sync-progress-bar" style="width: 0%; height: 100%; background: #66c0f4; transition: width 0.3s ease;"></div>
 			</div>
-			<div id="gratitude-sync-spinner" style="margin: 0 auto; border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #38bdf8; border-radius: 50%; width: 28px; height: 28px; animation: spin 1s linear infinite;"></div>
+			<div id="gratitude-sync-spinner" style="margin: 0 auto; border: 3px solid rgba(102, 192, 244, 0.1); border-top: 3px solid #66c0f4; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite;"></div>
 		</div>
 		<style>
 			@keyframes spin {

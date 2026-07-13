@@ -101,6 +101,7 @@ function FriendSuggestionItem({
 	friend: FriendRecord;
 	settings: GratitudeSettings;
 	onClick: () => void;
+	// key is explicitly declared here to satisfy strict JSX type constraints in the build pipeline
 	key?: string | number;
 }) {
 	const friendLinkLabel = getFriendLinkLabel(friend, settings);
@@ -358,30 +359,42 @@ export function FriendSelector({
 				}}
 				onKeyDown={handleDisplayNameKeyDown}
 				inlineControls={(
-					<SteamTooltip toolTipContent="Search Gmail for gift email">
-						<button
-							type="button"
-							onClick={onEmailSearch}
-							style={{
-								background: 'none',
-								border: 'none',
-								padding: 0,
-								margin: '0 8px',
-								color: 'inherit',
-								cursor: 'pointer',
-								display: 'inline-flex',
-								alignItems: 'center',
-								opacity: 0.6,
-								transition: 'opacity 0.2s',
-							}}
-							onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '1'; }}
-							onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '0.6'; }}
-						>
-							<svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '18px', height: '18px' }}>
-								<path d="m18.73 5.41-1.28 1L12 10.46 6.55 6.37l-1.28-1A2 2 0 0 0 2 7.05v11.59A1.36 1.36 0 0 0 3.36 20h3.19v-7.72L12 16.37l5.45-4.09V20h3.19A1.36 1.36 0 0 0 22 18.64V7.05a2 2 0 0 0-3.27-1.64z"></path>
-							</svg>
-						</button>
-					</SteamTooltip>
+					<div
+						onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
+						onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => {
+							e.stopPropagation();
+							e.preventDefault();
+						}}
+						style={{ display: 'flex', alignItems: 'center', height: '100%', cursor: 'default' }}
+					>
+						<SteamTooltip toolTipContent="Search Gmail for gift email">
+							<button
+								type="button"
+								onClick={onEmailSearch}
+								style={{
+									background: 'none',
+									border: 'none',
+									padding: 0,
+									margin: '0 8px',
+									color: 'inherit',
+									cursor: 'pointer',
+									display: 'inline-flex',
+									alignItems: 'center',
+									justifyContent: 'center',
+									alignSelf: 'center',
+									height: '100%',
+									opacity: 0.6,
+									transition: 'opacity 0.2s',
+								}}
+								onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '1'; }}
+								onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '0.6'; }}
+							>
+								<svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '22px', height: '22px' }}>
+									<path d="m18.73 5.41-1.28 1L12 10.46 6.55 6.37l-1.28-1A2 2 0 0 0 2 7.05v11.59A1.36 1.36 0 0 0 3.36 20h3.19v-7.72L12 16.37l5.45-4.09V20h3.19A1.36 1.36 0 0 0 22 18.64V7.05a2 2 0 0 0-3.27-1.64z"></path>
+								</svg>
+							</button>
+						</SteamTooltip>
+					</div>
 				)}
 			/>
 			<FriendSuggestionDropdown
