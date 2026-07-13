@@ -9,9 +9,9 @@ import { giverCache } from './injection/givercache';
 import { useState, useEffect, useRef } from 'react';
 import { showConsentModal } from './components/ConsentModal';
 import { getCurrentAccountID } from '../lib/steamid';
-import { POPUPS, SELECTORS, type GiverSource } from './types';
+import { POPUPS, SELECTORS } from './types';
 import { useSettings } from './settings';
-import { FriendSelector } from './components/FriendSelector';
+import { showComponentZoo } from './components/ComponentZoo';
 
 // Declare backend functions
 const isGameLicenseCachePopulated = callable<[{ steamUserID: string }], boolean>('IsGameLicenseCachePopulated');
@@ -27,10 +27,7 @@ const SettingsContent = () => {
 	const [hasConsent, setHasConsent] = useState<boolean | null>(true);
 	const [settings, setSetting] = useSettings(steamUserID);
 	const clickCountRef = useRef(0);
-	const [showZoo, setShowZoo] = useState(false);
-	const [zooName, setZooName] = useState('');
-	const [zooProfile, setZooProfile] = useState('');
-	const [zooSource, setZooSource] = useState<GiverSource>('manual');
+
 
 	useEffect(() => {
 		hasUserConsented({ steamUserID }).then((consented) => {
@@ -158,8 +155,8 @@ const SettingsContent = () => {
 								onClick={() => {
 									clickCountRef.current += 1;
 									if (clickCountRef.current >= 5) {
-										setShowZoo(prev => !prev);
 										clickCountRef.current = 0;
+										showComponentZoo(steamUserID, window);
 									}
 								}}
 								style={{ userSelect: 'none' }}
@@ -174,44 +171,6 @@ const SettingsContent = () => {
 						description="Newly gifted games might not be detected: try visiting the store or restarting steam before checking your library"
 						bottomSeparator="standard"
 					/>
-					{showZoo && (
-						<Field
-							label="Developer Component Zoo"
-							description="Developer previews of custom React elements. Click your data description again to toggle."
-							bottomSeparator="standard"
-							childrenLayout="below"
-						>
-							<div style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: '4px', padding: '16px', marginTop: '10px' }}>
-								<div style={{ position: 'relative', marginBottom: '16px' }}>
-									<FriendSelector
-										steamUserID={steamUserID}
-										displayName={zooName}
-										onChangeDisplayName={setZooName}
-										profileField={zooProfile}
-										onChangeProfileField={setZooProfile}
-										source={zooSource}
-										onChangeSource={setZooSource}
-										settings={settings}
-										isLinkedFriend={zooSource === 'friend-cache' && Boolean(zooProfile)}
-										onEmailSearch={() => alert('Gmail search icon clicked')}
-										onRefreshFriends={() => alert('Fetch friends clicked')}
-									/>
-								</div>
-								<div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'grid', gap: '4px' }}>
-									<div><strong>Zoo State Tracker:</strong></div>
-									<div>Display Name: {zooName || '""'}</div>
-									<div>Profile ID/Url: {zooProfile || '""'}</div>
-									<div>Source: {zooSource}</div>
-									<div>Is Linked Friend: {String(zooSource === 'friend-cache' && Boolean(zooProfile))}</div>
-								</div>
-								<div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
-									<DialogButton onClick={() => setShowZoo(false)}>
-										Close Component Zoo
-									</DialogButton>
-								</div>
-							</div>
-						</Field>
-					)}
 				</>
 			)}
 		</>
