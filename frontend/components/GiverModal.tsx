@@ -1,10 +1,11 @@
 import { ConfirmModal, DialogLabel, TextField, showModal } from '@steambrew/client';
 import React, { useEffect, useState, ReactNode } from 'react';
 import { log, logError } from '../../lib/logger';
+import { maskId, safeLicenseKey } from '../../lib/log-redact';
 import { friendsCache } from '../injection/friendscache';
 import { giverCache } from '../injection/givercache';
 import { useSettings } from '../settings';
-import { isTruthy } from '../utils/truthy';
+import { deleteGiverAndLegacy, saveGiverThenRemoveLegacy } from '../utils/giverSave';
 import type { FriendRecord, FriendsCacheSnapshot, GiverData, GiverSource } from '../types';
 import { FriendSelector } from './FriendSelector';
 
@@ -173,34 +174,39 @@ function GiverModalContent({
 		setIsSaving(true);
 		setStatusMessage(null);
 		log(
-			`Saving giver modal data for license ${licenseKey}: displayName="${displayName.trim()}", source=${source}, hasProfileField=${Boolean(profileField.trim())}`,
+			`Saving giver modal data for license ${safeLicenseKey(licenseKey)}: source=${source}, hasProfileField=${Boolean(profileField.trim())}`,
 		);
 
 		try {
-			if (existingGiver && existingGiver.licenseKey !== licenseKey) {
-				log(`Migrating legacy giver entry from "${existingGiver.licenseKey}" to "${licenseKey}"`);
-				await giverCache.remove(steamUserID, existingGiver.licenseKey);
-			}
-
+			const legacyLicenseKey = existingGiver && existingGiver.licenseKey !== licenseKey ? existingGiver.licenseKey : null;
 			const { steamID64, profileUrl } = normalizeProfileField(profileField);
-			const success = await giverCache.upsert(steamUserID, {
-				licenseKey,
-				libraryTitle: gameTitle,
-				displayName: displayName.trim(),
-				steamID64,
-				profileUrl,
-				notes: notes.trim() || undefined,
-				source,
+			const outcome = await saveGiverThenRemoveLegacy({
+				upsert: () => giverCache.upsert(steamUserID, {
+					licenseKey,
+					libraryTitle: gameTitle,
+					displayName: displayName.trim(),
+					steamID64,
+					profileUrl,
+					notes: notes.trim() || undefined,
+					source,
+				}),
+				removeLegacy: legacyLicenseKey === null ? undefined : () => {
+					log(`Migrating legacy giver entry from ${safeLicenseKey(legacyLicenseKey)} to ${safeLicenseKey(licenseKey)}`);
+					return giverCache.remove(steamUserID, legacyLicenseKey);
+				},
 			});
 
-			if (isTruthy(success)) {
-				log(`Giver modal save succeeded for license ${licenseKey}`);
+			if (outcome.saved) {
+				if (outcome.legacyRemoved === false) {
+					logError('Gift saved, but removing its record under the old license key failed; a stale duplicate remains under the old key');
+				}
+				log(`Giver modal save succeeded for license ${safeLicenseKey(licenseKey)}`);
 				onSaved?.();
 				closeModal();
 				return;
 			}
 
-			log(`Giver modal save returned false for license ${licenseKey}`);
+			log(`Giver modal save returned false for license ${safeLicenseKey(licenseKey)}`);
 			setStatusMessage('Unable to save giver data.');
 		} catch (error) {
 			logError('Error saving giver data:', error);
@@ -214,20 +220,30 @@ function GiverModalContent({
 		setIsSaving(true);
 		setStatusMessage(null);
 		log(
-			`Attempting to delete giver data for license ${licenseKey} (steamUserID=${steamUserID}, existingDisplayName="${existingGiver?.displayName ?? ''}")`,
+			`Attempting to delete giver data for license ${safeLicenseKey(licenseKey)} (steamUserID=${maskId(steamUserID)})`,
 		);
 
 		try {
-			const success = await giverCache.remove(steamUserID, licenseKey);
-			if (isTruthy(success)) {
-				log(`Delete giver succeeded for ${licenseKey}, invoking onDeleted callback`);
+			const outcome = await deleteGiverAndLegacy({
+				licenseKey,
+				existingLicenseKey: existingGiver?.licenseKey,
+				fallbackLicenseKey: gameTitle,
+				hasRecord: (key) => giverCache.getAllSync(steamUserID)?.has(key) ?? false,
+				remove: (key) => giverCache.remove(steamUserID, key),
+			});
+			if (outcome.deleted) {
+				log(`Delete giver succeeded for ${safeLicenseKey(licenseKey)}, invoking onDeleted callback`);
 				onDeleted?.();
-				log(`onDeleted callback finished for ${licenseKey}, closing modal`);
+				log(`onDeleted callback finished for ${safeLicenseKey(licenseKey)}, closing modal`);
 				closeModal();
 				return;
 			}
 
-			log(`Delete giver returned false for ${licenseKey}`);
+			if (outcome.legacyRemoved === false) {
+				logError('Removing the gift record under its old license key failed, so the current record was kept');
+			} else {
+				log(`Delete giver returned false for ${safeLicenseKey(licenseKey)}`);
+			}
 			setStatusMessage('Unable to remove giver data.');
 		} catch (error) {
 			logError('Error deleting giver data:', error);
@@ -417,8 +433,8 @@ export function showGiverModal(options: GiverModalOptions): void {
 	let modalResult: { Close: () => void } | null = null;
 
 	try {
-		log(
-			`Opening giver modal for license ${options.licenseKey} (steamUserID=${options.steamUserID}, existingGiver=${options.existingGiver ? 'yes' : 'no'})`,
+		log( // log-privacy: allow=existingGiver logs only yes or no
+			`Opening giver modal for license ${safeLicenseKey(options.licenseKey)} (steamUserID=${maskId(options.steamUserID)}, existingGiver=${options.existingGiver ? 'yes' : 'no'})`,
 		);
 		modalResult = showModal(
 			<GiverModalContent

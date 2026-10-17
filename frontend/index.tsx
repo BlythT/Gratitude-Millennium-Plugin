@@ -3,6 +3,7 @@ import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
 import { GiftBadge } from './components/GiftBadge';
 import { isTruthy } from './utils/truthy';
+import { grantConsent } from './utils/consent';
 import { gameLicenseCache } from './injection/gamelicensecache';
 import { friendsCache } from './injection/friendscache';
 import { giverCache } from './injection/givercache';
@@ -108,13 +109,8 @@ const SettingsContent = () => {
 					childrenLayout="below"
 				>
 					<DialogButton onClick={async () => {
-						try {
-							await setConsent({ steamUserID, consent: true });
-							setHasConsent(true);
-							window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
-						} catch (error) {
-							logError('Error granting consent from settings:', error);
-						}
+						setHasConsent(await grantConsent(setConsent, steamUserID));
+						window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
 					}}>
 						Grant Permission
 					</DialogButton>

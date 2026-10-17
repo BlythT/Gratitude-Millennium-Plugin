@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { callable } from '@steambrew/webkit';
 import { log, logError } from '../lib/logger';
+import { maskId } from '../lib/log-redact';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
 
@@ -48,7 +49,7 @@ async function fetchOwnedGames(doc) {
 			return [];
 		}
 
-		log(`Fetching owned games for Steam ID: ${steamid}`);
+		log(`Fetching owned games for Steam ID: ${maskId(steamid)}`);
 		const res = await fetch(
 			`https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/` +
 			`?access_token=${encodeURIComponent(webapi_token)}` +
@@ -165,7 +166,7 @@ async function maybeSyncLicenses(steamUserID) {
 			}
 
 			ownedGames = await fetchOwnedGames(doc);
-			log(`Fetched ${ownedGames.length} owned games from Web API`);
+			log(`Fetched ${ownedGames.length} owned games from Web API`); // log-privacy: allow=ownedGames logs only a count
 			
 			// Create Map of owned games for fuzzy matching: Name -> { appid }
 			ownedGames.forEach((game) => {
@@ -183,7 +184,7 @@ async function maybeSyncLicenses(steamUserID) {
 
 		const licenses = parseLicenseTable(table);
 		totalParsed += licenses.length;
-		log(`Parsed ${licenses.length} License Data entries from page ${pageCount}`);
+		log(`Parsed ${licenses.length} License Data entries from page ${pageCount}`); // log-privacy: allow=licenses logs only a count
 
 		if (isExplicitSync) {
 			const progressPercent = totalLicensesFromPage > 0 
@@ -283,7 +284,7 @@ async function maybeSyncFriends(steamUserID) {
 	}
 
 	const friends = parseFriendsList(friendList);
-	log(`Parsed ${friends.length} Steam friends`);
+	log(`Parsed ${friends.length} Steam friends`); // log-privacy: allow=friends logs only a count
 
 	try {
 		await setFriendsCache({ friendsJson: JSON.stringify(friends), steamUserID });
@@ -400,7 +401,7 @@ function parseLicenseTable(table) {
 		const acquisitionCell = row.querySelector('.license_acquisition_col');
 
 		if (!dateCell || !itemCell || !acquisitionCell) {
-			logError('Missing expected table cells in row:', row);
+			logError('Missing expected table cells in a license table row');
 			return;
 		}
 

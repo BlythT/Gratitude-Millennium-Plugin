@@ -7,6 +7,8 @@ local utils = require("utils")
 
 local JsonStore = require("lib.JsonStore")
 local cache_merger = require("lib.cache_merger")
+local friends_compare = require("lib.friends_compare")
+local log_redact = require("lib.log_redact")
 
 local cacheStore = JsonStore.new("gratitude_cache.json", "Game license cache")
 local consentStore = JsonStore.new("gratitude_consent.json", "Consent state")
@@ -30,8 +32,36 @@ local function table_size(t)
     return count
 end
 
+local function has_storage_consent(steamUserID)
+    local consent = consentState[steamUserID]
+    return type(consent) == "table" and consent.allowed == true
+end
+
+-- Shallow copy holding only consented accounts; unconsented data stays in memory for the session
+local function consented_accounts(store)
+    local filtered = {}
+    for steamUserID, accountData in pairs(store) do
+        if has_storage_consent(steamUserID) then
+            filtered[steamUserID] = accountData
+        end
+    end
+    return filtered
+end
+
+-- Consent that couldn't be read at load makes every account look unconsented, so saving would
+-- drop them all from disk; the save is refused until a later session reads consent
+local function save_consented_accounts(store, accounts)
+    local consentUnknownReason = consentStore.save_blocked_reason
+    if consentUnknownReason then
+        local reason = "consent state is unknown: " .. consentUnknownReason
+        logger:error(store.description .. " not saved, " .. reason)
+        return false, reason
+    end
+    return store:save(consented_accounts(accounts))
+end
+
 local function save_cache_to_file()
-    return cacheStore:save(GameLicenseCache)
+    return save_consented_accounts(cacheStore, GameLicenseCache)
 end
 
 local function load_cache_from_file()
@@ -87,7 +117,7 @@ local function load_givers_from_file()
 end
 
 local function save_friends_to_file()
-    return friendsStore:save(FriendsCacheStore)
+    return save_consented_accounts(friendsStore, FriendsCacheStore)
 end
 
 local function load_friends_from_file()
@@ -145,8 +175,7 @@ local function normalize_giver_payload(payload, steamUserID)
         return nil, "source must be manual or friend-cache"
     end
 
-    local accountStore = ensure_account_store(GiverStore, steamUserID)
-    local existingRecord = accountStore[payload.licenseKey]
+    local existingRecord = GiverStore[steamUserID] and GiverStore[steamUserID][payload.licenseKey]
     local now = os.time()
 
     local normalized = {
@@ -249,8 +278,8 @@ function SetGameLicenseData(licenseData, steamUserID)
         return false, "Steam ID not provided"
     end
 
-    logger:info("SetGameLicenseData called with data length: " ..
-        tostring(#licenseData) .. " for Steam ID: " .. steamUserID)
+    logger:info("SetGameLicenseData called with data length: " .. -- log-privacy: allow=licenseData #licenseData is a length
+        tostring(#licenseData) .. " for Steam ID: " .. log_redact.mask_id(steamUserID))
 
     local success, decodedData = pcall(json.decode, licenseData)
     if not success then
@@ -264,16 +293,16 @@ function SetGameLicenseData(licenseData, steamUserID)
         GameLicenseCache[steamUserID] = updatedCache
         
         if isNewFormat then
-            logger:info(string.format("Cached %d byAppId and %d byName license entries for user %s", byAppIdSize, byNameSize, steamUserID))
+            logger:info(string.format("Cached %d byAppId and %d byName license entries for user %s", byAppIdSize, byNameSize, log_redact.mask_id(steamUserID)))
         else
-            logger:info(string.format("Cached %d license entries in legacy format for user %s", byNameSize, steamUserID))
+            logger:info(string.format("Cached %d license entries in legacy format for user %s", byNameSize, log_redact.mask_id(steamUserID)))
         end
 
         -- Only save if user has consented
-        if consentState[steamUserID] and consentState[steamUserID].allowed then
+        if has_storage_consent(steamUserID) then
             save_cache_to_file()
         else
-            logger:info("User " .. steamUserID .. " has not given consent, skipping cache save")
+            logger:info("User " .. log_redact.mask_id(steamUserID) .. " has not given consent, skipping cache save")
         end
     else
         logger:error("Failed to decode license data JSON")
@@ -288,11 +317,11 @@ function GetGameLicenseData(steamUserID)
     assert(type(steamUserID) == "string", "steamUserID must be a string")
 
     if steamUserID == "" or not GameLicenseCache[steamUserID] then
-        logger:info("GameLicenseCache is empty for Steam ID " .. steamUserID)
+        logger:info("GameLicenseCache is empty for Steam ID " .. log_redact.mask_id(steamUserID))
         return "{}"
     end
 
-    logger:info("Returning " .. table_size(GameLicenseCache[steamUserID]) .. " entries for Steam ID " .. steamUserID)
+    logger:info("Returning " .. table_size(GameLicenseCache[steamUserID]) .. " entries for Steam ID " .. log_redact.mask_id(steamUserID)) -- log-privacy: allow=steamUserID,GameLicenseCache the lookup only counts entries
     return json.encode(GameLicenseCache[steamUserID])
 end
 
@@ -311,23 +340,29 @@ function IsGameLicenseCachePopulated(steamUserID)
         local hasAppIds = cache.byAppId and next(cache.byAppId) ~= nil
         local hasNames = cache.byName and next(cache.byName) ~= nil
         if hasAppIds or hasNames then
-            logger:info("GameLicenseCache is populated for Steam ID " .. steamUserID)
+            logger:info("GameLicenseCache is populated for Steam ID " .. log_redact.mask_id(steamUserID))
             return true
         end
     end
-    logger:info("GameLicenseCache is empty for Steam ID " .. steamUserID)
+    logger:info("GameLicenseCache is empty for Steam ID " .. log_redact.mask_id(steamUserID))
     return false
 end
 
 -- Clear cache entries for a specific user (both in-memory and on disk)
 function ClearCache(steamUserID)
     assert(type(steamUserID) == "string", "steamUserID must be a string")
-    logger:info("ClearCache called for Steam ID: " .. steamUserID)
+    logger:info("ClearCache called for Steam ID: " .. log_redact.mask_id(steamUserID))
 
+    -- A clear that didn't reach disk is undone, so memory matches the disk and the frontend, which
+    -- keeps its copy when a clear fails
+    local previousCache = GameLicenseCache[steamUserID]
     GameLicenseCache[steamUserID] = nil
-    save_cache_to_file()
+    if not save_cache_to_file() then
+        GameLicenseCache[steamUserID] = previousCache
+        return false
+    end
 
-    logger:info("Cache cleared for Steam ID: " .. steamUserID)
+    logger:info("Cache cleared for Steam ID: " .. log_redact.mask_id(steamUserID))
     return true
 end
 
@@ -341,15 +376,25 @@ function SetConsent(consent, steamUserID)
         return false
     end
 
-    logger:info("SetConsent called for user " .. steamUserID .. " with allowed=" .. tostring(consent))
+    logger:info("SetConsent called for user " .. log_redact.mask_id(steamUserID) .. " with allowed=" .. tostring(consent))
 
-    if not consentState[steamUserID] then
-        consentState[steamUserID] = {}
+    local previousConsent = consentState[steamUserID]
+    consentState[steamUserID] = {
+        allowed = consent,
+        timestamp = os.time(),
+    }
+
+    if not save_consent_to_file() then
+        consentState[steamUserID] = previousConsent
+        return false
     end
 
-    consentState[steamUserID].allowed = consent
-    consentState[steamUserID].timestamp = os.time()
-    save_consent_to_file()
+    -- Persist what was scraped before consent; failures are logged by the store and don't change the result
+    if consent then
+        save_cache_to_file()
+        save_friends_to_file()
+    end
+
     return true
 end
 
@@ -364,9 +409,9 @@ function HasUserConsented(steamUserID)
     end
 
     if consentState[steamUserID] then
-        logger:info("HasUserConsented called for user " ..
-            steamUserID .. ", returning: " .. tostring(consentState[steamUserID].allowed))
-        return consentState[steamUserID].allowed
+        local consented = has_storage_consent(steamUserID)
+        logger:info("HasUserConsented called for user " .. log_redact.mask_id(steamUserID) .. ", returning: " .. tostring(consented))
+        return consented
     end
 
     return nil
@@ -383,7 +428,7 @@ function GetGiverData(licenseKey, steamUserID)
 
     local accountStore = GiverStore[steamUserID]
     if not accountStore or not accountStore[licenseKey] then
-        logger:info("No giver record found for user " .. steamUserID .. " and license " .. licenseKey)
+        logger:info("No giver record found for user " .. log_redact.mask_id(steamUserID) .. " and license " .. log_redact.safe_license_key(licenseKey))
         return "{}"
     end
 
@@ -394,11 +439,11 @@ function GetAllGiverData(steamUserID)
     assert(type(steamUserID) == "string", "steamUserID must be a string")
 
     if steamUserID == "" or not GiverStore[steamUserID] then
-        logger:info("No giver records found for Steam ID " .. steamUserID)
+        logger:info("No giver records found for Steam ID " .. log_redact.mask_id(steamUserID))
         return "{}"
     end
 
-    logger:info("Returning " .. tostring(table_size(GiverStore[steamUserID])) .. " giver records for Steam ID " .. steamUserID)
+    logger:info("Returning " .. tostring(table_size(GiverStore[steamUserID])) .. " giver records for Steam ID " .. log_redact.mask_id(steamUserID)) -- log-privacy: allow=steamUserID,GiverStore the lookup only counts entries
     return json.encode(GiverStore[steamUserID])
 end
 
@@ -418,7 +463,7 @@ function UpsertGiverData(payloadJson, steamUserID)
 
     local success, decodedPayload = pcall(json.decode, payloadJson)
     if not success then
-        logger:error("Failed to decode giver payload JSON: " .. tostring(decodedPayload))
+        logger:error("Failed to decode giver payload JSON: " .. tostring(decodedPayload)) -- log-privacy: allow=decodedPayload holds cjson error text, which gives a position, not the input
         return false, "Failed to decode giver payload JSON"
     end
 
@@ -428,14 +473,20 @@ function UpsertGiverData(payloadJson, steamUserID)
         return false, errorMessage
     end
 
+    local accountExisted = GiverStore[steamUserID] ~= nil
     local accountStore = ensure_account_store(GiverStore, steamUserID)
+    local previousRecord = accountStore[normalizedPayload.licenseKey]
     accountStore[normalizedPayload.licenseKey] = normalizedPayload
 
     if not save_givers_to_file() then
+        accountStore[normalizedPayload.licenseKey] = previousRecord
+        if not accountExisted then
+            GiverStore[steamUserID] = nil
+        end
         return false, "Failed to save giver store"
     end
 
-    logger:info("Upserted giver record for user " .. steamUserID .. " and license " .. normalizedPayload.licenseKey)
+    logger:info("Upserted giver record for user " .. log_redact.mask_id(steamUserID) .. " and license " .. log_redact.safe_license_key(normalizedPayload.licenseKey))
     return true
 end
 
@@ -448,15 +499,16 @@ function DeleteGiverData(licenseKey, steamUserID)
         return false
     end
 
-    logger:info("DeleteGiverData called for user " .. steamUserID .. " and license " .. licenseKey)
+    logger:info("DeleteGiverData called for user " .. log_redact.mask_id(steamUserID) .. " and license " .. log_redact.safe_license_key(licenseKey))
 
     local accountStore = GiverStore[steamUserID]
-    logger:info("Current giver store account exists before delete=" .. tostring(accountStore ~= nil))
+    logger:info("Current giver store account exists before delete=" .. tostring(accountStore ~= nil)) -- log-privacy: allow=accountStore logs only whether it exists
     if accountStore then
-        logger:info("Current giver store entry count before delete=" .. tostring(table_size(accountStore)))
+        logger:info("Current giver store entry count before delete=" .. tostring(table_size(accountStore))) -- log-privacy: allow=accountStore logs only a count
     end
 
     local hadRecord = GiverStore[steamUserID] and GiverStore[steamUserID][licenseKey] ~= nil
+    local previousRecord = accountStore and accountStore[licenseKey]
     if GiverStore[steamUserID] then
         GiverStore[steamUserID][licenseKey] = nil
         if next(GiverStore[steamUserID]) == nil then
@@ -465,13 +517,17 @@ function DeleteGiverData(licenseKey, steamUserID)
     end
 
     if not save_givers_to_file() then
+        if accountStore then
+            accountStore[licenseKey] = previousRecord
+            GiverStore[steamUserID] = accountStore
+        end
         return false
     end
 
     local stillExists = GiverStore[steamUserID] and GiverStore[steamUserID][licenseKey] ~= nil
     local remainingCount = GiverStore[steamUserID] and table_size(GiverStore[steamUserID]) or 0
 
-    logger:info("Deleted giver record for user " .. steamUserID .. " and license " .. licenseKey ..
+    logger:info("Deleted giver record for user " .. log_redact.mask_id(steamUserID) .. " and license " .. log_redact.safe_license_key(licenseKey) ..
         ", existed before delete=" .. tostring(hadRecord) ..
         ", still exists after delete=" .. tostring(stillExists) ..
         ", remaining account entries=" .. tostring(remainingCount))
@@ -482,7 +538,7 @@ function GetFriendsCache(steamUserID)
     assert(type(steamUserID) == "string", "steamUserID must be a string")
 
     if steamUserID == "" or not FriendsCacheStore[steamUserID] then
-        logger:info("No friends cache found for Steam ID " .. steamUserID)
+        logger:info("No friends cache found for Steam ID " .. log_redact.mask_id(steamUserID))
         return "{}"
     end
 
@@ -516,7 +572,7 @@ function SetFriendsCache(friendsJson, steamUserID)
 
     local success, decodedFriends = pcall(json.decode, friendsJson)
     if not success then
-        logger:error("Failed to decode friends payload JSON: " .. tostring(decodedFriends))
+        logger:error("Failed to decode friends payload JSON: " .. tostring(decodedFriends)) -- log-privacy: allow=decodedFriends holds cjson error text, which gives a position, not the input
         return false, "Failed to decode friends payload JSON"
     end
 
@@ -526,16 +582,30 @@ function SetFriendsCache(friendsJson, steamUserID)
         return false, errorMessage
     end
 
+    -- Accepted trade-off: if the last friends save failed, memory already holds this list, so an
+    -- unchanged sync skips the retry. The next friends save of any kind, or the next session,
+    -- catches up, and the friends cache can always be rebuilt from Steam Community.
+    local existing = FriendsCacheStore[steamUserID]
+    if existing and friends_compare.same_friends(existing.friends, normalizedFriends) then
+        logger:info("Friends list unchanged, skipping friends cache save")
+        return true
+    end
+
     FriendsCacheStore[steamUserID] = {
         friends = normalizedFriends,
         updatedAt = os.time(),
     }
 
+    if not has_storage_consent(steamUserID) then
+        logger:info("Account has not given storage consent, skipping friends cache save")
+        return true
+    end
+
     if not save_friends_to_file() then
         return false, "Failed to save friends cache"
     end
 
-    logger:info("Stored " .. tostring(#normalizedFriends) .. " friends for user " .. steamUserID)
+    logger:info("Stored " .. tostring(#normalizedFriends) .. " friends for user " .. log_redact.mask_id(steamUserID)) -- log-privacy: allow=normalizedFriends logs only a count
     return true
 end
 
@@ -547,13 +617,16 @@ function ClearFriendsCache(steamUserID)
         return false
     end
 
+    -- Undone on a failed save, as in ClearCache
+    local previousFriends = FriendsCacheStore[steamUserID]
     FriendsCacheStore[steamUserID] = nil
 
     if not save_friends_to_file() then
+        FriendsCacheStore[steamUserID] = previousFriends
         return false
     end
 
-    logger:info("Cleared friends cache for Steam ID: " .. steamUserID)
+    logger:info("Cleared friends cache for Steam ID: " .. log_redact.mask_id(steamUserID))
     return true
 end
 
@@ -578,7 +651,7 @@ function SetUiSettings(payloadJson)
 
     local success, decodedPayload = pcall(json.decode, payloadJson)
     if not success then
-        logger:error("Failed to decode settings payload JSON: " .. tostring(decodedPayload))
+        logger:error("Failed to decode settings payload JSON: " .. tostring(decodedPayload)) -- log-privacy: allow=decodedPayload holds cjson error text, which gives a position, not the input
         return false, "Failed to decode settings payload JSON"
     end
 
@@ -588,13 +661,15 @@ function SetUiSettings(payloadJson)
         return false, normalizedSettingsOrError
     end
 
+    local previousSettings = SettingsStore[steamUserID]
     SettingsStore[steamUserID] = normalizedSettingsOrError
 
     if not save_settings_to_file() then
+        SettingsStore[steamUserID] = previousSettings
         return false, "Failed to save settings store"
     end
 
-    logger:info("Saved UI settings for Steam ID " .. steamUserID)
+    logger:info("Saved UI settings for Steam ID " .. log_redact.mask_id(steamUserID))
     return true
 end
 
@@ -621,16 +696,10 @@ local function on_load()
 end
 
 -- Called when your plugin is unloaded. This happens when the plugin is disabled or Steam is shutting down.
--- NOTE: If Steam crashes or is force closed by task manager, this function may not be called -- so don't rely on it for critical cleanup.
+-- Deliberately no save here: Millennium also calls this when Steam's process dies, while the Lua host
+-- is being killed, and every change is already saved when it is made.
 local function on_unload()
     logger:info("Plugin unloaded")
-
-    -- Save cache and consent one last time before unloading
-    save_cache_to_file()
-    save_consent_to_file()
-    save_givers_to_file()
-    save_friends_to_file()
-    save_settings_to_file()
 end
 
 -- Called when the Steam UI has fully loaded.

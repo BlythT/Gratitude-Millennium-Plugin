@@ -1,4 +1,5 @@
 import { log, logError } from '../../lib/logger';
+import { maskId } from '../../lib/log-redact';
 
 interface CacheEntry<T> {
 	data: T | null;
@@ -77,11 +78,11 @@ export class CacheManager<T> {
 			try {
 				const data = await this.fetcher(steamUserID);
 				this.cache.set(steamUserID, { data, isLoaded: true, timestamp: Date.now() });
-				log(`Loaded ${this.name} cache for user ${steamUserID} (TTL: ${this.ttlMs}ms)`);
+				log(`Loaded ${this.name} cache for user ${maskId(steamUserID)} (TTL: ${this.ttlMs}ms)`);
 				this.notifyListeners(steamUserID, data);
 				return data;
 			} catch (error) {
-				logError(`Error loading ${this.name} cache for user ${steamUserID}:`, error);
+				logError(`Error loading ${this.name} cache for user ${maskId(steamUserID)}:`, error);
 				if (cached && cached.isLoaded) {
 					// We don't notify on failure if we already have stale data displayed
 					return cached.data;
@@ -124,7 +125,7 @@ export class CacheManager<T> {
 				return true;
 			}
 		} catch (error) {
-			logError(`Error clearing ${this.name} cache for user ${steamUserID}:`, error);
+			logError(`Error clearing ${this.name} cache for user ${maskId(steamUserID)}:`, error);
 			return false;
 		}
 	}

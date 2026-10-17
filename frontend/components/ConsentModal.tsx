@@ -1,16 +1,12 @@
 import { log, logError } from "../../lib/logger";
 import { showModal, ConfirmModal, callable } from "@steambrew/client";
+import { declineConsent, grantConsent } from "../utils/consent";
 
 const setConsent = callable<[{ steamUserID: string, consent: boolean }], boolean>('SetConsent');
 
 const enableConsent = async (steamUserID: string) => {
-    try {
-        const result = await setConsent({ steamUserID: steamUserID, consent: true });
-        if (result) {
-            log("User consent stored successfully");
-        }
-    } catch (error) {
-        logError("Error storing consent:", error);
+    if (await grantConsent(setConsent, steamUserID)) {
+        log("User consent stored successfully");
     }
 };
 
@@ -48,9 +44,7 @@ export const showConsentModal = async (steamUserID: string, mainWindow: Window) 
                     consentAnswered = true;
                     consentModalWindow?.Close();
                     log("consent modal declined");
-                    setConsent({ steamUserID: steamUserID, consent: false }).catch((error) => {
-                        logError("Error storing consent denial:", error);
-                    });
+                    void declineConsent(setConsent, steamUserID);
                 }}
             />,
             mainWindow,

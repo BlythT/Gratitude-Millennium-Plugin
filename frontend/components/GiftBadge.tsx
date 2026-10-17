@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UI_CLASSES, type LicenseMatch } from '../types';
 import { log, logDebug } from '../../lib/logger';
+import { safeLicenseKey } from '../../lib/log-redact';
 import confetti from 'canvas-confetti';
 import { showGiverModal } from './GiverModal';
 import { gameLicenseCache, type UserLicenseCache } from '../injection/gamelicensecache';
@@ -159,7 +160,7 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
   }
 
   if (!match) {
-    logDebug(`[GiftBadge] Rendering Question icon because no cache match was found for "${gameName}".`);
+    logDebug(`[GiftBadge] Rendering Question icon because no cache match was found (app ID ${appId ?? 'not detected'}).`);
     const handleMissingClick = (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -179,13 +180,13 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
   }
   
   if (match.data.acquisition !== "Gift/Guest Pass") {
-    logDebug(`[GiftBadge] Render aborted: Found game "${gameName}" in cache but acquisition is "${match.data.acquisition}" (not Gift).`);
+    logDebug(`[GiftBadge] Render aborted: Found license ${safeLicenseKey(match.licenseKey)} in cache but acquisition is "${match.data.acquisition}" (not Gift).`); // log-privacy: allow=match logs only the acquisition type
     return null; // Not a gifted game, render nothing
   }
 
   const giver = giverCache.getEntrySync(steamID, match.licenseKey, gameName);
 
-  logDebug(`[GiftBadge] Rendering Gift icon for "${gameName}".`);
+  logDebug(`[GiftBadge] Rendering Gift icon for license ${safeLicenseKey(match.licenseKey)}.`);
 
   const handleConfetti = (e: React.MouseEvent) => {
     e.preventDefault();

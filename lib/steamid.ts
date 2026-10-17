@@ -4,6 +4,7 @@
  */
 
 import { log } from './logger';
+import { maskId } from './log-redact';
 
 // SteamID64 = AccountID (32-bit) + 76561197960265728
 // http://forum.tsgk.com/viewtopic.php?t=26238
@@ -36,7 +37,7 @@ export function getCurrentAccountID(): string | null {
     const appSteamID = (window as any).App?.m_CurrentUser?.strSteamID;
     if (appSteamID) {
       const accountID = steamID64ToAccountID(appSteamID);
-      log('[SteamID] Got Account ID from App.m_CurrentUser:', accountID);
+      log('[SteamID] Got Account ID from App.m_CurrentUser:', maskId(accountID));
       return accountID;
     }
 
@@ -45,7 +46,7 @@ export function getCurrentAccountID(): string | null {
     const globalSteamID = (window as any).g_steamID;
     if (globalSteamID) {
       const accountID = steamID64ToAccountID(globalSteamID);
-      log('[SteamID] Got Account ID from g_steamID:', accountID);
+      log('[SteamID] Got Account ID from g_steamID:', maskId(accountID));
       return accountID;
     }
 
@@ -53,7 +54,7 @@ export function getCurrentAccountID(): string | null {
     // Already in correct format
     const accountID = (window as any).g_AccountID;
     if (accountID) {
-      log('[SteamID] Got Account ID from g_AccountID:', accountID);
+      log('[SteamID] Got Account ID from g_AccountID:', maskId(accountID));
       return accountID.toString();
     }
 
@@ -75,14 +76,14 @@ export function getCurrentSteamID64(): string | null {
     // Method 1: App.m_CurrentUser.strSteamID (main window only)
     const appSteamID = (window as any).App?.m_CurrentUser?.strSteamID;
     if (appSteamID) {
-      log('[SteamID] Got SteamID64 from App.m_CurrentUser:', appSteamID);
+      log('[SteamID] Got SteamID64 from App.m_CurrentUser:', maskId(appSteamID));
       return appSteamID;
     }
 
     // Method 2: g_steamID (most web contexts, webkit)
     const globalSteamID = (window as any).g_steamID;
     if (globalSteamID) {
-      log('[SteamID] Got SteamID64 from g_steamID:', globalSteamID);
+      log('[SteamID] Got SteamID64 from g_steamID:', maskId(globalSteamID));
       return globalSteamID;
     }
 
@@ -91,7 +92,7 @@ export function getCurrentSteamID64(): string | null {
     const accountID = (window as any).g_AccountID;
     if (accountID) {
       const steamID64 = accountIDToSteamID64(accountID);
-      log('[SteamID] Got SteamID64 from g_AccountID:', accountID, '→', steamID64);
+      log('[SteamID] Got SteamID64 from g_AccountID:', maskId(accountID), '→', maskId(steamID64));
       return steamID64;
     }
 

@@ -16,6 +16,13 @@ All notable changes to this project will be documented in this file.
 - Updated webkit startup sync to run license and friends cache refreshes in the background instead of awaiting them during `WebkitMain()` startup.
 - Reduced the chance that visiting Steam Store or Community pages will feel delayed while Gratitude refreshes cached data.
 
+### Fixed
+
+- Fixed license and friends data being saved to disk before storage consent was given.
+- Fixed data files being left empty or cut short if Steam closes, is killed or runs out of disk space during a save.
+- Fixed unreadable data files being overwritten instead of kept aside as `.corrupted` copies.
+- Fixed logs including gifter names, license names, full Steam account IDs and file paths.
+
 ## v1.1.0 - 2026-03-22
 
 ### Added

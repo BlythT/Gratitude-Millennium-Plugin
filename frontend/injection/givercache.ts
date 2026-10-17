@@ -1,5 +1,6 @@
 import { callable } from '@steambrew/client';
 import { log, logError } from '../../lib/logger';
+import { maskId, safeLicenseKey } from '../../lib/log-redact';
 import { CacheManager } from './CacheManager';
 import { isTruthy } from '../utils/truthy';
 import type { GiverData } from '../types';
@@ -39,37 +40,37 @@ class GiverCache {
 
 	async upsert(steamUserID: string, giverData: Omit<GiverData, 'createdAt' | 'updatedAt'>): Promise<boolean> {
 		try {
-			log(`Upserting giver data for user ${steamUserID} and license ${giverData.licenseKey}`);
+			log(`Upserting giver data for user ${maskId(steamUserID)} and license ${safeLicenseKey(giverData.licenseKey)}`);
 			const success = await upsertGiverData({
 				payloadJson: JSON.stringify(giverData),
 				steamUserID,
 			});
 
 			if (isTruthy(success)) {
-				log(`Upsert succeeded for user ${steamUserID} and license ${giverData.licenseKey}, reloading cache`);
+				log(`Upsert succeeded for user ${maskId(steamUserID)} and license ${safeLicenseKey(giverData.licenseKey)}, reloading cache`);
 				await this.manager.getData(steamUserID, true);
 			}
 
 			return success;
 		} catch (error) {
-			logError(`Error upserting giver data for user ${steamUserID}:`, error);
+			logError(`Error upserting giver data for user ${maskId(steamUserID)}:`, error);
 			return false;
 		}
 	}
 
 	async remove(steamUserID: string, licenseKey: string): Promise<boolean> {
 		try {
-			log(`Deleting giver data for user ${steamUserID} and license ${licenseKey}`);
+			log(`Deleting giver data for user ${maskId(steamUserID)} and license ${safeLicenseKey(licenseKey)}`);
 			const success = await deleteGiverData({ steamUserID, licenseKey });
 
 			if (isTruthy(success)) {
-				log(`Reloading giver cache from backend after delete for user ${steamUserID}`);
+				log(`Reloading giver cache from backend after delete for user ${maskId(steamUserID)}`);
 				await this.manager.getData(steamUserID, true);
 			}
 
 			return success;
 		} catch (error) {
-			logError(`Error deleting giver data for user ${steamUserID}:`, error);
+			logError(`Error deleting giver data for user ${maskId(steamUserID)}:`, error);
 			return false;
 		}
 	}

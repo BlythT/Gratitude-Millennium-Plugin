@@ -38,7 +38,7 @@ function getAppIdFromLinks(doc: Document): number | null {
     if (match) {
       const parsed = parseInt(match[1], 10);
       if (!isNaN(parsed) && parsed > 0) {
-        log('Detected App ID from link href:', parsed, href);
+        log('Detected App ID from link href:', parsed);
         return parsed;
       }
     }
@@ -57,7 +57,7 @@ function getAppIdFromImages(doc: Document): number | null {
     if (match) {
       const parsed = parseInt(match[1], 10);
       if (!isNaN(parsed) && parsed > 0) {
-        log('Detected App ID from image src:', parsed, src);
+        log('Detected App ID from image src:', parsed);
         return parsed;
       }
     }
