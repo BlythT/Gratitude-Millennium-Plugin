@@ -7,8 +7,10 @@ local utils = require("utils")
 
 local JsonStore = require("lib.JsonStore")
 local cache_merger = require("lib.cache_merger")
+local config_store = require("lib.config_store")
 local friends_compare = require("lib.friends_compare")
 local log_redact = require("lib.log_redact")
+local note_limit = require("lib.note_limit")
 
 local cacheStore = JsonStore.new("gratitude_cache.json", "Game license cache")
 local consentStore = JsonStore.new("gratitude_consent.json", "Consent state")
@@ -22,6 +24,13 @@ local consentState = {}
 local GiverStore = {}
 local FriendsCacheStore = {}
 local SettingsStore = {}
+
+-- Where gift records, consent and settings are saved this session: "config" (millennium.config)
+-- or "file". Set by the migration in on_load.
+local GIVERS, CONSENT, SETTINGS = config_store.GIVERS, config_store.CONSENT, config_store.SETTINGS
+local storeModes = { [GIVERS] = "file", [CONSENT] = "file", [SETTINGS] = "file" }
+-- Per moved store, the accounts that may be saved this session; nil means every account
+local storeEditable = {}
 
 -- Helper function to count table entries
 local function table_size(t)
@@ -49,9 +58,11 @@ local function consented_accounts(store)
 end
 
 -- Consent that couldn't be read at load makes every account look unconsented, so saving would
--- drop them all from disk; the save is refused until a later session reads consent
+-- drop them all from disk; the save is refused until a later session reads consent. That covers
+-- an unreadable consent file and a consent store limited to some accounts (config_store.migrate).
 local function save_consented_accounts(store, accounts)
     local consentUnknownReason = consentStore.save_blocked_reason
+        or (storeEditable[CONSENT] and "some consent data couldn't be read")
     if consentUnknownReason then
         local reason = "consent state is unknown: " .. consentUnknownReason
         logger:error(store.description .. " not saved, " .. reason)
@@ -90,30 +101,57 @@ local function load_cache_from_file()
     return false
 end
 
-local function save_consent_to_file()
-    return consentStore:save(consentState)
-end
-
-local function load_consent_from_file()
-    local loaded = consentStore:load(nil)
-    if loaded and next(loaded) ~= nil then
-        consentState = loaded
-        return true
+-- Saves one account of a moved store: its own config key in config mode, otherwise the whole file.
+-- An account outside the store's editable set (see config_store.migrate) isn't saved, because its
+-- data may be in a source that couldn't be read this session.
+local function save_moved_account(prefix, store, data, steamUserID)
+    local editable = storeEditable[prefix]
+    if editable and not editable[steamUserID] then
+        logger:error("Not saving " .. prefix .. " for account " .. log_redact.mask_id(steamUserID) .. ": its stored data couldn't be read this session")
+        return false, "read_only"
     end
-    return false
-end
-
-local function save_givers_to_file()
-    return giverStore:save(GiverStore)
-end
-
-local function load_givers_from_file()
-    local loaded = giverStore:load(nil)
-    if loaded and next(loaded) ~= nil then
-        GiverStore = loaded
-        return true
+    if storeModes[prefix] == "config" then
+        return config_store.save(prefix, steamUserID, data[steamUserID] or {})
     end
-    return false
+    if store.save_blocked_reason then
+        logger:error("Not saving " .. prefix .. " for account " .. log_redact.mask_id(steamUserID) .. ": its file couldn't be read this session")
+        return false, "read_only"
+    end
+    return store:save(data)
+end
+
+local function save_consent(steamUserID)
+    return save_moved_account(CONSENT, consentStore, consentState, steamUserID)
+end
+
+local function save_givers(steamUserID)
+    return save_moved_account(GIVERS, giverStore, GiverStore, steamUserID)
+end
+
+local function save_settings(steamUserID)
+    return save_moved_account(SETTINGS, settingsStore, SettingsStore, steamUserID)
+end
+
+-- Loads gift records, consent and settings from config, copying in what is still only in files.
+-- Consent never falls back to a .migrated copy, so after a config reset the user is asked again.
+local function load_moved_stores()
+    local snapshot = config_store.snapshot()
+    if not snapshot and millennium.config then
+        -- Not the error text: a failed read of every value could quote one of them
+        logger:error("millennium.config couldn't be read, so gift records, consent and settings are read-only this session")
+    elseif not snapshot then
+        logger:info("millennium.config unavailable, gift records, consent and settings use files")
+    end
+
+    GiverStore, storeModes[GIVERS], storeEditable[GIVERS] = config_store.migrate({
+        prefix = GIVERS, store = giverStore, snapshot = snapshot, fallback_to_migrated = true,
+    })
+    consentState, storeModes[CONSENT], storeEditable[CONSENT] = config_store.migrate({
+        prefix = CONSENT, store = consentStore, snapshot = snapshot, fallback_to_migrated = false,
+    })
+    SettingsStore, storeModes[SETTINGS], storeEditable[SETTINGS] = config_store.migrate({
+        prefix = SETTINGS, store = settingsStore, snapshot = snapshot, fallback_to_migrated = true,
+    })
 end
 
 local function save_friends_to_file()
@@ -129,25 +167,25 @@ local function load_friends_from_file()
     return false
 end
 
-local function save_settings_to_file()
-    return settingsStore:save(SettingsStore)
+-- Replaces one account's entry and saves; a failed save puts the previous entry back, so memory
+-- keeps matching what was saved. change(previous) must return a new table, never edit previous,
+-- or there is nothing left to put back. A nil entry removes the account.
+local function save_account_change(data, steamUserID, change, save)
+    local previous = data[steamUserID]
+    data[steamUserID] = change(previous)
+    local saved, reason = save(steamUserID)
+    if not saved then
+        data[steamUserID] = previous
+    end
+    return saved, reason
 end
 
-local function load_settings_from_file()
-    local loaded = settingsStore:load(nil)
-    if loaded and next(loaded) ~= nil then
-        SettingsStore = loaded
-        return true
+local function copy_account(account)
+    local copy = {}
+    for key, value in pairs(account or {}) do
+        copy[key] = value
     end
-    return false
-end
-
-local function ensure_account_store(store, steamUserID)
-    if not store[steamUserID] then
-        store[steamUserID] = {}
-    end
-
-    return store[steamUserID]
+    return copy
 end
 
 local function validate_required_string(value, fieldName)
@@ -355,10 +393,10 @@ function ClearCache(steamUserID)
 
     -- A clear that didn't reach disk is undone, so memory matches the disk and the frontend, which
     -- keeps its copy when a clear fails
-    local previousCache = GameLicenseCache[steamUserID]
-    GameLicenseCache[steamUserID] = nil
-    if not save_cache_to_file() then
-        GameLicenseCache[steamUserID] = previousCache
+    local cleared = save_account_change(GameLicenseCache, steamUserID, function()
+        return nil
+    end, save_cache_to_file)
+    if not cleared then
         return false
     end
 
@@ -378,14 +416,10 @@ function SetConsent(consent, steamUserID)
 
     logger:info("SetConsent called for user " .. log_redact.mask_id(steamUserID) .. " with allowed=" .. tostring(consent))
 
-    local previousConsent = consentState[steamUserID]
-    consentState[steamUserID] = {
-        allowed = consent,
-        timestamp = os.time(),
-    }
-
-    if not save_consent_to_file() then
-        consentState[steamUserID] = previousConsent
+    local saved = save_account_change(consentState, steamUserID, function()
+        return { allowed = consent, timestamp = os.time() }
+    end, save_consent)
+    if not saved then
         return false
     end
 
@@ -447,46 +481,68 @@ function GetAllGiverData(steamUserID)
     return json.encode(GiverStore[steamUserID])
 end
 
+-- Returns true, or an error code: "invalid_payload", "note_too_long", "size_limit", "read_only"
+-- (some stored data couldn't be read this session, so a Steam restart is needed) or
+-- "save_failed". Only the first return value reaches the frontend (Millennium calls lua_pcall
+-- with one result), so the code takes the place of false; isTruthy reads any string other than
+-- "true" as a failure, so callers that only check success keep working. The other callables keep
+-- returning booleans: their callers only need success or failure, so the contract stays narrow.
 function UpsertGiverData(payloadJson, steamUserID)
     assert(type(payloadJson) == "string", "payloadJson must be a string")
     assert(type(steamUserID) == "string", "steamUserID must be a string")
 
     if payloadJson == "" then
         logger:error("No giver payload provided")
-        return false, "No giver payload provided"
+        return "invalid_payload"
     end
 
     if steamUserID == "" then
         logger:error("No Steam ID provided for giver upsert")
-        return false, "Steam ID not provided"
+        return "invalid_payload"
     end
 
     local success, decodedPayload = pcall(json.decode, payloadJson)
     if not success then
         logger:error("Failed to decode giver payload JSON: " .. tostring(decodedPayload)) -- log-privacy: allow=decodedPayload holds cjson error text, which gives a position, not the input
-        return false, "Failed to decode giver payload JSON"
+        return "invalid_payload"
     end
 
     local normalizedPayload, errorMessage = normalize_giver_payload(decodedPayload, steamUserID)
     if not normalizedPayload then
         logger:error("Invalid giver payload: " .. tostring(errorMessage))
-        return false, errorMessage
+        return "invalid_payload"
     end
 
-    local accountExisted = GiverStore[steamUserID] ~= nil
-    local accountStore = ensure_account_store(GiverStore, steamUserID)
-    local previousRecord = accountStore[normalizedPayload.licenseKey]
-    accountStore[normalizedPayload.licenseKey] = normalizedPayload
+    if normalizedPayload.notes and not note_limit.is_within_limit(normalizedPayload.notes) then
+        logger:error("Giver note is longer than " .. note_limit.NOTE_MAX_CHARS .. " characters, not saved")
+        return "note_too_long"
+    end
 
-    if not save_givers_to_file() then
-        accountStore[normalizedPayload.licenseKey] = previousRecord
-        if not accountExisted then
-            GiverStore[steamUserID] = nil
+    -- A gift stored under an older key moves in the same save, so a failure leaves it where it was
+    local replacesLicenseKey = decodedPayload.replacesLicenseKey
+    if type(replacesLicenseKey) ~= "string" or replacesLicenseKey == "" or replacesLicenseKey == normalizedPayload.licenseKey then
+        replacesLicenseKey = nil
+    end
+
+    local saved, reason = save_account_change(GiverStore, steamUserID, function(account)
+        local updated = copy_account(account)
+        if replacesLicenseKey then
+            updated[replacesLicenseKey] = nil
         end
-        return false, "Failed to save giver store"
+        updated[normalizedPayload.licenseKey] = normalizedPayload
+        return updated
+    end, save_givers)
+    if not saved then
+        if reason == "size_limit" or reason == "read_only" then
+            return reason
+        end
+        return "save_failed"
     end
 
     logger:info("Upserted giver record for user " .. log_redact.mask_id(steamUserID) .. " and license " .. log_redact.safe_license_key(normalizedPayload.licenseKey))
+    if replacesLicenseKey then
+        logger:info("Moved giver record from license " .. log_redact.safe_license_key(replacesLicenseKey))
+    end
     return true
 end
 
@@ -503,24 +559,29 @@ function DeleteGiverData(licenseKey, steamUserID)
 
     local accountStore = GiverStore[steamUserID]
     logger:info("Current giver store account exists before delete=" .. tostring(accountStore ~= nil)) -- log-privacy: allow=accountStore logs only whether it exists
+    -- Nothing to delete, so nothing to save: in config mode a save would use up a key
+    if not accountStore then
+        return true
+    end
     if accountStore then
         logger:info("Current giver store entry count before delete=" .. tostring(table_size(accountStore))) -- log-privacy: allow=accountStore logs only a count
     end
 
-    local hadRecord = GiverStore[steamUserID] and GiverStore[steamUserID][licenseKey] ~= nil
-    local previousRecord = accountStore and accountStore[licenseKey]
-    if GiverStore[steamUserID] then
-        GiverStore[steamUserID][licenseKey] = nil
-        if next(GiverStore[steamUserID]) == nil then
-            GiverStore[steamUserID] = nil
+    local hadRecord = accountStore and accountStore[licenseKey] ~= nil
+    local saved = save_account_change(GiverStore, steamUserID, function(account)
+        if not account then
+            return nil
         end
-    end
-
-    if not save_givers_to_file() then
-        if accountStore then
-            accountStore[licenseKey] = previousRecord
-            GiverStore[steamUserID] = accountStore
+        local updated = copy_account(account)
+        updated[licenseKey] = nil
+        -- In config an emptied account keeps its key as {}, so a later session can't bring the
+        -- deleted gifts back from a .migrated copy
+        if next(updated) == nil and storeModes[GIVERS] ~= "config" then
+            return nil
         end
+        return updated
+    end, save_givers)
+    if not saved then
         return false
     end
 
@@ -618,11 +679,10 @@ function ClearFriendsCache(steamUserID)
     end
 
     -- Undone on a failed save, as in ClearCache
-    local previousFriends = FriendsCacheStore[steamUserID]
-    FriendsCacheStore[steamUserID] = nil
-
-    if not save_friends_to_file() then
-        FriendsCacheStore[steamUserID] = previousFriends
+    local cleared = save_account_change(FriendsCacheStore, steamUserID, function()
+        return nil
+    end, save_friends_to_file)
+    if not cleared then
         return false
     end
 
@@ -661,11 +721,10 @@ function SetUiSettings(payloadJson)
         return false, normalizedSettingsOrError
     end
 
-    local previousSettings = SettingsStore[steamUserID]
-    SettingsStore[steamUserID] = normalizedSettingsOrError
-
-    if not save_settings_to_file() then
-        SettingsStore[steamUserID] = previousSettings
+    local saved = save_account_change(SettingsStore, steamUserID, function()
+        return normalizedSettingsOrError
+    end, save_settings)
+    if not saved then
         return false, "Failed to save settings store"
     end
 
@@ -677,12 +736,10 @@ local function on_load()
     print("Gratitude plugin loaded")
     logger:info("Comparing millennium version: " .. millennium.cmp_version(millennium.version(), "2.29.3"))
 
-    -- Load existing cache and consent data from disk
+    -- The caches stay in files; the moved stores load before any callable can run
     load_cache_from_file()
-    load_consent_from_file()
-    load_givers_from_file()
     load_friends_from_file()
-    load_settings_from_file()
+    load_moved_stores()
 
     -- TODO: Remove these manual hooks once Millennium commit 84d912263ba08f07b101957481c98cb5ff7ffbb4 is released.
     -- An earlier Millennium update unintentionally broke automatic WebKit injection for Steam URLs by excluding 

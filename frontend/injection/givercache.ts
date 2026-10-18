@@ -3,10 +3,11 @@ import { log, logError } from '../../lib/logger';
 import { maskId, safeLicenseKey } from '../../lib/log-redact';
 import { CacheManager } from './CacheManager';
 import { isTruthy } from '../utils/truthy';
+import type { UpsertGiverResult } from '../utils/giverSave';
 import type { GiverData } from '../types';
 
 const getAllGiverData = callable<[{ steamUserID: string }], string>('GetAllGiverData');
-const upsertGiverData = callable<[{ payloadJson: string; steamUserID: string }], boolean>('UpsertGiverData');
+const upsertGiverData = callable<[{ payloadJson: string; steamUserID: string }], UpsertGiverResult>('UpsertGiverData');
 const deleteGiverData = callable<[{ steamUserID: string; licenseKey: string }], boolean>('DeleteGiverData');
 
 class GiverCache {
@@ -38,7 +39,12 @@ class GiverCache {
 		return giver;
 	}
 
-	async upsert(steamUserID: string, giverData: Omit<GiverData, 'createdAt' | 'updatedAt'>): Promise<boolean> {
+	// Returns true, or the backend's error code ("size_limit", "note_too_long", ...), which isTruthy reads as a failure
+	// replacesLicenseKey moves a gift from that key to giverData.licenseKey in the same backend save
+	async upsert(
+		steamUserID: string,
+		giverData: Omit<GiverData, 'createdAt' | 'updatedAt'> & { replacesLicenseKey?: string },
+	): Promise<UpsertGiverResult> {
 		try {
 			log(`Upserting giver data for user ${maskId(steamUserID)} and license ${safeLicenseKey(giverData.licenseKey)}`);
 			const success = await upsertGiverData({

@@ -1,4 +1,4 @@
--- Tests that backend logs carry no personal data and no full file paths (decision 5 and O2)
+-- Tests that backend logs carry no personal data and no full file paths
 local lu = require("luaunit")
 local support = require("lua_test_support")
 local json = require("cjson")
@@ -84,7 +84,7 @@ local function any_message_contains(test, text)
     return false
 end
 
-local function licence_page()
+local function license_page()
     return json.encode({
         byAppId = { [APP_ID] = { acquisition = "Gift/Guest Pass", date = "Mar 5, 2025" } },
         byName = { [LEGACY_KEY] = { acquisition = "Gift/Guest Pass", date = "Mar 6, 2025" } },
@@ -127,7 +127,7 @@ end
 
 local function call_every_callable()
     HasUserConsented(ACCOUNT)
-    SetGameLicenseData(licence_page(), ACCOUNT)
+    SetGameLicenseData(license_page(), ACCOUNT)
     GetGameLicenseData(ACCOUNT)
     IsGameLicenseCachePopulated(ACCOUNT)
     UpsertGiverData(giver_payload(LEGACY_KEY), ACCOUNT)
@@ -150,8 +150,8 @@ function TestLogPrivacy:test_callables_mask_accounts_and_drop_names()
     local backend = self.env.load_backend()
     backend.on_load()
 
-    -- Before consent: licence and friends data stay in memory and their saves are skipped
-    SetGameLicenseData(licence_page(), ACCOUNT)
+    -- Before consent: license and friends data stay in memory and their saves are skipped
+    SetGameLicenseData(license_page(), ACCOUNT)
     SetFriendsCache(friends_payload(), ACCOUNT)
     lu.assertTrue(SetConsent(true, ACCOUNT))
     call_every_callable()
@@ -160,7 +160,7 @@ function TestLogPrivacy:test_callables_mask_accounts_and_drop_names()
     SetConsent(true, "")
     HasUserConsented("")
     SetGameLicenseData("", ACCOUNT)
-    SetGameLicenseData(licence_page(), "")
+    SetGameLicenseData(license_page(), "")
     SetGameLicenseData("{" .. LEGACY_KEY, ACCOUNT)
     UpsertGiverData(giver_payload(LEGACY_KEY, { source = "unknown" }), ACCOUNT)
     UpsertGiverData("{" .. GIFTER, ACCOUNT)
@@ -175,10 +175,10 @@ function TestLogPrivacy:test_callables_mask_accounts_and_drop_names()
     -- Failed saves, whose reasons reach the logs
     self.env.fail.open_write = "Permission denied"
     lu.assertFalse(SetConsent(false, ACCOUNT))
-    lu.assertFalse(UpsertGiverData(giver_payload(LEGACY_KEY), ACCOUNT))
+    lu.assertEquals(UpsertGiverData(giver_payload(LEGACY_KEY), ACCOUNT), "save_failed")
     lu.assertFalse(SetUiSettings(settings_payload()))
     lu.assertFalse(ClearFriendsCache(ACCOUNT))
-    SetGameLicenseData(licence_page(), ACCOUNT)
+    SetGameLicenseData(license_page(), ACCOUNT)
     self.env.fail.open_write = nil
 
     backend.on_unload()
@@ -251,4 +251,53 @@ function TestLogPrivacy:test_failed_save_reasons_carry_no_paths()
     lu.assertEquals(private_values_logged(self), {})
     lu.assertStrContains(reasons[1], "Permission denied")
     lu.assertStrContains(reasons[1], STORE_FILE .. ".tmp")
+end
+
+-- The same promise with gift records, consent and settings in millennium.config: through the
+-- migration, a key move from a title key, the note cap, refused saves and an unreadable config
+function TestLogPrivacy:test_config_mode_logs_no_personal_data()
+    local legacyRecord = {
+        licenseKey = LEGACY_KEY, libraryTitle = LIBRARY_TITLE, displayName = GIFTER, notes = NOTE,
+        profileUrl = PROFILE_URL, steamID64 = GIFTER_STEAMID64, source = "manual", createdAt = 1, updatedAt = 1,
+    }
+    local function start_session()
+        local backend = self.env.load_backend()
+        backend.on_load()
+    end
+
+    -- Copied into config, then retired in the next session
+    self.env.config = support.new_fake_config()
+    self.env.write_file(STORE_FILE, json.encode({ [ACCOUNT] = { [LEGACY_KEY] = legacyRecord } }))
+    self.env.write_file("gratitude_consent.json", json.encode({ [ACCOUNT] = { allowed = true, timestamp = 1 } }))
+    start_session()
+    self.env.config.restart()
+    start_session()
+    UpsertGiverData(giver_payload(APP_ID, { replacesLicenseKey = LEGACY_KEY }), ACCOUNT)
+    UpsertGiverData(giver_payload(APP_ID, { notes = string.rep(NOTE, 200) }), ACCOUNT)
+    SetUiSettings(settings_payload())
+    SetFriendsCache(friends_payload(), ACCOUNT)
+    DeleteGiverData(APP_ID, ACCOUNT)
+    self.env.config.set = function(key)
+        return false, "rpc failed for " .. key
+    end
+    UpsertGiverData(giver_payload(APP_ID), ACCOUNT)
+
+    -- A gift file that couldn't be read, so saves for an unkeyed account are refused
+    self.env.config = support.new_fake_config()
+    self.env.write_file(STORE_FILE, json.encode({ [ACCOUNT] = { [LEGACY_KEY] = legacyRecord } }))
+    self.env.fail.open_read = "Permission denied"
+    self.env.fail.only_path = "gratitude_givers%.json$"
+    start_session()
+    UpsertGiverData(giver_payload(APP_ID), ACCOUNT)
+    self.env.fail.open_read = nil
+
+    -- Config that couldn't be read, with error text quoting a note
+    self.env.config = support.new_fake_config()
+    self.env.config.fail_get_all = "parse error: last read: '" .. NOTE
+    start_session()
+    UpsertGiverData(giver_payload(APP_ID), ACCOUNT)
+    ClearCache(ACCOUNT)
+
+    lu.assertEquals(private_values_logged(self), {})
+    lu.assertTrue(any_message_contains(self, MASKED_ACCOUNT), "masked account ID logged")
 end

@@ -5,7 +5,8 @@ import { maskId, safeLicenseKey } from '../../lib/log-redact';
 import { friendsCache } from '../injection/friendscache';
 import { giverCache } from '../injection/givercache';
 import { useSettings } from '../settings';
-import { deleteGiverAndLegacy, saveGiverThenRemoveLegacy } from '../utils/giverSave';
+import { NOTE_MAX_LENGTH, NOTE_TOO_LONG_MESSAGE, formatNoteCounter, isNoteWithinCap, shouldShowNoteCounter } from '../utils/giverNotes';
+import { GIVER_DELETE_FAILED_MESSAGE, GIVER_SAVE_FAILED_MESSAGE, deleteGiverAndLegacy, giverSaveErrorMessage, saveGiver } from '../utils/giverSave';
 import type { FriendRecord, FriendsCacheSnapshot, GiverData, GiverSource } from '../types';
 import { FriendSelector } from './FriendSelector';
 
@@ -171,6 +172,12 @@ function GiverModalContent({
 			return;
 		}
 
+		// maxLength doesn't shorten a note saved before the cap existed
+		if (!isNoteWithinCap(notes)) {
+			setStatusMessage(NOTE_TOO_LONG_MESSAGE);
+			return;
+		}
+
 		setIsSaving(true);
 		setStatusMessage(null);
 		log(
@@ -179,9 +186,12 @@ function GiverModalContent({
 
 		try {
 			const legacyLicenseKey = existingGiver && existingGiver.licenseKey !== licenseKey ? existingGiver.licenseKey : null;
+			if (legacyLicenseKey !== null) {
+				log(`Moving legacy giver entry from ${safeLicenseKey(legacyLicenseKey)} to ${safeLicenseKey(licenseKey)}`);
+			}
 			const { steamID64, profileUrl } = normalizeProfileField(profileField);
-			const outcome = await saveGiverThenRemoveLegacy({
-				upsert: () => giverCache.upsert(steamUserID, {
+			const outcome = await saveGiver({
+				record: {
 					licenseKey,
 					libraryTitle: gameTitle,
 					displayName: displayName.trim(),
@@ -189,28 +199,23 @@ function GiverModalContent({
 					profileUrl,
 					notes: notes.trim() || undefined,
 					source,
-				}),
-				removeLegacy: legacyLicenseKey === null ? undefined : () => {
-					log(`Migrating legacy giver entry from ${safeLicenseKey(legacyLicenseKey)} to ${safeLicenseKey(licenseKey)}`);
-					return giverCache.remove(steamUserID, legacyLicenseKey);
 				},
+				legacyLicenseKey,
+				upsert: (record) => giverCache.upsert(steamUserID, record),
 			});
 
 			if (outcome.saved) {
-				if (outcome.legacyRemoved === false) {
-					logError('Gift saved, but removing its record under the old license key failed; a stale duplicate remains under the old key');
-				}
 				log(`Giver modal save succeeded for license ${safeLicenseKey(licenseKey)}`);
 				onSaved?.();
 				closeModal();
 				return;
 			}
 
-			log(`Giver modal save returned false for license ${safeLicenseKey(licenseKey)}`);
-			setStatusMessage('Unable to save giver data.');
+			log(`Giver modal save failed for license ${safeLicenseKey(licenseKey)}: ${String(outcome.upsertResult)}`);
+			setStatusMessage(giverSaveErrorMessage(outcome.upsertResult));
 		} catch (error) {
 			logError('Error saving giver data:', error);
-			setStatusMessage('Unable to save giver data.');
+			setStatusMessage(GIVER_SAVE_FAILED_MESSAGE);
 		} finally {
 			setIsSaving(false);
 		}
@@ -244,10 +249,10 @@ function GiverModalContent({
 			} else {
 				log(`Delete giver returned false for ${safeLicenseKey(licenseKey)}`);
 			}
-			setStatusMessage('Unable to remove giver data.');
+			setStatusMessage(GIVER_DELETE_FAILED_MESSAGE);
 		} catch (error) {
 			logError('Error deleting giver data:', error);
-			setStatusMessage('Unable to remove giver data.');
+			setStatusMessage(GIVER_DELETE_FAILED_MESSAGE);
 		} finally {
 			setIsSaving(false);
 		}
@@ -377,6 +382,7 @@ function GiverModalContent({
 				<textarea
 					value={notes}
 					onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(event.target.value)}
+					maxLength={NOTE_MAX_LENGTH}
 					rows={3}
 					style={{
 						background: 'rgba(0, 0, 0, 0.2)',
@@ -395,6 +401,9 @@ function GiverModalContent({
 					onFocus={(e: React.FocusEvent<HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)'; }}
 					onBlur={(e: React.FocusEvent<HTMLTextAreaElement>) => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'; }}
 				/>
+				{shouldShowNoteCounter(notes) ? (
+					<div style={{ fontSize: '12px', opacity: 0.8 }}>{formatNoteCounter(notes)}</div>
+				) : null}
 			</FormGroup>
 			{settings.showFriendPickerSteamUrl ? (
 				<TextField

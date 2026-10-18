@@ -4,25 +4,29 @@
 
 This directory owns Lua backend persistence and Millennium callables.
 
-Primary file:
+Primary files:
 
 - `main.lua`
+- `lib/JsonStore.lua` (one JSON data file: atomic saves, set-aside, `.migrated` copies)
+- `lib/config_store.lua` (millennium.config and the migration from files)
 
 Runtime data files stored here:
 
 - `gratitude_cache.json`
-- `gratitude_consent.json`
 - `gratitude_friends.json`
-- `gratitude_givers.json`
+- `gratitude_givers.json`, `gratitude_consent.json` and `gratitude_settings.json`: used only without millennium.config (Millennium older than 3.0.0). With it, their accounts are copied into config and each file is renamed to `<file>.migrated` in a later session.
+- Copies the stores make beside them: `<file>.tmp` during a save, `<file>.corrupted.<unix time>` for an unreadable file set aside, and `<file>.migrated` or `<file>.migrated.<unix time>` for a retired file. Gratitude never deletes a `.migrated` copy.
 
 These JSON files are runtime state, not source files. Avoid editing or deleting them unless the task explicitly requires it.
 
 ## Responsibilities
 
 - Persist per-account license cache
-- Persist per-account consent state
-- Persist per-account giver records
+- Persist per-account consent state, in millennium.config (`consent.<accountId>`)
+- Persist per-account giver records, in millennium.config (`givers.<accountId>`)
+- Persist per-account settings, in millennium.config (`settings.<accountId>`)
 - Persist per-account friends cache
+- Fall back to the JSON files above when millennium.config is unavailable
 - Expose callable methods used by `frontend/` and `webkit/`
 
 ## Important Backend Rules

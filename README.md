@@ -87,6 +87,30 @@ If you want to debug library-title vs license-name mismatches, there is a small 
 - It accepts a single saved `.html` snapshot, a folder of snapshots, or a plain text file of titles
 - The report shows exact matches, the plugin's current prefix-based fuzzy matches, normalized-only matches, and misses
 
+## Where Gratitude stores your data
+
+On Millennium 3.0.0 or later, your gift details (who gave you each game, and your notes), your storage permission choice and your settings are kept in Millennium's plugin config. That is a file Millennium manages outside Gratitude's plugin folder: `~/.config/millennium/config.json` on Linux, or `<Steam>\millennium\config\config.json` on Windows.
+
+The licence and friends caches, which Gratitude can rebuild from Steam at any time, are kept as files in Gratitude's plugin folder.
+
+On Millennium older than 3.0.0, everything is kept as files in Gratitude's plugin folder.
+
+### Moving from the old files
+
+When Gratitude finds your data in its old files, it copies it into Millennium's config and, on a later start, renames each old file to `<name>.migrated`. These copies stay in the plugin folder with your gift details as they were at that point, so deleting or editing a gift afterwards doesn't change them. Gratitude never deletes them: you can delete them by hand once your gifts show up, and uninstalling removes them with the plugin folder.
+
+Earlier Gratitude versions, which don't use Millennium's plugin config, only read the old files. To go back to one, first rename each `.migrated` file back to its original name. If a file has several copies, such as `gratitude_givers.json.migrated.1760000000`, use the one with the highest number: the plain `.migrated` copy is the oldest. Changes made while on the earlier version, including your storage permission choice, won't carry over when you update again.
+
+### Uninstalling
+
+Uninstalling Gratitude from Millennium's settings deletes its plugin folder, including the licence and friends caches, but keeps your gift details, storage permission choice and settings in Millennium's config, so they come back if you reinstall. Deleting the plugin folder by hand does the same.
+
+Some Millennium versions may also ask whether to delete Gratitude's saved settings: answering yes deletes your gift details too, even though the prompt only says "settings".
+
+On Millennium older than 3.0.0, uninstalling deletes everything Gratitude saved.
+
+Nothing is stored in the cloud. Removing Millennium as its [uninstall guide](https://docs.steambrew.app/users/parting-ways/uninstall) describes removes Gratitude's data too, but on some Linux systems the guide has you delete Millennium's config folder (`~/.config/millennium`) by hand, and your gift details stay in it until you do.
+
 ## Acknowledgments
 
 A special thanks to **[HLTB for Millennium](https://github.com/jcdoll/hltb-millennium-plugin)** for executing another plugin which places game-specific tooltips: it made a great study/starting out point, especially for the observer and injection logic.

@@ -1,71 +1,32 @@
--- Characterisation tests for the backend callables in backend/main.lua: behaviour that stays.
--- Disk side effects that change in phase 1 (consent filtering) are asserted through Get* callables.
+-- Characterization tests for the backend callables in backend/main.lua: behavior that stays.
+-- Behavior whose disk side depends on consent is asserted through the Get* callables.
 local lu = require("luaunit")
 local support = require("lua_test_support")
 local json = require("cjson")
 
 TestBackendExisting = {}
 
-local realPrint = print
-
 local T1 = 1700000000
 local T2 = 1700000500
 
--- on_load prints a banner; keep test output readable
 function TestBackendExisting:setUp()
     self.env = support.new_env()
-    print = function() end
 end
 
 function TestBackendExisting:tearDown()
-    print = realPrint
     self.env.cleanup()
-end
-
-local function start(env)
-    local backend = env.load_backend()
-    backend.on_load()
-    return backend
-end
-
-local function giver_fields()
-    return {
-        licenseKey = "220",
-        libraryTitle = "Half-Life 2",
-        displayName = "Gifter",
-        source = "manual",
-    }
-end
-
-local function licence_page(appId, name)
-    local entry = { acquisition = "Gift/Guest Pass", date = "Mar 5, 2025" }
-    return json.encode({
-        byAppId = { [appId] = entry },
-        byName = { [name] = entry },
-        totalLicenses = 2,
-    })
-end
-
-local function count_logs(env, level)
-    local count = 0
-    for _, entry in ipairs(env.logs) do
-        if entry.level == level then
-            count = count + 1
-        end
-    end
-    return count
 end
 
 -- Consent checks
 
 function TestBackendExisting:test_has_user_consented_is_nil_for_unknown_and_empty_accounts()
-    start(self.env)
+    self.env.start_backend()
     lu.assertNil(HasUserConsented("111"))
     lu.assertNil(HasUserConsented(""))
 end
 
 function TestBackendExisting:test_set_consent_records_the_decision()
-    start(self.env)
+    self.env.start_backend()
     lu.assertTrue(SetConsent(true, "111"))
     lu.assertTrue(HasUserConsented("111"))
 
@@ -74,19 +35,19 @@ function TestBackendExisting:test_set_consent_records_the_decision()
 end
 
 function TestBackendExisting:test_set_consent_without_account_returns_false()
-    start(self.env)
+    self.env.start_backend()
     lu.assertFalse(SetConsent(true, ""))
     lu.assertNil(HasUserConsented(""))
 end
 
--- Licences
+-- Licenses
 
-function TestBackendExisting:test_licences_without_consent_are_merged_in_memory_and_not_written()
-    start(self.env)
+function TestBackendExisting:test_licenses_without_consent_are_merged_in_memory_and_not_written()
+    self.env.start_backend()
     lu.assertFalse(IsGameLicenseCachePopulated("111"))
 
-    lu.assertTrue(SetGameLicenseData(licence_page("220", "Half-Life 2"), "111"))
-    lu.assertTrue(SetGameLicenseData(licence_page("400", "Portal"), "111"))
+    lu.assertTrue(SetGameLicenseData(support.license_page({ name = "Half-Life 2", totalLicenses = 2 }), "111"))
+    lu.assertTrue(SetGameLicenseData(support.license_page({ appId = "400", name = "Portal", totalLicenses = 2 }), "111"))
 
     lu.assertFalse(self.env.exists("gratitude_cache.json"))
     local entry = { acquisition = "Gift/Guest Pass", date = "Mar 5, 2025" }
@@ -101,7 +62,7 @@ end
 function TestBackendExisting:test_old_name_only_cache_file_loads_into_by_name()
     self.env.write_file("gratitude_cache.json",
         '{"111": {"Old Game": {"date": "Jan 1, 2020", "acquisition": "Gift/Guest Pass"}}}')
-    start(self.env)
+    self.env.start_backend()
 
     lu.assertEquals(json.decode(GetGameLicenseData("111")), {
         byAppId = {},
@@ -113,11 +74,11 @@ end
 -- Giver payload validation
 
 function TestBackendExisting:test_upsert_rejects_a_missing_required_field()
-    start(self.env)
+    self.env.start_backend()
     for _, fieldName in ipairs({ "licenseKey", "libraryTitle", "displayName", "source" }) do
-        local fields = giver_fields()
+        local fields = support.giver()
         fields[fieldName] = nil
-        lu.assertFalse(UpsertGiverData(json.encode(fields), "111"), fieldName)
+        lu.assertEquals(UpsertGiverData(json.encode(fields), "111"), "invalid_payload", fieldName)
     end
 
     lu.assertEquals(GetAllGiverData("111"), "{}")
@@ -126,28 +87,22 @@ function TestBackendExisting:test_upsert_rejects_a_missing_required_field()
 end
 
 function TestBackendExisting:test_upsert_rejects_an_unknown_source()
-    start(self.env)
-    local fields = giver_fields()
-    fields.source = "scraped"
-
-    lu.assertFalse(UpsertGiverData(json.encode(fields), "111"))
+    self.env.start_backend()
+    lu.assertEquals(UpsertGiverData(support.giver_payload({ source = "scraped" }), "111"), "invalid_payload")
     lu.assertEquals(GetAllGiverData("111"), "{}")
 end
 
 function TestBackendExisting:test_upsert_keeps_non_empty_optional_strings_and_drops_empty_ones()
-    start(self.env)
-    local filled = giver_fields()
-    filled.steamID64 = "76561197960265729"
-    filled.profileUrl = "https://steamcommunity.com/id/gifter"
-    filled.notes = "Thanks!"
-    local empty = giver_fields()
-    empty.licenseKey = "400"
-    empty.steamID64 = ""
-    empty.profileUrl = ""
-    empty.notes = ""
+    self.env.start_backend()
+    local filled = support.giver_payload({
+        steamID64 = "76561197960265729",
+        profileUrl = "https://steamcommunity.com/id/gifter",
+        notes = "Thanks!",
+    })
+    local empty = support.giver_payload({ licenseKey = "400", steamID64 = "", profileUrl = "", notes = "" })
 
-    lu.assertTrue(UpsertGiverData(json.encode(filled), "111"))
-    lu.assertTrue(UpsertGiverData(json.encode(empty), "111"))
+    lu.assertTrue(UpsertGiverData(filled, "111"))
+    lu.assertTrue(UpsertGiverData(empty, "111"))
 
     local kept = json.decode(GetGiverData("220", "111"))
     lu.assertEquals(kept.steamID64, "76561197960265729")
@@ -161,14 +116,12 @@ function TestBackendExisting:test_upsert_keeps_non_empty_optional_strings_and_dr
 end
 
 function TestBackendExisting:test_update_keeps_created_at_and_refreshes_updated_at()
-    start(self.env)
+    self.env.start_backend()
     self.env.freeze_time(T1)
-    lu.assertTrue(UpsertGiverData(json.encode(giver_fields()), "111"))
+    lu.assertTrue(UpsertGiverData(support.giver_payload(), "111"))
 
     self.env.freeze_time(T2)
-    local edited = giver_fields()
-    edited.displayName = "Another Gifter"
-    lu.assertTrue(UpsertGiverData(json.encode(edited), "111"))
+    lu.assertTrue(UpsertGiverData(support.giver_payload({ displayName = "Another Gifter" }), "111"))
 
     lu.assertEquals(json.decode(GetGiverData("220", "111")), {
         licenseKey = "220",
@@ -182,12 +135,9 @@ end
 
 function TestBackendExisting:test_get_all_giver_data_returns_the_account_map()
     self.env.freeze_time(T1)
-    start(self.env)
-    local second = giver_fields()
-    second.licenseKey = "400"
-    second.source = "friend-cache"
-    lu.assertTrue(UpsertGiverData(json.encode(giver_fields()), "111"))
-    lu.assertTrue(UpsertGiverData(json.encode(second), "111"))
+    self.env.start_backend()
+    lu.assertTrue(UpsertGiverData(support.giver_payload(), "111"))
+    lu.assertTrue(UpsertGiverData(support.giver_payload({ licenseKey = "400", source = "friend-cache" }), "111"))
 
     local all = json.decode(GetAllGiverData("111"))
     lu.assertEquals(all["220"].displayName, "Gifter")
@@ -196,8 +146,8 @@ function TestBackendExisting:test_get_all_giver_data_returns_the_account_map()
 end
 
 function TestBackendExisting:test_deleting_the_last_record_empties_the_account()
-    start(self.env)
-    lu.assertTrue(UpsertGiverData(json.encode(giver_fields()), "111"))
+    self.env.start_backend()
+    lu.assertTrue(UpsertGiverData(support.giver_payload(), "111"))
 
     lu.assertTrue(DeleteGiverData("220", "111"))
     lu.assertEquals(GetAllGiverData("111"), "{}")
@@ -205,18 +155,18 @@ function TestBackendExisting:test_deleting_the_last_record_empties_the_account()
 end
 
 function TestBackendExisting:test_get_giver_data_with_empty_arguments_returns_empty_object()
-    start(self.env)
-    lu.assertTrue(UpsertGiverData(json.encode(giver_fields()), "111"))
+    self.env.start_backend()
+    lu.assertTrue(UpsertGiverData(support.giver_payload(), "111"))
 
     lu.assertEquals(GetGiverData("", "111"), "{}")
     lu.assertEquals(GetGiverData("220", ""), "{}")
 end
 
--- Friends normalisation
+-- Friends normalization
 
-function TestBackendExisting:test_friend_rows_are_normalised()
+function TestBackendExisting:test_friend_rows_are_normalized()
     self.env.freeze_time(T1)
-    start(self.env)
+    self.env.start_backend()
     local friends = {
         {
             steamID64 = "76561197960265729",
@@ -248,13 +198,13 @@ function TestBackendExisting:test_friend_rows_are_normalised()
             { steamID64 = "76561197960265730", displayName = "Friend Two", updatedAt = T1 },
         },
     })
-    lu.assertEquals(count_logs(self.env, "error"), 3)
+    lu.assertEquals(self.env.count_logs("error"), 3)
     lu.assertTrue(HasFriendsCache("111"))
 end
 
 function TestBackendExisting:test_clear_friends_cache_empties_the_account()
-    start(self.env)
-    lu.assertTrue(SetFriendsCache(json.encode({ { steamID64 = "76561197960265729", displayName = "Friend One" } }), "111"))
+    self.env.start_backend()
+    lu.assertTrue(SetFriendsCache(support.friends_payload(), "111"))
 
     lu.assertTrue(ClearFriendsCache("111"))
     lu.assertEquals(GetFriendsCache("111"), "{}")
@@ -262,7 +212,7 @@ function TestBackendExisting:test_clear_friends_cache_empties_the_account()
 end
 
 function TestBackendExisting:test_friends_payload_that_is_not_json_returns_false()
-    start(self.env)
+    self.env.start_backend()
     lu.assertFalse(SetFriendsCache("not json", "111"))
     lu.assertEquals(GetFriendsCache("111"), "{}")
 end
@@ -270,9 +220,9 @@ end
 -- Settings
 
 function TestBackendExisting:test_show_friend_picker_url_is_stored_true_only_for_boolean_true()
-    start(self.env)
+    self.env.start_backend()
     local function set_picker_url(value)
-        return SetUiSettings(json.encode({ steamUserID = "111", settings = { showFriendPickerSteamUrl = value } }))
+        return SetUiSettings(support.settings_payload(value))
     end
 
     lu.assertTrue(set_picker_url(true))
@@ -285,13 +235,13 @@ function TestBackendExisting:test_show_friend_picker_url_is_stored_true_only_for
 end
 
 function TestBackendExisting:test_settings_payload_without_account_returns_false()
-    start(self.env)
+    self.env.start_backend()
     lu.assertFalse(SetUiSettings(json.encode({ settings = { showFriendPickerSteamUrl = true } })))
     lu.assertFalse(self.env.exists("gratitude_settings.json"))
 end
 
 function TestBackendExisting:test_get_ui_settings_for_an_unknown_account_returns_empty_object()
-    start(self.env)
+    self.env.start_backend()
     lu.assertEquals(GetUiSettings("111"), "{}")
     lu.assertEquals(GetUiSettings(""), "{}")
 end

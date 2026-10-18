@@ -1,70 +1,73 @@
 import { describe, it, expect } from 'vitest';
-import { deleteGiverAndLegacy, saveGiverThenRemoveLegacy } from './giverSave';
+import { deleteGiverAndLegacy, giverSaveErrorMessage, saveGiver } from './giverSave';
 
-function recordedSteps(upsertResult: () => Promise<unknown>, removeResult?: () => Promise<unknown>) {
-	const calls: string[] = [];
-	const steps = {
-		upsert: () => {
-			calls.push('upsert');
-			return upsertResult();
-		},
-		removeLegacy: removeResult && (() => {
-			calls.push('removeLegacy');
-			return removeResult();
-		}),
+const RECORD = { licenseKey: '220', displayName: 'Gifter' };
+
+// An upsert that records every call it receives and answers with result()
+function recordedUpsert(result: () => Promise<unknown>) {
+	const calls: unknown[] = [];
+	const upsert = (record: unknown) => {
+		calls.push(record);
+		return result();
 	};
-	return { calls, steps };
+	return { calls, upsert };
 }
 
-describe('saveGiverThenRemoveLegacy', () => {
-	it('never removes the legacy record when the upsert returns false', async () => {
-		const { calls, steps } = recordedSteps(async () => false, async () => true);
-		const outcome = await saveGiverThenRemoveLegacy(steps);
-		expect(calls).toEqual(['upsert']);
-		expect(outcome).toEqual({ saved: false, upsertResult: false, legacyRemoved: null });
+describe('saveGiver', () => {
+	// saveGiver takes only an upsert, so one call is fixed by its signature; the payload is what this pins.
+	// The modal's own wiring (GiverModal.tsx) isn't loaded by vitest and is checked in Steam.
+	it('moves a gift from its legacy key in one backend call', async () => {
+		const { calls, upsert } = recordedUpsert(async () => true);
+		const outcome = await saveGiver({ record: RECORD, legacyLicenseKey: 'Half-Life 2', upsert });
+		expect(calls).toEqual([{ ...RECORD, replacesLicenseKey: 'Half-Life 2' }]);
+		expect(outcome).toEqual({ saved: true, upsertResult: true });
 	});
 
-	it('never removes the legacy record when the upsert returns an error code', async () => {
-		const { calls, steps } = recordedSteps(async () => 'save_failed', async () => true);
-		const outcome = await saveGiverThenRemoveLegacy(steps);
-		expect(calls).toEqual(['upsert']);
-		expect(outcome).toEqual({ saved: false, upsertResult: 'save_failed', legacyRemoved: null });
+	it('sends no replacesLicenseKey without a different legacy key', async () => {
+		for (const legacyLicenseKey of [undefined, null, '', '220']) {
+			const { calls, upsert } = recordedUpsert(async () => true);
+			await saveGiver({ record: RECORD, legacyLicenseKey, upsert });
+			expect(calls).toEqual([RECORD]);
+		}
 	});
 
-	it('removes the legacy record after a successful upsert', async () => {
-		const { calls, steps } = recordedSteps(async () => true, async () => true);
-		const outcome = await saveGiverThenRemoveLegacy(steps);
-		expect(calls).toEqual(['upsert', 'removeLegacy']);
-		expect(outcome).toEqual({ saved: true, upsertResult: true, legacyRemoved: true });
+	it('reports an error code as not saved', async () => {
+		const { calls, upsert } = recordedUpsert(async () => 'size_limit');
+		const outcome = await saveGiver({ record: RECORD, legacyLicenseKey: 'Half-Life 2', upsert });
+		expect(calls).toHaveLength(1);
+		expect(outcome).toEqual({ saved: false, upsertResult: 'size_limit' });
 	});
 
-	it('reports a saved gift with legacyRemoved false when the removal returns false', async () => {
-		const { steps } = recordedSteps(async () => true, async () => false);
-		const outcome = await saveGiverThenRemoveLegacy(steps);
-		expect(outcome).toEqual({ saved: true, upsertResult: true, legacyRemoved: false });
-	});
-
-	it('reports a saved gift with legacyRemoved false when the removal rejects', async () => {
-		const { steps } = recordedSteps(async () => true, async () => {
-			throw new Error('remove failed');
-		});
-		const outcome = await saveGiverThenRemoveLegacy(steps);
-		expect(outcome).toEqual({ saved: true, upsertResult: true, legacyRemoved: false });
-	});
-
-	it('reports legacyRemoved as null when there is no legacy record', async () => {
-		const { calls, steps } = recordedSteps(async () => true);
-		const outcome = await saveGiverThenRemoveLegacy(steps);
-		expect(calls).toEqual(['upsert']);
-		expect(outcome).toEqual({ saved: true, upsertResult: true, legacyRemoved: null });
-	});
-
-	it('rejects without removing the legacy record when the upsert rejects', async () => {
-		const { calls, steps } = recordedSteps(async () => {
+	it('rejects when the upsert rejects, after one call', async () => {
+		const { calls, upsert } = recordedUpsert(async () => {
 			throw new Error('upsert failed');
-		}, async () => true);
-		await expect(saveGiverThenRemoveLegacy(steps)).rejects.toThrow('upsert failed');
-		expect(calls).toEqual(['upsert']);
+		});
+		await expect(saveGiver({ record: RECORD, legacyLicenseKey: 'Half-Life 2', upsert })).rejects.toThrow('upsert failed');
+		expect(calls).toHaveLength(1);
+	});
+});
+
+describe('giverSaveErrorMessage', () => {
+	it('explains the storage limit for "size_limit"', () => {
+		expect(giverSaveErrorMessage('size_limit')).toBe(
+			'Couldn\'t save: this account\'s gift notes have reached Millennium\'s storage limit. Shorten or remove some notes.',
+		);
+	});
+
+	it('tells the user to restart Steam for "read_only"', () => {
+		expect(giverSaveErrorMessage('read_only')).toBe(
+			'Gratitude couldn\'t read some of your saved gift details when Steam started, so changes can\'t be saved until you restart Steam.',
+		);
+	});
+
+	it('gives the note cap for "note_too_long"', () => {
+		expect(giverSaveErrorMessage('note_too_long')).toBe('Notes are limited to 2,000 characters.');
+	});
+
+	it('falls back to the generic message for every other result', () => {
+		for (const result of [false, 'save_failed', 'invalid_payload', undefined, 'something_new', 'toString']) {
+			expect(giverSaveErrorMessage(result)).toBe('Unable to save giver data.');
+		}
 	});
 });
 

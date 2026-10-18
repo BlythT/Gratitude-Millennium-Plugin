@@ -94,4 +94,41 @@ function millennium.__internal_get_build_date() end
 ---@return number status -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2, -2 if there was an error parsing or comparing versions.
 function millennium.cmp_version(version1, version2) end
 
+---This plugin's key-value config store, saved in Millennium's config.json. Millennium 3.0.0 and later;
+---nil on older versions, so `if millennium.config then` is the feature check.
+---Limits: 256 KB per value (compact JSON), 256 keys per plugin, 512 bytes per key name.
+---Integer table keys come back as strings, and an empty table comes back as an object.
+---@class millennium.config
+millennium.config = {}
+
+---Read a value from Millennium's in-memory copy, which a write can reach before config.json does
+---@param key string
+---@return any value The value, or nil for a missing key
+---@return string? err Set when the request itself failed
+function millennium.config.get(key) end
+
+---Store a value. Disk write failures are only logged by Millennium, so true means memory took it.
+---@param key string
+---@param value any
+---@return boolean success
+---@return string? err e.g. "plugin config value too large (max 256KB)" or "plugin config key limit exceeded (max 256)"
+function millennium.config.set(key, value) end
+
+---Remove a key. Use this rather than set(key, nil), which stores null and still counts as a key.
+---@param key string
+---@return boolean success
+---@return string? err
+function millennium.config.delete(key) end
+
+---Read every key and value of this plugin
+---@return table<string, any>? values
+---@return string? err Set when the request failed
+function millennium.config.get_all() end
+
+---Call fn(key, value) whenever a key changes, or only the given key
+---@param keyOrFn string|fun(key: string, value: any)
+---@param fn? fun(key: string, value: any)
+---@return fun() unsubscribe
+function millennium.config.on_change(keyOrFn, fn) end
+
 return millennium

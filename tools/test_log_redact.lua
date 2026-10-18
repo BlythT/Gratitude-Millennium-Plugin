@@ -40,3 +40,11 @@ function TestLogRedact:test_safe_license_key_reports_missing_or_empty_as_none()
     lu.assertEquals(log_redact.safe_license_key(""), "<none>")
     lu.assertEquals(log_redact.safe_license_key(nil), "<none>")
 end
+
+function TestLogRedact:test_replace_literal_replaces_every_occurrence_as_plain_text()
+    lu.assertEquals(log_redact.replace_literal("a.b failed, a.b locked", "a.b", "x"), "x failed, x locked")
+    lu.assertEquals(log_redact.replace_literal("axb", "a.b", "x"), "axb")
+    lu.assertEquals(log_redact.replace_literal("100%", "%", "% sign"), "100% sign")
+    lu.assertEquals(log_redact.replace_literal("unchanged", "", "x"), "unchanged")
+    lu.assertEquals(log_redact.replace_literal(nil, "a", "x"), "nil")
+end

@@ -11,13 +11,20 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Updated the Gratitude sidebar settings to use native Millennium-style controls while keeping plugin-owned persistence for UI preferences.
+- Changed gift records, consent and settings to become read-only for a session when some of their saved data couldn't be read, so nothing is saved over it.
+- Changed the gift modal to show a specific message when an account's gift notes reach Millennium's storage limit.
+- Changed `UpsertGiverData` to return an error code instead of `false` when a gift isn't saved.
+- Changed gift records, consent and settings to be stored in Millennium's plugin config, so gift notes survive reinstalling the plugin.
+- Existing gift records, consent and settings now move to Millennium's plugin config automatically, with the old files kept as `.migrated` copies.
+- Limited gift notes to 2,000 characters, with a counter shown near the limit.
+- Updated the Gratitude sidebar settings to use native Millennium-style controls.
 - Unified cache status and cache clearing into a single cache section in the settings sidebar.
 - Updated webkit startup sync to run license and friends cache refreshes in the background instead of awaiting them during `WebkitMain()` startup.
 - Reduced the chance that visiting Steam Store or Community pages will feel delayed while Gratitude refreshes cached data.
 
 ### Fixed
 
+- Fixed editing a gift stored under an older license key leaving a duplicate when removing the old key failed.
 - Fixed license and friends data being saved to disk before storage consent was given.
 - Fixed data files being left empty or cut short if Steam closes, is killed or runs out of disk space during a save.
 - Fixed unreadable data files being overwritten instead of kept aside as `.corrupted` copies.

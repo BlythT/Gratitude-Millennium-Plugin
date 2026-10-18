@@ -18,7 +18,7 @@ function TestJsonStore:tearDown()
     self.env.cleanup()
 end
 
--- Characterisation (1B.1)
+-- Characterization: behavior that stays
 
 function TestJsonStore:test_missing_file_loads_empty_table_or_default()
     lu.assertEquals(self.store:load(), {})
@@ -58,20 +58,10 @@ function TestJsonStore:test_path_joins_backend_path_and_file_name()
     lu.assertEquals(self.store.path, fs.join(utils.get_backend_path(), FILE_NAME))
 end
 
--- Atomic, checked saves (1B.2)
+-- Atomic, checked saves
 
 local CONTENT_A = '{"version":"A"}'
 local CONTENT_B = { version = "B" }
-
--- level is optional; nil matches any level
-local function findLog(env, text, level)
-    for _, entry in ipairs(env.logs) do
-        if (level == nil or entry.level == level) and entry.message:find(text, 1, true) then
-            return entry
-        end
-    end
-    return nil
-end
 
 function TestJsonStore:assertSaveFailsKeepingA(expectedReason)
     self.env.write_file(FILE_NAME, CONTENT_A)
@@ -81,13 +71,13 @@ function TestJsonStore:assertSaveFailsKeepingA(expectedReason)
     lu.assertStrContains(tostring(reason), expectedReason)
     lu.assertEquals(self.env.read_file(FILE_NAME), CONTENT_A)
     lu.assertFalse(self.env.exists(FILE_NAME .. ".tmp"))
-    lu.assertNil(findLog(self.env, "saved successfully"))
+    lu.assertNil(self.env.find_log("saved successfully"))
 end
 
 function TestJsonStore:test_close_failure_returns_reason_and_keeps_previous_file()
     self.env.fail.close = "No space left on device"
     self:assertSaveFailsKeepingA("No space left on device")
-    lu.assertNotNil(findLog(self.env, "No space left on device", "error"))
+    lu.assertNotNil(self.env.find_log("No space left on device", "error"))
 end
 
 function TestJsonStore:test_write_failure_returns_reason_and_keeps_previous_file()
@@ -127,7 +117,7 @@ function TestJsonStore:test_rename_gives_up_after_five_attempts()
     lu.assertEquals(self.env.sleeps, { 50, 50, 50, 50 })
 end
 
--- Leftover temporary file (1B.3)
+-- Leftover temporary file
 
 function TestJsonStore:test_load_removes_leftover_temporary_file()
     self.env.write_file(FILE_NAME, CONTENT_A)
@@ -154,13 +144,9 @@ function TestJsonStore:test_valid_leftover_is_promoted_when_no_store_file_exists
     lu.assertEquals(self.store:load(), { version = "B" })
     lu.assertEquals(self.env.list(), { FILE_NAME })
     lu.assertEquals(self.env.read_file(FILE_NAME), '{"version":"B"}')
-    local logged = false
-    for _, entry in ipairs(self.env.logs) do
-        if entry.message:find("Promoted leftover", 1, true) and entry.message:find(FILE_NAME, 1, true) then
-            logged = true
-        end
-    end
-    lu.assertTrue(logged, "expected a log naming the promoted file")
+    local logged = self.env.find_log("Promoted leftover")
+    lu.assertNotNil(logged, "expected a log naming the promoted file")
+    lu.assertStrContains(logged.message, FILE_NAME)
 end
 
 function TestJsonStore:test_broken_leftover_is_removed_when_no_store_file_exists()
@@ -170,7 +156,7 @@ function TestJsonStore:test_broken_leftover_is_removed_when_no_store_file_exists
     lu.assertEquals(self.env.list(), {})
 end
 
--- Setting aside unreadable files (1B.4)
+-- Setting aside unreadable files
 
 local FROZEN_TIME = 1700000000
 local CORRUPTED_NAME = FILE_NAME .. ".corrupted." .. FROZEN_TIME
@@ -185,7 +171,7 @@ function TestJsonStore:assertSetAside(content)
     lu.assertEquals(self.env.read_file(CORRUPTED_NAME), content)
     lu.assertFalse(self.env.exists(FILE_NAME))
     lu.assertEquals(loaded, { fallback = true })
-    local logged = findLog(self.env, CORRUPTED_NAME, "error")
+    local logged = self.env.find_log(CORRUPTED_NAME, "error")
     lu.assertNotNil(logged)
     lu.assertNotStrContains(logged.message, self.env.dir)
 
@@ -229,7 +215,7 @@ function TestJsonStore:test_empty_array_file_loads_and_is_not_renamed()
     lu.assertEquals(self.env.read_file(FILE_NAME), "[]")
 end
 
--- Refusing saves when a file can't be safely replaced (1B.5)
+-- Refusing saves when a file can't be safely replaced
 
 local UNREADABLE = '{"a":'
 
@@ -244,7 +230,7 @@ function TestJsonStore:assertSavesRefused(original, name)
     lu.assertEquals(self.env.opened_for_write, {})
     lu.assertEquals(self.env.read_file(name or FILE_NAME), original)
     lu.assertEquals(#self.env.logs, logCountAfterLoad)
-    lu.assertNotNil(findLog(self.env, tostring(reason), "error"))
+    lu.assertNotNil(self.env.find_log(tostring(reason), "error"))
     lu.assertNotStrContains(tostring(reason), self.env.dir)
 end
 
@@ -285,7 +271,7 @@ function TestJsonStore:test_unopenable_file_is_left_in_place_and_refuses_saves()
     self:assertSavesRefused(CONTENT_A)
 end
 
--- Keeping a leftover temporary file that can't be promoted or checked (RF1). Without a store file
+-- Keeping a leftover temporary file that can't be promoted or checked. Without a store file
 -- it may be the only copy of a first save, and a save would write over it.
 
 local LEFTOVER_NAME = FILE_NAME .. ".tmp"
@@ -297,7 +283,7 @@ function TestJsonStore:test_valid_leftover_is_kept_when_promotion_fails()
 
     lu.assertEquals(self.store:load({ fallback = true }), { fallback = true })
     lu.assertEquals(self.env.list(), { LEFTOVER_NAME })
-    lu.assertNil(findLog(self.env, "Removed leftover"))
+    lu.assertNil(self.env.find_log("Removed leftover"))
 
     -- the lock clearing later in the session doesn't make writing over the leftover safe
     self.env.fail.rename = nil
@@ -311,7 +297,7 @@ function TestJsonStore:test_unopenable_leftover_is_kept_and_refuses_saves()
 
     lu.assertEquals(self.store:load({ fallback = true }), { fallback = true })
     lu.assertEquals(self.env.list(), { LEFTOVER_NAME })
-    local logged = findLog(self.env, "Permission denied", "error")
+    local logged = self.env.find_log("Permission denied", "error")
     lu.assertNotNil(logged)
     lu.assertNotStrContains(logged.message, self.env.dir)
 
@@ -339,13 +325,13 @@ function TestJsonStore:test_failed_leftover_removal_is_not_logged_as_removed()
 
     lu.assertEquals(self.store:load(), { version = "A" })
     lu.assertTrue(self.env.exists(LEFTOVER_NAME))
-    lu.assertNil(findLog(self.env, "Removed leftover"))
-    local logged = findLog(self.env, LEFTOVER_NAME, "warn")
+    lu.assertNil(self.env.find_log("Removed leftover"))
+    local logged = self.env.find_log(LEFTOVER_NAME, "warn")
     lu.assertNotNil(logged)
     lu.assertNotStrContains(logged.message, self.env.dir)
 end
 
--- A read error is treated like an open failure, not an empty file (RF2)
+-- A read error is treated like an open failure, not an empty file
 
 function TestJsonStore:test_read_error_leaves_file_in_place_and_refuses_saves()
     self.env.write_file(FILE_NAME, CONTENT_A)
@@ -353,10 +339,156 @@ function TestJsonStore:test_read_error_leaves_file_in_place_and_refuses_saves()
 
     lu.assertEquals(self.store:load({ fallback = true }), { fallback = true })
     lu.assertEquals(self.env.list(), { FILE_NAME })
-    local logged = findLog(self.env, "Lock violation", "error")
+    local logged = self.env.find_log("Lock violation", "error")
     lu.assertNotNil(logged)
     lu.assertNotStrContains(logged.message, self.env.dir)
 
     self.env.fail.read = nil
     self:assertSavesRefused(CONTENT_A)
+end
+
+-- Retiring store files and reading .migrated copies, which are never replaced
+
+local MIGRATED = FILE_NAME .. ".migrated"
+local RETIRE_TIME = 1792200000
+
+function TestJsonStore:test_exists_reports_whether_the_store_file_is_present()
+    lu.assertFalse(self.store:exists())
+    self.env.write_file(FILE_NAME, CONTENT_A)
+    lu.assertTrue(self.store:exists())
+end
+
+function TestJsonStore:test_retire_renames_the_file_to_migrated()
+    self.env.write_file(FILE_NAME, CONTENT_A)
+
+    lu.assertEquals(self.store:retire(), self.store.path .. ".migrated")
+    lu.assertEquals(self.env.list(), { MIGRATED })
+    lu.assertEquals(self.env.read_file(MIGRATED), CONTENT_A)
+end
+
+function TestJsonStore:test_retire_uses_a_timestamped_name_when_migrated_exists()
+    self.env.freeze_time(RETIRE_TIME)
+    self.env.write_file(MIGRATED, '{"older":true}')
+    self.env.write_file(FILE_NAME, CONTENT_A)
+
+    lu.assertEquals(self.store:retire(), self.store.path .. ".migrated." .. RETIRE_TIME)
+    lu.assertEquals(self.env.read_file(MIGRATED), '{"older":true}')
+    lu.assertEquals(self.env.read_file(MIGRATED .. "." .. RETIRE_TIME), CONTENT_A)
+    lu.assertFalse(self.env.exists(FILE_NAME))
+    local logged = self.env.find_log(MIGRATED .. "." .. RETIRE_TIME)
+    lu.assertNotNil(logged)
+    lu.assertNotStrContains(logged.message, self.env.dir)
+end
+
+function TestJsonStore:test_retire_refuses_when_both_names_exist()
+    self.env.freeze_time(RETIRE_TIME)
+    self.env.write_file(MIGRATED, '{"older":true}')
+    self.env.write_file(MIGRATED .. "." .. RETIRE_TIME, '{"newer":true}')
+    self.env.write_file(FILE_NAME, CONTENT_A)
+    local before = self.env.snapshot_files()
+
+    local retired, reason = self.store:retire()
+
+    lu.assertNil(retired)
+    lu.assertStrContains(reason, "already exists")
+    lu.assertNotStrContains(reason, self.env.dir)
+    lu.assertEquals(self.env.snapshot_files(), before)
+end
+
+function TestJsonStore:test_retire_reports_a_failed_rename_and_keeps_the_file()
+    self.env.write_file(FILE_NAME, CONTENT_A)
+    self.env.fail.rename = { count = math.huge, message = "Access is denied" }
+
+    local retired, reason = self.store:retire()
+
+    lu.assertNil(retired)
+    lu.assertStrContains(reason, "Access is denied")
+    lu.assertEquals(self.env.list(), { FILE_NAME })
+end
+
+function TestJsonStore:test_load_newest_migrated_picks_the_highest_timestamp()
+    self.env.write_file(MIGRATED, '{"copy":"plain"}')
+    self.env.write_file(MIGRATED .. ".200", '{"copy":"200"}')
+    self.env.write_file(MIGRATED .. ".1000", '{"copy":"1000"}')
+    -- Names a match must ignore
+    self.env.write_file(MIGRATED .. ".abc", '{"copy":"abc"}')
+    self.env.write_file(FILE_NAME .. ".corrupted.5000", '{"copy":"corrupted"}')
+    self.env.write_file("gratitude_consent.json.migrated.9000", '{"copy":"consent"}')
+    self.env.write_file("x" .. MIGRATED .. ".9000", '{"copy":"prefixed"}')
+    local before = self.env.snapshot_files()
+
+    lu.assertEquals(self.store:load_newest_migrated(), { copy = "1000" })
+    lu.assertEquals(self.env.snapshot_files(), before)
+end
+
+function TestJsonStore:test_load_newest_migrated_reads_plain_migrated_when_it_is_the_only_copy()
+    self.env.write_file(MIGRATED, '{"copy":"plain"}')
+    lu.assertEquals(self.store:load_newest_migrated(), { copy = "plain" })
+end
+
+function TestJsonStore:test_load_newest_migrated_returns_nil_without_copies()
+    self.env.write_file(FILE_NAME, CONTENT_A)
+    lu.assertNil(self.store:load_newest_migrated())
+end
+
+function TestJsonStore:test_load_newest_migrated_skips_unreadable_copies_and_changes_nothing()
+    self.env.write_file(MIGRATED, '{"copy":"plain"}')
+    self.env.write_file(MIGRATED .. ".100", '{"copy":"100"}')
+    self.env.write_file(MIGRATED .. ".200", "null")
+    self.env.write_file(MIGRATED .. ".300", '{"cut off')
+    self.env.write_file(MIGRATED .. ".400", '{"copy":"400"}')
+    self.env.fail.open_read = "Permission denied"
+    self.env.fail.only_path = "%.migrated%.400$"
+    local before = self.env.snapshot_files()
+
+    lu.assertEquals(self.store:load_newest_migrated(), { copy = "100" })
+
+    lu.assertEquals(self.env.snapshot_files(), before)
+    for _, skipped in ipairs({ ".400", ".300", ".200" }) do
+        local logged = self.env.find_log(MIGRATED .. skipped)
+        lu.assertNotNil(logged, skipped)
+        lu.assertNotStrContains(logged.message, self.env.dir)
+    end
+end
+
+-- Copies that exist but couldn't be read are reported, so callers don't save over them
+
+function TestJsonStore:test_load_newest_migrated_reports_copies_it_could_not_read()
+    self.env.write_file(MIGRATED, '{"copy":"plain"}')
+    self.env.write_file(MIGRATED .. ".300", '{"cut off')
+    lu.assertEquals({ self.store:load_newest_migrated() }, { { copy = "plain" }, false })
+
+    self.env.write_file(MIGRATED .. ".400", '{"copy":"400"}')
+    self.env.fail.open_read = "Permission denied"
+    self.env.fail.only_path = "%.migrated%.400$"
+    lu.assertEquals({ self.store:load_newest_migrated() }, { { copy = "plain" }, true })
+
+    self.env.fail.only_path = "%.migrated"
+    lu.assertEquals({ self.store:load_newest_migrated() }, { nil, true })
+end
+
+function TestJsonStore:test_load_newest_migrated_without_copies_reports_nothing_unread()
+    lu.assertEquals({ self.store:load_newest_migrated() }, { nil, false })
+end
+
+-- A folder that can't be listed counts as copies that couldn't be read
+function TestJsonStore:test_load_newest_migrated_treats_a_failed_listing_as_unread()
+    self.env.write_file(MIGRATED, '{"copy":"plain"}')
+    self.env.fail.list = "Permission denied"
+
+    lu.assertEquals({ self.store:load_newest_migrated() }, { nil, true })
+    local logged = self.env.find_log("Permission denied", "warn")
+    lu.assertNotNil(logged)
+    lu.assertNotStrContains(logged.message, self.env.dir)
+end
+
+-- fs.exists reports false on any stat error, so a file that can still be opened counts as present
+function TestJsonStore:test_a_file_stat_cannot_see_but_open_can_read_still_loads()
+    self.env.write_file(FILE_NAME, CONTENT_A)
+    self.env.fail.exists = "stat failed"
+    self.env.fail.only_path = "%.json$"
+
+    lu.assertEquals(self.store:load(), { version = "A" })
+    lu.assertTrue(self.store:exists())
+    lu.assertNil(self.env.find_log("doesn't exist"))
 end

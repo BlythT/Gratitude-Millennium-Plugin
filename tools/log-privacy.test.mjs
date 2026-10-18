@@ -1,10 +1,10 @@
-// Static check that log calls never pass personal data (assumption A21 in the data storage spec).
+// Static check that log calls never pass personal data.
 // A call is flagged when its arguments mention a risky identifier outside the masking helpers.
 // It is a list of names, not a data-flow analysis: a new variable that holds personal data needs
 // adding to RISKY_IDENTIFIERS, or logging it will pass unnoticed.
 // A genuinely safe call opts out with a `log-privacy: allow=<name>[,<name>] <reason>` comment on its
 // first line, which skips only the named identifiers. Known gap: an error object logged from a
-// catch block can quote its input (V8 JSON.parse errors do); accepted, see the data storage spec.
+// catch block can quote its input (V8 JSON.parse errors do); accepted as a known gap.
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,6 +18,7 @@ const RISKY_IDENTIFIERS = [
 	'steamid',
 	'steamID64',
 	'accountID',
+	'accountId',
 	'appSteamID',
 	'globalSteamID',
 	'displayName',
@@ -38,7 +39,7 @@ const RISKY_IDENTIFIERS = [
 	'row',
 	'href',
 	'src',
-	// Variables that hold personal data as a whole: names, notes, licences or friends
+	// Variables that hold personal data as a whole: names, notes, licenses or friends
 	'friends',
 	'friend',
 	'normalizedFriends',

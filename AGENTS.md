@@ -29,11 +29,10 @@ graph TD
 
     subgraph Backend Context [Host Node/Lua Runner]
         B[backend/main.lua]
-        B -->|io.open / fs| D1[(gratitude_cache.json)]
-        B -->|io.open / fs| D2[(gratitude_consent.json)]
-        B -->|io.open / fs| D3[(gratitude_givers.json)]
-        B -->|io.open / fs| D4[(gratitude_friends.json)]
-        B -->|io.open / fs| D5[(gratitude_settings.json)]
+        B -->|JsonStore| D1[(gratitude_cache.json)]
+        B -->|JsonStore| D2[(gratitude_friends.json)]
+        B -->|config_store| MC[(millennium.config<br/>givers, consent, settings)]
+        B -.->|JsonStore fallback below Millennium 3.0.0| D3[(gratitude_givers.json<br/>gratitude_consent.json<br/>gratitude_settings.json)]
     end
 
     subgraph Frontend Context [Steam Client UI Sandbox]
@@ -81,7 +80,7 @@ graph TD
 1. **Friends Sync**: When webkit runs on `https://steamcommunity.com`, it fetches the user's friend list page (`https://steamcommunity.com/my/friends/`) to scrape SteamID64s, display names, custom aliases, and avatar URLs. This is saved to `gratitude_friends.json`.
 2. **Giver Dialog**: Clicking the text of the injected Gifted badge opens [GiverModal.tsx](frontend/components/GiverModal.tsx).
 3. **Smart Autocomplete**: The friend input box autocompletes against the cached friends list.
-4. **Annotation Persistence**: Saving details maps the game's license key to the gifter details in `gratitude_givers.json`.
+4. **Annotation Persistence**: Saving details maps the game's license key to the gifter details under the account's `givers.<accountId>` key in millennium.config, or in `gratitude_givers.json` on Millennium older than 3.0.0.
 
 ---
 
@@ -99,13 +98,17 @@ Because library display names frequently vary from raw license names on Steam re
 ### 4.2 Multi-Account Database Isolation
 Since Steam installations can be shared by multiple users, all state data is partitioned by the active user's **Steam Account ID** (resolved via [steamid.ts](lib/steamid.ts)):
 - `gratitude_cache.json` keys licenses per Steam ID.
-- `gratitude_givers.json` keys giver info per Steam ID, then by license.
-- `gratitude_consent.json` maintains consent flags per Steam ID.
 - `gratitude_friends.json` isolates friends lists per Steam ID.
-- `gratitude_settings.json` houses settings per Steam ID.
+- Gift records, consent and settings live in millennium.config (Millennium 3.0.0 and later), one key per account: `givers.<accountId>` (then keyed by license), `consent.<accountId>` and `settings.<accountId>`. Each account gets its own 256 KB value. Key names can never change after release.
+- Without millennium.config, those three use `gratitude_givers.json`, `gratitude_consent.json` and `gratitude_settings.json`, keyed per Steam ID.
 
 ### 4.3 Debounced Mutations
 Mutations in Steam's React DOM can trigger observers multiple times in a single frame. To maintain smooth UI rendering, [observer.ts](frontend/injection/observer.ts) schedules processing tasks via `requestAnimationFrame`, ensuring a maximum of one DOM sweep per frame.
+
+### 4.4 Saves, Migration and Consent
+- Every file save is atomic ([JsonStore.lua](backend/lib/JsonStore.lua)): it writes `<file>.tmp`, checks the write and close, then renames over the file. An unreadable file is set aside as `<file>.corrupted.<unix time>`. A failed gift, consent or settings save is undone in memory.
+- At startup, [config_store.lua](backend/lib/config_store.lua) copies accounts still only in the old files into millennium.config. A file is renamed to `<file>.migrated` only in a later session, once every account in it was already in config when that session started, because a Steam start reloads `config.json`, which proves a write reached disk. A plugin toggle, or Millennium restarting a crashed plugin, also counts as a later session without that reload: if that run's config writes never reached disk, gift records and settings come back from `.migrated` at the next Steam start, but consent is asked again. This is accepted. Gratitude never deletes or overwrites a `.migrated` file. Gift records and settings fall back to the newest `.migrated` copy when config lacks an account; consent never does.
+- License and friends data are scraped regardless of consent, but only accounts whose consent says `allowed` are saved to disk.
 
 ---
 
@@ -125,12 +128,18 @@ Mutations in Steam's React DOM can trigger observers multiple times in a single 
 > - `SELECTORS.bigPicture.tooltipContainer` (playtime layout block for Big Picture Mode)
 > still match Steam's client markup.
 
+> [!NOTE]
+> **Comments describe behaviour, not plan IDs**
+> Code and test comments say what they protect, in plain words. Don't cite plan or spec IDs such as task numbers, review fix numbers or assumption numbers: they live in working documents under `docs/llm/` that are archived or deleted when the work ships, so a later reader can't look them up.
+
 ---
 
 ## 6. Directory Map & Code Index
 
 - [MILLENNIUM_DEVELOPMENT.md](MILLENNIUM_DEVELOPMENT.md): Millennium framework development guide, detailing CEF, DevTools setup, and context roles.
-- [backend/main.lua](backend/main.lua): Core backend logic. Exposes callables, runs JSON file operations, and manages lifecycle events.
+- [backend/main.lua](backend/main.lua): Core backend logic. Exposes callables, loads and saves every store, and manages lifecycle events.
+- [backend/lib/JsonStore.lua](backend/lib/JsonStore.lua): One JSON data file: atomic saves, setting unreadable files aside, and retiring files to `.migrated` copies.
+- [backend/lib/config_store.lua](backend/lib/config_store.lua): millennium.config access, per account keys, the size check and the migration from files.
 - [frontend/index.tsx](frontend/index.tsx): Plugin UI entry point. Registers window popup listeners and setups settings panel hooks.
 - [frontend/injection/observer.ts](frontend/injection/observer.ts): Monitors client UI mutations and triggers fuzzy matching and badge injection.
 - [frontend/display/components.ts](frontend/display/components.ts): Builds HTML elements for the gift badge, missing cache warn banners, and sets up click event animations.

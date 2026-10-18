@@ -1,22 +1,46 @@
+import { NOTE_TOO_LONG_MESSAGE } from './giverNotes';
 import { isTruthy } from './truthy';
 
-export type GiverSaveOutcome = { saved: boolean; upsertResult: unknown; legacyRemoved: boolean | null };
+export const GIVER_SAVE_FAILED_MESSAGE = 'Unable to save giver data.';
+export const GIVER_DELETE_FAILED_MESSAGE = 'Unable to remove giver data.';
+const SIZE_LIMIT_MESSAGE = 'Couldn\'t save: this account\'s gift notes have reached Millennium\'s storage limit. Shorten or remove some notes.';
+const READ_ONLY_MESSAGE = 'Gratitude couldn\'t read some of your saved gift details when Steam started, so changes can\'t be saved until you restart Steam.';
 
-export async function saveGiverThenRemoveLegacy(steps: {
-	upsert: () => Promise<unknown>;
-	removeLegacy?: () => Promise<unknown>;
+export type GiverSaveOutcome = { saved: boolean; upsertResult: unknown };
+
+// One backend call: a gift stored under an older key moves to its new key in the same save, so a
+// failed save leaves it where it was, never lost and never duplicated
+export async function saveGiver<T extends { licenseKey: string }>(steps: {
+	record: T;
+	legacyLicenseKey?: string | null;
+	upsert: (record: T & { replacesLicenseKey?: string }) => Promise<unknown>;
 }): Promise<GiverSaveOutcome> {
-	const upsertResult = await steps.upsert();
-	const saved = isTruthy(upsertResult);
-	if (!saved || !steps.removeLegacy) {
-		return { saved, upsertResult, legacyRemoved: null };
-	}
+	const { record, legacyLicenseKey } = steps;
+	const upsertResult = await steps.upsert(
+		legacyLicenseKey && legacyLicenseKey !== record.licenseKey ? { ...record, replacesLicenseKey: legacyLicenseKey } : record,
+	);
+	return { saved: isTruthy(upsertResult), upsertResult };
+}
 
-	try {
-		return { saved, upsertResult, legacyRemoved: isTruthy(await steps.removeLegacy()) };
-	} catch {
-		return { saved, upsertResult, legacyRemoved: false };
+// UpsertGiverData's result: true, or one of the error codes listed in backend/main.lua
+export type UpsertGiverErrorCode = 'invalid_payload' | 'note_too_long' | 'size_limit' | 'read_only' | 'save_failed';
+export type UpsertGiverResult = boolean | UpsertGiverErrorCode;
+
+// Every code needs an entry, so a new backend code fails type-check until it has a message
+const UPSERT_ERROR_MESSAGES: Record<UpsertGiverErrorCode, string> = {
+	invalid_payload: GIVER_SAVE_FAILED_MESSAGE,
+	note_too_long: NOTE_TOO_LONG_MESSAGE,
+	size_limit: SIZE_LIMIT_MESSAGE,
+	read_only: READ_ONLY_MESSAGE,
+	save_failed: GIVER_SAVE_FAILED_MESSAGE,
+};
+
+// Only the codes the user can act on get their own message; false and unknown codes get the generic one
+export function giverSaveErrorMessage(upsertResult: unknown): string {
+	if (typeof upsertResult === 'string' && Object.prototype.hasOwnProperty.call(UPSERT_ERROR_MESSAGES, upsertResult)) {
+		return UPSERT_ERROR_MESSAGES[upsertResult as UpsertGiverErrorCode];
 	}
+	return GIVER_SAVE_FAILED_MESSAGE;
 }
 
 export type GiverDeleteOutcome = { deleted: boolean; legacyRemoved: boolean | null };
