@@ -41,6 +41,10 @@ local function merge_license_page(currentCache, decodedData)
         if decodedData.totalLicenses then
             currentCache.totalLicenses = decodedData.totalLicenses
         end
+        -- Only the last page of a sync that fetched and saved every page carries this count
+        if type(decodedData.completedLicenseCount) == "number" then
+            currentCache.completedLicenseCount = decodedData.completedLicenseCount
+        end
     else
         -- Fallback for old format (flat array)
         if type(decodedData) == "table" then
@@ -58,6 +62,39 @@ local function merge_license_page(currentCache, decodedData)
     return currentCache, table_size(currentCache.byAppId), table_size(currentCache.byName), isNewFormat
 end
 
+-- Turns the cache file's contents into the in-memory cache, one entry per account. Keeps the count
+-- from the last completed sync, so an unchanged library isn't fetched again after a restart. The
+-- older totalLicenses count is dropped: a sync that stopped part way could have set it.
+local function normalize_loaded_cache(loadedCache)
+    local cache = {}
+    if type(loadedCache) ~= "table" then
+        return cache
+    end
+
+    for steamUserID, userCache in pairs(loadedCache) do
+        if type(userCache) == "table" then
+            if userCache.byAppId or userCache.byName then
+                cache[steamUserID] = {
+                    byAppId = userCache.byAppId or {},
+                    byName = userCache.byName or {},
+                }
+                if type(userCache.completedLicenseCount) == "number" then
+                    cache[steamUserID].completedLicenseCount = userCache.completedLicenseCount
+                end
+            else
+                -- Migrate old name-only cache
+                cache[steamUserID] = {
+                    byAppId = {},
+                    byName = userCache,
+                }
+            end
+        end
+    end
+
+    return cache
+end
+
 return {
-    merge_license_page = merge_license_page
+    merge_license_page = merge_license_page,
+    normalize_loaded_cache = normalize_loaded_cache,
 }

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed Steam Store and Community pages never finishing loading while Gratitude is enabled on Millennium 3.3.0 and later.
+- Fixed a license sync that stopped part way (a failed page, or leaving the Store page) being treated as complete, which could leave gift data missing until the number of licenses changed.
+- Fixed every Steam restart re-downloading all license pages on the first Store visit, even when nothing had changed.
+- Fixed the sync started from the question mark badge doing nothing when the number of licenses was unchanged, and reporting "Sync complete" after a failed sync.
+- Every license page is now requested in English, which the license parsing relies on.
+
 ### Added
 
 - Added a persistent advanced setting to show or hide Steam profile links and IDs in the giver friend finder.
