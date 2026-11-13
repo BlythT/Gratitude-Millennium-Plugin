@@ -3,7 +3,7 @@
 	"name": "gratitude",
 	"version": "1.1.5",
 	"common_name": "Gratitude - Gifted Games Reminder",
-	"description": "A plugin for your Steam Library that adds a helpful indicator to games you have been gifted. NOTE: must visit Store page to initilize gift data.",
+	"description": "A plugin for your Steam Library that adds a helpful indicator to games you have been gifted. Gift data updates in the background whenever you open the Steam Store.",
 	"useBackend": true,
 	"backendType": "lua"
 }

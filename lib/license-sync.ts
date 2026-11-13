@@ -60,3 +60,19 @@ export function completedLicenseCount({
 	}
 	return pageTotal || parsedTotal;
 }
+
+// Pages opened by a "sync now" link carry gratitude_sync=1. Returns the URL without it, or null
+// when the flag isn't there.
+export function withoutExplicitSyncFlag(href: string): string | null {
+	let url: URL;
+	try {
+		url = new URL(href);
+	} catch {
+		return null;
+	}
+	if (url.searchParams.get('gratitude_sync') !== '1') {
+		return null;
+	}
+	url.searchParams.delete('gratitude_sync');
+	return url.toString();
+}

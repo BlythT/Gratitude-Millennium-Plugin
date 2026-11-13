@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - Fixed a license sync being treated as complete when its data wasn't saved to disk.
 - Fixed license data being written to disk at shutdown for accounts that hadn't allowed local storage.
 - Fixed `npm ci` failing because `package-lock.json` was out of date.
+- Fixed the Store starting a full license sync and returning to the Library on every visit after a sync link was used, because the sync flag stayed in the Store tab's URL.
 
 ### Added
 
@@ -30,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - Unified cache status and cache clearing into a single cache section in the settings sidebar.
 - Updated webkit startup sync to run license and friends cache refreshes in the background instead of awaiting them during `WebkitMain()` startup.
 - Reduced the chance that visiting Steam Store or Community pages will feel delayed while Gratitude refreshes cached data.
+- Updated the plugin description: gift data now updates in the background whenever you open the Steam Store.
 
 ## v1.1.0 - 2026-03-22
 

@@ -3,7 +3,7 @@ import { callable } from '@steambrew/webkit';
 import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
-import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal } from '../lib/license-sync';
+import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from '../lib/license-sync';
 
 const setGameLicenseData = callable('SetGameLicenseData');
 const getCompletedLicenseCount = callable('GetCompletedLicenseCount');
@@ -135,6 +135,21 @@ function finishExplicitSync(completed) {
 	setTimeout(closeSyncOverlay, 4000);
 }
 
+// True when this page was opened by a "sync now" link. Removes the flag from the page's URL, so a
+// reload, or Steam reopening the Store tab at its last URL, doesn't start another forced sync.
+function takeExplicitSyncFlag() {
+	const cleanUrl = withoutExplicitSyncFlag(window.location.href);
+	if (cleanUrl === null) {
+		return false;
+	}
+	try {
+		window.history.replaceState(window.history.state, '', cleanUrl);
+	} catch (error) {
+		logError('Could not remove the sync flag from the page URL:', error);
+	}
+	return true;
+}
+
 async function maybeSyncLicenses(steamUserID) {
 	const currentUrl = new URL(window.location.href);
 	if (currentUrl.origin !== 'https://store.steampowered.com') {
@@ -142,7 +157,7 @@ async function maybeSyncLicenses(steamUserID) {
 		return;
 	}
 
-	const isExplicitSync = currentUrl.searchParams.get('gratitude_sync') === '1';
+	const isExplicitSync = takeExplicitSyncFlag();
 
 	if (isExplicitSync) {
 		showSyncOverlay('Gratitude: Sync Licenses', 'Connecting to Steam store...');
@@ -280,7 +295,7 @@ async function maybeSyncFriends(steamUserID) {
 		return;
 	}
 
-	const isExplicitSync = currentUrl.searchParams.get('gratitude_sync') === '1';
+	const isExplicitSync = takeExplicitSyncFlag();
 	if (isExplicitSync) {
 		showSyncOverlay('Gratitude: Sync Friends', 'Fetching friends list from Steam...');
 	}
