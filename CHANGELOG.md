@@ -10,7 +10,9 @@ All notable changes to this project will be documented in this file.
 - Fixed a license sync that stopped part way (a failed page, or leaving the Store page) being treated as complete, which could leave gift data missing until the number of licenses changed.
 - Fixed every Steam restart re-downloading all license pages on the first Store visit, even when nothing had changed.
 - Fixed the sync started from the question mark badge doing nothing when the number of licenses was unchanged, and reporting "Sync complete" after a failed sync.
-- Every license page is now requested in English, which the license parsing relies on.
+- Fixed license pages after the first being requested in the user's Steam language instead of English, which the license parsing relies on.
+- Fixed the check that skips an unchanged license sync always failing, so every Store visit fetched every license page.
+- Fixed the consent prompt disappearing during Steam's startup without an answer, which left new users never asked and nothing saved.
 
 ### Added
 
