@@ -13,6 +13,11 @@ All notable changes to this project will be documented in this file.
 - Fixed license pages after the first being requested in the user's Steam language instead of English, which the license parsing relies on.
 - Fixed the check that skips an unchanged license sync always failing, so every Store visit fetched every license page.
 - Fixed the consent prompt disappearing during Steam's startup without an answer, which left new users never asked and nothing saved.
+- Fixed the consent prompt not coming back when Steam replaced its main window before the prompt was answered.
+- Fixed libraries of 1,000 or more licenses skipping license syncs, because the license total was misread.
+- Fixed a license sync being treated as complete when its data wasn't saved to disk.
+- Fixed license data being written to disk at shutdown for accounts that hadn't allowed local storage.
+- Fixed `npm ci` failing because `package-lock.json` was out of date.
 
 ### Added
 

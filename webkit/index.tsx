@@ -3,10 +3,10 @@ import { callable } from '@steambrew/webkit';
 import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
-import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount } from '../lib/license-sync';
+import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal } from '../lib/license-sync';
 
 const setGameLicenseData = callable('SetGameLicenseData');
-const getGameLicenseData = callable('GetGameLicenseData');
+const getCompletedLicenseCount = callable('GetCompletedLicenseCount');
 const setFriendsCache = callable('SetFriendsCache');
 
 export default async function WebkitMain() {
@@ -73,12 +73,10 @@ async function fetchOwnedGames(doc) {
 }
 
 async function shouldSkipSync(steamUserID, expectedTotal, isExplicitSync) {
-	if (isExplicitSync || expectedTotal <= 0) return false;
 	try {
 		// Backend calls take named arguments; a bare string fails the backend's type check
-		const existingCacheStr = await getGameLicenseData({ steamUserID });
-		const existingCache = existingCacheStr ? JSON.parse(existingCacheStr) : null;
-		if (shouldSkipLicenseSync(existingCache, expectedTotal, isExplicitSync)) {
+		const completedCount = await getCompletedLicenseCount({ steamUserID });
+		if (shouldSkipLicenseSync(completedCount, expectedTotal, isExplicitSync)) {
 			log(`Total licenses (${expectedTotal}) unchanged since the last completed sync. Skipping full sync.`);
 			return true;
 		}
@@ -174,13 +172,7 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 		// 1. If we are on page 1, fetch ownedGames so we have them, and check cache optimization
 		if (pageCount === 1) {
 			// Extract total licenses from paginator
-			const paginatorSpan = doc.querySelector('.license_paginator_ctn span');
-			if (paginatorSpan) {
-				const match = paginatorSpan.textContent?.match(/of\s+(\d+)/i);
-				if (match) {
-					totalLicensesFromPage = parseInt(match[1], 10);
-				}
-			}
+			totalLicensesFromPage = parseLicenseTotal(doc.querySelector('.license_paginator_ctn span')?.textContent);
 
 			if (isExplicitSync) {
 				updateSyncOverlay(`Syncing licenses...`, 10);
