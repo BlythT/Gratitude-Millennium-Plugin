@@ -11,7 +11,9 @@ local NATIVE_INJECTION_VERSION = "3.3.0"
 
 local function needs_browser_hooks(millennium)
     local ok, result = pcall(function()
-        return millennium.cmp_version(millennium.version(), NATIVE_INJECTION_VERSION)
+        -- Compare "3.6.1", not "v3.6.1": a version cmp_version can't parse would keep the hooks
+        local version = tostring(millennium.version()):gsub("^[vV]", "")
+        return millennium.cmp_version(version, NATIVE_INJECTION_VERSION)
     end)
     if not ok or type(result) ~= "number" then
         return true

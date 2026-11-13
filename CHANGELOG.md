@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Fixed Steam Store and Community pages never finishing loading while Gratitude is enabled on Millennium 3.3.0 and later.
+- Fixed Steam Store and Community pages never finishing loading while Gratitude is enabled on Millennium 3.3.0 and later, including when Millennium reports its version with a "v" prefix.
 - Fixed a license sync that stopped part way (a failed page, or leaving the Store page) being treated as complete, which could leave gift data missing until the number of licenses changed.
 - Fixed every Steam restart re-downloading all license pages on the first Store visit, even when nothing had changed.
 - Fixed the sync started from the question mark badge doing nothing when the number of licenses was unchanged, and reporting "Sync complete" after a failed sync.
@@ -16,7 +16,8 @@ All notable changes to this project will be documented in this file.
 - Fixed the consent prompt not coming back when Steam replaced its main window before the prompt was answered.
 - Fixed libraries of 1,000 or more licenses skipping license syncs, because the license total was misread.
 - Fixed a license sync being treated as complete when its data wasn't saved to disk.
-- Fixed license data being written to disk at shutdown for accounts that hadn't allowed local storage.
+- Fixed license data being written to disk for accounts that denied local storage, including at shutdown.
+- Fixed Store and Community visits downloading every license page and the friends list for accounts that hadn't allowed local storage, though none of it could be saved.
 - Fixed `npm ci` failing because `package-lock.json` was out of date.
 - Fixed the Store starting a full license sync and returning to the Library on every visit after a sync link was used, because the sync flag stayed in the Store tab's URL.
 

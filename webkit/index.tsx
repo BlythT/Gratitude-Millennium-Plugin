@@ -8,6 +8,19 @@ import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicen
 const setGameLicenseData = callable('SetGameLicenseData');
 const getCompletedLicenseCount = callable('GetCompletedLicenseCount');
 const setFriendsCache = callable('SetFriendsCache');
+const hasUserConsented = callable('HasUserConsented');
+
+// True only when this account allowed local storage. Without it nothing scraped could be saved,
+// so syncing would fetch every license page on every visit for nothing.
+async function isStorageAllowed(steamUserID) {
+	try {
+		const consent = await hasUserConsented({ steamUserID });
+		return consent === true || consent === 'true';
+	} catch (error) {
+		logError('Could not check storage consent:', error);
+		return false;
+	}
+}
 
 export default async function WebkitMain() {
 	log('WebkitMain loaded');
@@ -15,6 +28,11 @@ export default async function WebkitMain() {
 	const steamUserID = getCurrentAccountID();
 	if (!steamUserID || steamUserID === '') {
 		logError('Could not get current Steam User ID.');
+		return;
+	}
+
+	if (!(await isStorageAllowed(steamUserID))) {
+		log('Local storage not allowed for this account; skipping license and friends sync.');
 		return;
 	}
 
@@ -73,6 +91,8 @@ async function fetchOwnedGames(doc) {
 }
 
 async function shouldSkipSync(steamUserID, expectedTotal, isExplicitSync) {
+	// A forced sync, or a page without a total, always syncs; no need to ask the backend
+	if (isExplicitSync || expectedTotal <= 0) return false;
 	try {
 		// Backend calls take named arguments; a bare string fails the backend's type check
 		const completedCount = await getCompletedLicenseCount({ steamUserID });

@@ -126,8 +126,8 @@ local function run_tests()
     assert_equal(nil, loaded["444"], "An account whose cache isn't a table is dropped")
     assert_equal(nil, next(cache_merger.normalize_loaded_cache(nil) or {}), "A missing file loads as an empty cache")
 
-    -- Test 10: Only accounts that allowed local storage are written to disk
-    local saved = cache_merger.consented_only({
+    -- Test 10: Accounts that denied local storage are left out of the file; others are kept
+    local saved = cache_merger.without_denied({
         ["1"] = { byName = {} },
         ["2"] = { byName = {} },
         ["3"] = { byName = {} },
@@ -139,9 +139,11 @@ local function run_tests()
     })
     assert_type("table", saved["1"], "An account that allowed storage is saved")
     assert_equal(nil, saved["2"], "An account that denied storage is not saved")
-    assert_equal(nil, saved["3"], "An account that was never asked is not saved")
-    assert_equal(nil, saved["4"], "An account with malformed consent is not saved")
-    assert_equal(nil, next(cache_merger.consented_only({ ["1"] = {} }, nil)), "No consent state saves nothing")
+    assert_type("table", saved["3"], "An account with no consent record keeps its cached licenses")
+    assert_type("table", saved["4"], "An account with malformed consent keeps its cached licenses")
+    assert_type("table", cache_merger.without_denied({ ["1"] = {} }, nil)["1"],
+        "A missing or unreadable consent file doesn't wipe the cache")
+    assert_equal(nil, next(cache_merger.without_denied(nil, {})), "No cache saves nothing")
 
     print("All tests passed successfully!")
 end
