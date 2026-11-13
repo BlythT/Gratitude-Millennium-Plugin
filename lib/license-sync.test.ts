@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal } from './license-sync';
+import { nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from './license-sync';
 
 describe('nextLicensePageUrl', () => {
 	it('resolves a query-only href against the licenses page', () => {
@@ -75,5 +75,19 @@ describe('parseLicenseTotal', () => {
 	it('returns 0 when there is no total', () => {
 		expect(parseLicenseTotal('Showing everything')).toBe(0);
 		expect(parseLicenseTotal(undefined)).toBe(0);
+	});
+});
+
+describe('withoutExplicitSyncFlag', () => {
+	it('removes the sync flag and keeps the rest of the URL', () => {
+		expect(withoutExplicitSyncFlag('https://store.steampowered.com/?gratitude_sync=1')).toBe('https://store.steampowered.com/');
+		expect(withoutExplicitSyncFlag('https://steamcommunity.com/my/friends/?a=b&gratitude_sync=1#x'))
+			.toBe('https://steamcommunity.com/my/friends/?a=b#x');
+	});
+
+	it('returns null when the page was not opened by a sync link', () => {
+		expect(withoutExplicitSyncFlag('https://store.steampowered.com/')).toBeNull();
+		expect(withoutExplicitSyncFlag('https://store.steampowered.com/?gratitude_sync=0')).toBeNull();
+		expect(withoutExplicitSyncFlag('not a url')).toBeNull();
 	});
 });
