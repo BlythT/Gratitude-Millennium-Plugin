@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v1.3.1 - 2026-11-14
+
 ### Fixed
 
 - Fixed Steam Store and Community pages never finishing loading while Gratitude is enabled on Millennium 3.3.0 and later, including when Millennium reports its version with a "v" prefix.
@@ -21,6 +23,84 @@ All notable changes to this project will be documented in this file.
 - Fixed `npm ci` failing because `package-lock.json` was out of date.
 - Fixed the Store starting a full license sync and returning to the Library on every visit after a sync link was used, because the sync flag stayed in the Store tab's URL.
 
+### Changed
+
+- The consent prompt can no longer be closed with its X button; Allow or Deny answers it.
+- `plugin.json` now carries the release version (it had stayed at 1.1.5 since v1.1.5).
+- Updated the plugin description: gift data now updates in the background whenever you open the Steam Store.
+
+## v1.3.0 - 2026-07-13
+
+### Added
+
+- Added a progress overlay while a requested license sync runs, styled to match Steam, which returns to the Library when the sync finishes.
+- Added a Grant Permission button in settings, so consent can be given after declining the prompt.
+
+### Changed
+
+- Reworked the consent prompt flow, and delayed the prompt until Steam's modal system is ready.
+- Moved the giver dialog's friend suggestions into a dropdown under the search box.
+- Replaced the giver dialog's single-line notes field with a multi-line text area and tidied its layout.
+
+### Fixed
+
+- Fixed the question mark badge not showing for games with no license data when the license cache was empty.
+
+## v1.2.1 - 2026-07-12
+
+### Fixed
+
+- Fixed each paginated license fetch overwriting the cached license history, so a Store visit could wipe the cache; pages are now added to it.
+
+## v1.2.0 - 2026-07-12
+
+### Changed
+
+- Rebuilt the gifted badge in React using Steam's native tooltip.
+- Reworked the plugin's internal caches and data files.
+
+### Fixed
+
+- Fixed tooltip memory leaks and alignment.
+- Fixed incorrect cache counts in the settings panel and a license scraper issue.
+
+## v1.1.5 - 2026-06-14
+
+### Changed
+
+- Release builds keep the release version in `plugin.json` instead of a development placeholder.
+
+## v1.1.4 - 2026-06-14
+
+### Changed
+
+- Releases are now built and published automatically when a version tag is pushed.
+
+## v1.1.3 - 2026-06-14
+
+### Added
+
+- Added App ID-based license matching, using your owned games list, with name matching as the fallback. This fixes most cases where a game's library name differs from its license name.
+
+### Changed
+
+- Rewrote the fuzzy license name matcher for better matches.
+- The giver dialog now closes before opening a Steam profile.
+
+### Fixed
+
+- Fixed the license cache repeatedly re-populating in a loop.
+- Fixed values from the Millennium backend being misread as true or false.
+- Fixed the cache not being cleared in the frontend after clearing it in settings.
+
+## v1.1.2 - 2026-03-29
+
+### Changed
+
+- The friends cache no longer stores friends' online status, which went stale.
+
+## v1.1.1 - 2026-03-29
+
 ### Added
 
 - Added a persistent advanced setting to show or hide Steam profile links and IDs in the giver friend finder.
@@ -32,7 +112,6 @@ All notable changes to this project will be documented in this file.
 - Unified cache status and cache clearing into a single cache section in the settings sidebar.
 - Updated webkit startup sync to run license and friends cache refreshes in the background instead of awaiting them during `WebkitMain()` startup.
 - Reduced the chance that visiting Steam Store or Community pages will feel delayed while Gratitude refreshes cached data.
-- Updated the plugin description: gift data now updates in the background whenever you open the Steam Store.
 
 ## v1.1.0 - 2026-03-22
 
