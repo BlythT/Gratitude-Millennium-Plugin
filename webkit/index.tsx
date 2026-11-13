@@ -75,7 +75,8 @@ async function fetchOwnedGames(doc) {
 async function shouldSkipSync(steamUserID, expectedTotal, isExplicitSync) {
 	if (isExplicitSync || expectedTotal <= 0) return false;
 	try {
-		const existingCacheStr = await getGameLicenseData(steamUserID);
+		// Backend calls take named arguments; a bare string fails the backend's type check
+		const existingCacheStr = await getGameLicenseData({ steamUserID });
 		const existingCache = existingCacheStr ? JSON.parse(existingCacheStr) : null;
 		if (shouldSkipLicenseSync(existingCache, expectedTotal, isExplicitSync)) {
 			log(`Total licenses (${expectedTotal}) unchanged since the last completed sync. Skipping full sync.`);
