@@ -7,6 +7,7 @@ local utils = require("utils")
 
 local JsonStore = require("lib.JsonStore")
 local cache_merger = require("lib.cache_merger")
+local browser_hooks = require("lib.browser_hooks")
 
 local cacheStore = JsonStore.new("gratitude_cache.json", "Game license cache")
 local consentStore = JsonStore.new("gratitude_consent.json", "Consent state")
@@ -37,24 +38,7 @@ end
 local function load_cache_from_file()
     local loadedCache = cacheStore:load(nil)
     if loadedCache and next(loadedCache) ~= nil then
-        -- Migrate to new structure if needed
-        GameLicenseCache = {}
-        for steamUserID, userCache in pairs(loadedCache) do
-            if type(userCache) == "table" then
-                if userCache.byAppId or userCache.byName then
-                    GameLicenseCache[steamUserID] = {
-                        byAppId = userCache.byAppId or {},
-                        byName = userCache.byName or {}
-                    }
-                else
-                    -- Migrate old name-only cache
-                    GameLicenseCache[steamUserID] = {
-                        byAppId = {},
-                        byName = userCache
-                    }
-                end
-            end
-        end
+        GameLicenseCache = cache_merger.normalize_loaded_cache(loadedCache)
         return true
     end
     return false
@@ -609,12 +593,14 @@ local function on_load()
     load_friends_from_file()
     load_settings_from_file()
 
-    -- TODO: Remove these manual hooks once Millennium commit 84d912263ba08f07b101957481c98cb5ff7ffbb4 is released.
-    -- An earlier Millennium update unintentionally broke automatic WebKit injection for Steam URLs by excluding 
-    -- them from `is_valid_target_url`. Until the upstream fix is released, we must manually hook the Store and 
-    -- Community pages to ensure our WebKit scripts are loaded.
-    millennium.add_browser_js("", ".*store\\.steampowered\\.com.*")
-    millennium.add_browser_js("", ".*steamcommunity\\.com.*")
+    -- Below Millennium 3.3.0, Store and Community pages only get our webkit script when a hook matches
+    -- them. From 3.3.0 Millennium injects there itself, and these empty-path hooks would leave those
+    -- pages loading forever. See lib/browser_hooks.lua.
+    if browser_hooks.needs_browser_hooks(millennium) then
+        logger:info("Registering Store and Community browser hooks for this Millennium version")
+        millennium.add_browser_js("", ".*store\\.steampowered\\.com.*")
+        millennium.add_browser_js("", ".*steamcommunity\\.com.*")
+    end
 
     logger:info("Gratitude plugin loaded with Millennium version " .. millennium.version())
     millennium.ready()

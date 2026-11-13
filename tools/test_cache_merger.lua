@@ -92,6 +92,42 @@ local function run_tests()
     assert_type("table", cache8.byName["Valid Legacy"], "Valid legacy item was added")
     assert_equal("Store", cache8.byName["Valid Legacy"].acquisition, "Valid legacy item data is correct")
 
+    -- Test 8: The completed sync count is stored only when a page carries it
+    local cache9 = cache_merger.merge_license_page(nil, {
+        byName = { ["Page One Game"] = { acquisition = "Gift", date = "May 1, 2023" } },
+    })
+    assert_equal(nil, cache9.completedLicenseCount, "A page without a completed count must not set one")
+    local cache10 = cache_merger.merge_license_page(cache9, {
+        byName = { ["Last Page Game"] = { acquisition = "Gift", date = "May 2, 2023" } },
+        completedLicenseCount = 2,
+    })
+    assert_equal(2, cache10.completedLicenseCount, "The last page of a finished sync sets the completed count")
+    local cache11 = cache_merger.merge_license_page(cache10, {
+        byName = { ["Next Sync Page One"] = { acquisition = "Gift", date = "May 3, 2023" } },
+    })
+    assert_equal(2, cache11.completedLicenseCount, "A later page without a count keeps the previous completed count")
+
+    -- Test 9: Loading from disk keeps the completed count, so an unchanged library isn't re-synced
+    local loaded = cache_merger.normalize_loaded_cache({
+        ["111"] = {
+            byAppId = { ["10"] = { acquisition = "Gift", date = "Jun 1, 2023" } },
+            byName = {},
+            completedLicenseCount = 42,
+            totalLicenses = 42,
+        },
+        ["222"] = { ["Old Name Only"] = { acquisition = "Gift", date = "Jun 2, 2023" } },
+        ["333"] = { byName = {}, completedLicenseCount = "42" },
+        ["444"] = "not a table",
+    })
+    assert_equal(42, loaded["111"].completedLicenseCount, "completedLicenseCount should survive a load")
+    assert_equal(nil, loaded["111"].totalLicenses, "The old count, which a partial sync could have set, is dropped")
+    assert_equal("Gift", loaded["111"].byAppId["10"].acquisition, "byAppId should survive a load")
+    assert_equal("Gift", loaded["222"].byName["Old Name Only"].acquisition, "A name-only cache is migrated to byName")
+    assert_type("table", loaded["222"].byAppId, "A migrated cache gets an empty byAppId")
+    assert_equal(nil, loaded["333"].completedLicenseCount, "A count that isn't a number is dropped")
+    assert_equal(nil, loaded["444"], "An account whose cache isn't a table is dropped")
+    assert_equal(nil, next(cache_merger.normalize_loaded_cache(nil) or {}), "A missing file loads as an empty cache")
+
     print("All tests passed successfully!")
 end
 
