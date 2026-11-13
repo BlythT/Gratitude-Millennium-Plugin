@@ -38,7 +38,10 @@ export function showWithRetry(options: ShowWithRetryOptions): () => void {
 		} catch {
 			// The handle may already be gone with the window that couldn't render it
 		}
-		options.onRetry?.(index + 1);
+		// Only announce a retry when there is another attempt left; attempt() reports giving up
+		if (index + 1 < delaysMs.length) {
+			options.onRetry?.(index + 1);
+		}
 		attempt(index + 1);
 	};
 
