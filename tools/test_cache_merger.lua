@@ -25,7 +25,8 @@ local function run_tests()
 
     assert_equal(1, byAppIdSize1, "byAppId should have 1 entry")
     assert_equal(1, byNameSize1, "byName should have 1 entry")
-    assert_equal(100, cache1.totalLicenses, "totalLicenses should be set")
+    -- The old count isn't trusted: a sync that stopped part way could have sent it
+    assert_equal(nil, cache1.totalLicenses, "totalLicenses from a page is ignored")
     assert_equal(true, isNewFormat1, "should detect new format")
 
     -- Test 2: Appending to existing cache (ensuring no overwrites of unrelated keys)
@@ -40,7 +41,6 @@ local function run_tests()
     assert_equal(2, byNameSize2, "byName should have 2 entries after merge")
     assert_equal("Gift", cache2.byAppId["123"].acquisition, "Original data should be preserved")
     assert_equal("Purchase", cache2.byAppId["456"].acquisition, "New data should be merged")
-    assert_equal(100, cache2.totalLicenses, "totalLicenses should be preserved if missing in incoming")
     
     -- Test 3: Legacy format fallback
     local legacyIncoming = {
@@ -75,12 +75,10 @@ local function run_tests()
     -- If a game license is fetched again, the newer data overwrites the old data in the cache dictionary.
     local overwriteIncoming = {
         byAppId = { ["123"] = { acquisition = "Retail", date = "Jan 2, 2023" } }, -- 123 was Gift previously
-        totalLicenses = 101 -- updated total
     }
     local cache7, byAppIdSize7, byNameSize7, isNewFormat7 = cache_merger.merge_license_page(cache6, overwriteIncoming)
     assert_equal(2, byAppIdSize7, "byAppId size should remain 2 after overwrite")
     assert_equal("Retail", cache7.byAppId["123"].acquisition, "Existing key should be overwritten")
-    assert_equal(101, cache7.totalLicenses, "totalLicenses should be updated")
 
     -- Test 7: Malformed legacy array (missing item name)
     local malformedLegacy = {
@@ -91,6 +89,59 @@ local function run_tests()
     assert_equal(4, byNameSize8, "Only the valid legacy item should be added")
     assert_type("table", cache8.byName["Valid Legacy"], "Valid legacy item was added")
     assert_equal("Store", cache8.byName["Valid Legacy"].acquisition, "Valid legacy item data is correct")
+
+    -- Test 8: The completed sync count is stored only when a page carries it
+    local cache9 = cache_merger.merge_license_page(nil, {
+        byName = { ["Page One Game"] = { acquisition = "Gift", date = "May 1, 2023" } },
+    })
+    assert_equal(nil, cache9.completedLicenseCount, "A page without a completed count must not set one")
+    local cache10 = cache_merger.merge_license_page(cache9, {
+        byName = { ["Last Page Game"] = { acquisition = "Gift", date = "May 2, 2023" } },
+        completedLicenseCount = 2,
+    })
+    assert_equal(2, cache10.completedLicenseCount, "The last page of a finished sync sets the completed count")
+    local cache11 = cache_merger.merge_license_page(cache10, {
+        byName = { ["Next Sync Page One"] = { acquisition = "Gift", date = "May 3, 2023" } },
+    })
+    assert_equal(2, cache11.completedLicenseCount, "A later page without a count keeps the previous completed count")
+
+    -- Test 9: Loading from disk keeps the completed count, so an unchanged library isn't re-synced
+    local loaded = cache_merger.normalize_loaded_cache({
+        ["111"] = {
+            byAppId = { ["10"] = { acquisition = "Gift", date = "Jun 1, 2023" } },
+            byName = {},
+            completedLicenseCount = 42,
+            totalLicenses = 42,
+        },
+        ["222"] = { ["Old Name Only"] = { acquisition = "Gift", date = "Jun 2, 2023" } },
+        ["333"] = { byName = {}, completedLicenseCount = "42" },
+        ["444"] = "not a table",
+    })
+    assert_equal(42, loaded["111"].completedLicenseCount, "completedLicenseCount should survive a load")
+    assert_equal(nil, loaded["111"].totalLicenses, "The old count, which a partial sync could have set, is dropped")
+    assert_equal("Gift", loaded["111"].byAppId["10"].acquisition, "byAppId should survive a load")
+    assert_equal("Gift", loaded["222"].byName["Old Name Only"].acquisition, "A name-only cache is migrated to byName")
+    assert_type("table", loaded["222"].byAppId, "A migrated cache gets an empty byAppId")
+    assert_equal(nil, loaded["333"].completedLicenseCount, "A count that isn't a number is dropped")
+    assert_equal(nil, loaded["444"], "An account whose cache isn't a table is dropped")
+    assert_equal(nil, next(cache_merger.normalize_loaded_cache(nil) or {}), "A missing file loads as an empty cache")
+
+    -- Test 10: Only accounts that allowed local storage are written to disk
+    local saved = cache_merger.consented_only({
+        ["1"] = { byName = {} },
+        ["2"] = { byName = {} },
+        ["3"] = { byName = {} },
+        ["4"] = { byName = {} },
+    }, {
+        ["1"] = { allowed = true },
+        ["2"] = { allowed = false },
+        ["4"] = "not a table",
+    })
+    assert_type("table", saved["1"], "An account that allowed storage is saved")
+    assert_equal(nil, saved["2"], "An account that denied storage is not saved")
+    assert_equal(nil, saved["3"], "An account that was never asked is not saved")
+    assert_equal(nil, saved["4"], "An account with malformed consent is not saved")
+    assert_equal(nil, next(cache_merger.consented_only({ ["1"] = {} }, nil)), "No consent state saves nothing")
 
     print("All tests passed successfully!")
 end

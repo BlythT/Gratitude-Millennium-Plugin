@@ -3,9 +3,10 @@ import { callable } from '@steambrew/webkit';
 import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
+import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from '../lib/license-sync';
 
 const setGameLicenseData = callable('SetGameLicenseData');
-const getGameLicenseData = callable('GetGameLicenseData');
+const getCompletedLicenseCount = callable('GetCompletedLicenseCount');
 const setFriendsCache = callable('SetFriendsCache');
 
 export default async function WebkitMain() {
@@ -71,16 +72,13 @@ async function fetchOwnedGames(doc) {
 	}
 }
 
-async function shouldSkipSync(steamUserID, expectedTotal) {
-	if (expectedTotal <= 0) return false;
+async function shouldSkipSync(steamUserID, expectedTotal, isExplicitSync) {
 	try {
-		const existingCacheStr = await getGameLicenseData(steamUserID);
-		if (existingCacheStr) {
-			const existingCache = JSON.parse(existingCacheStr);
-			if (existingCache && existingCache.totalLicenses === expectedTotal) {
-				log(`Total licenses (${expectedTotal}) unchanged from backend cache. Skipping full sync.`);
-				return true;
-			}
+		// Backend calls take named arguments; a bare string fails the backend's type check
+		const completedCount = await getCompletedLicenseCount({ steamUserID });
+		if (shouldSkipLicenseSync(completedCount, expectedTotal, isExplicitSync)) {
+			log(`Total licenses (${expectedTotal}) unchanged since the last completed sync. Skipping full sync.`);
+			return true;
 		}
 	} catch (err) {
 		logError('Error checking backend cache for optimization:', err);
@@ -88,35 +86,68 @@ async function shouldSkipSync(steamUserID, expectedTotal) {
 	return false;
 }
 
+// Yields each licenses page with isLastPage set when it has no next link. Stops early, without a
+// last page, when a page can't be fetched or its next link can't be followed.
 async function* fetchAllLicensePages(startUrl) {
 	let currentUrl = startUrl;
-	let hasNextPage = true;
 	let pageCount = 1;
 	const parser = new DOMParser();
 
 	log(`Fetching Steam Licenses HTML (l=english, offset=0)`);
 
-	while (hasNextPage) {
+	while (currentUrl) {
 		const html = await fetchPage(currentUrl);
 		if (!html) {
 			log(`Failed to fetch Steam Licenses at page ${pageCount}.`);
-			break;
+			return;
 		}
 
 		const doc = parser.parseFromString(html, 'text/html');
-		yield { doc, pageCount };
+		const href = doc.querySelector('.license_paginator_next')?.getAttribute('href');
+		yield { doc, pageCount, isLastPage: !href };
 
-		const nextButton = doc.querySelector('.license_paginator_next');
-		if (nextButton && nextButton.getAttribute('href')) {
-			const href = nextButton.getAttribute('href');
-			currentUrl = `https://store.steampowered.com/account/licenses/${href}`;
-			pageCount++;
-			// Small delay to be polite to Steam servers
-			await new Promise(r => setTimeout(r, 300));
-		} else {
-			hasNextPage = false;
+		if (!href) {
+			return;
 		}
+
+		currentUrl = nextLicensePageUrl(href);
+		if (!currentUrl) {
+			logError(`Unexpected next page link on licenses page ${pageCount}; stopping.`);
+			return;
+		}
+		pageCount++;
+		// Small delay to be polite to Steam servers
+		await new Promise(r => setTimeout(r, 300));
 	}
+}
+
+// Ends a sync the user started from a sync link: back to the Library when it finished,
+// otherwise a message, so a failed sync is never reported as complete.
+function finishExplicitSync(completed) {
+	if (completed) {
+		updateSyncOverlay('Sync complete! Returning to Library...', 100);
+		setTimeout(() => {
+			window.location.href = 'steam://open/games';
+		}, 1000);
+		return;
+	}
+	updateSyncOverlay("Sync didn't finish, so some gift data may be missing. Please try again later.");
+	setTimeout(closeSyncOverlay, 4000);
+}
+
+// True when this page was opened by a "sync now" link. Removes the flag from the page's URL, so a
+// reload, or Steam reopening the Store tab at its last URL, doesn't start another forced sync.
+function takeExplicitSyncFlag() {
+	const cleanUrl = withoutExplicitSyncFlag(window.location.href);
+	if (cleanUrl === null) {
+		return false;
+	}
+	try {
+		window.history.replaceState(window.history.state, '', cleanUrl);
+	} catch (error) {
+		logError('Could not remove the sync flag from the page URL:', error);
+	}
+	return true;
 }
 
 async function maybeSyncLicenses(steamUserID) {
@@ -126,42 +157,44 @@ async function maybeSyncLicenses(steamUserID) {
 		return;
 	}
 
-	const isExplicitSync = currentUrl.searchParams.get('gratitude_sync') === '1';
-
-	const startUrl = 'https://store.steampowered.com/account/licenses/?l=english';
-	let totalLicensesFromPage = 0;
-	let ownedGames = [];
-	let gamesMap = new Map();
-	let totalParsed = 0;
+	const isExplicitSync = takeExplicitSyncFlag();
 
 	if (isExplicitSync) {
 		showSyncOverlay('Gratitude: Sync Licenses', 'Connecting to Steam store...');
 	}
 
-	for await (const { doc, pageCount } of fetchAllLicensePages(startUrl)) {
+	let completed = false;
+	try {
+		completed = await syncLicensePages(steamUserID, isExplicitSync);
+	} finally {
+		if (isExplicitSync) {
+			finishExplicitSync(completed);
+		}
+	}
+}
+
+// Fetches and saves every licenses page. Returns true when the sync finished, either because the
+// license count is unchanged or because every page was fetched and saved.
+async function syncLicensePages(steamUserID, isExplicitSync) {
+	const startUrl = `${LICENSES_URL}?l=english`;
+	let totalLicensesFromPage = 0;
+	let ownedGames = [];
+	let gamesMap = new Map();
+	let totalParsed = 0;
+	let everyPageSaved = true;
+
+	for await (const { doc, pageCount, isLastPage } of fetchAllLicensePages(startUrl)) {
 		// 1. If we are on page 1, fetch ownedGames so we have them, and check cache optimization
 		if (pageCount === 1) {
 			// Extract total licenses from paginator
-			const paginatorSpan = doc.querySelector('.license_paginator_ctn span');
-			if (paginatorSpan) {
-				const match = paginatorSpan.textContent?.match(/of\s+(\d+)/i);
-				if (match) {
-					totalLicensesFromPage = parseInt(match[1], 10);
-				}
-			}
+			totalLicensesFromPage = parseLicenseTotal(doc.querySelector('.license_paginator_ctn span')?.textContent);
 
 			if (isExplicitSync) {
 				updateSyncOverlay(`Syncing licenses...`, 10);
 			}
 
-			if (await shouldSkipSync(steamUserID, totalLicensesFromPage)) {
-				if (isExplicitSync) {
-					updateSyncOverlay('Licenses are already up to date! Returning to Library...', 100);
-					setTimeout(() => {
-						window.location.href = 'steam://open/games';
-					}, 1000);
-				}
-				return;
+			if (await shouldSkipSync(steamUserID, totalLicensesFromPage, isExplicitSync)) {
+				return true;
 			}
 
 			ownedGames = await fetchOwnedGames(doc);
@@ -178,7 +211,7 @@ async function maybeSyncLicenses(steamUserID) {
 		const table = doc.querySelector('table.account_table');
 		if (!table) {
 			log(`account_table not found in the HTML at page ${pageCount}.`);
-			break;
+			return false;
 		}
 
 		const licenses = parseLicenseTable(table);
@@ -223,25 +256,36 @@ async function maybeSyncLicenses(steamUserID) {
 		const payload = {
 			byAppId,
 			byName,
-			totalLicenses: totalLicensesFromPage || totalParsed,
+			completedLicenseCount: completedLicenseCount({
+				isLastPage,
+				everyPageSaved,
+				pageTotal: totalLicensesFromPage,
+				parsedTotal: totalParsed,
+			}),
 			isFirstPage: pageCount === 1
 		};
 
 		try {
-			await setGameLicenseData({ licenseData: JSON.stringify(payload), steamUserID });
-			log(`Incrementally sent page ${pageCount} license data to backend successfully.`);
+			const saved = await setGameLicenseData({ licenseData: JSON.stringify(payload), steamUserID });
+			if (saved === false || saved === 'false') {
+				everyPageSaved = false;
+				logError(`Backend rejected page ${pageCount} license data.`);
+			} else {
+				log(`Incrementally sent page ${pageCount} license data to backend successfully.`);
+			}
 		} catch (error) {
+			everyPageSaved = false;
 			logError(`Error sending page ${pageCount} license data to backend:`, error);
+		}
+
+		if (isLastPage) {
+			log(`Finished fetching pages. Total parsed licenses: ${totalParsed}`);
+			return everyPageSaved;
 		}
 	}
 
-	log(`Finished fetching pages. Total parsed licenses: ${totalParsed}`);
-	if (isExplicitSync) {
-		updateSyncOverlay('Sync complete! Returning to Library...', 100);
-		setTimeout(() => {
-			window.location.href = 'steam://open/games';
-		}, 1000);
-	}
+	log(`License sync stopped before the last page. Parsed ${totalParsed} licenses.`);
+	return false;
 }
 
 async function maybeSyncFriends(steamUserID) {
@@ -251,7 +295,7 @@ async function maybeSyncFriends(steamUserID) {
 		return;
 	}
 
-	const isExplicitSync = currentUrl.searchParams.get('gratitude_sync') === '1';
+	const isExplicitSync = takeExplicitSyncFlag();
 	if (isExplicitSync) {
 		showSyncOverlay('Gratitude: Sync Friends', 'Fetching friends list from Steam...');
 	}

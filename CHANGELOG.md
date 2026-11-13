@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed Steam Store and Community pages never finishing loading while Gratitude is enabled on Millennium 3.3.0 and later.
+- Fixed a license sync that stopped part way (a failed page, or leaving the Store page) being treated as complete, which could leave gift data missing until the number of licenses changed.
+- Fixed every Steam restart re-downloading all license pages on the first Store visit, even when nothing had changed.
+- Fixed the sync started from the question mark badge doing nothing when the number of licenses was unchanged, and reporting "Sync complete" after a failed sync.
+- Fixed license pages after the first being requested in the user's Steam language instead of English, which the license parsing relies on.
+- Fixed the check that skips an unchanged license sync always failing, so every Store visit fetched every license page.
+- Fixed the consent prompt disappearing during Steam's startup without an answer, which left new users never asked and nothing saved.
+- Fixed the consent prompt not coming back when Steam replaced its main window before the prompt was answered.
+- Fixed libraries of 1,000 or more licenses skipping license syncs, because the license total was misread.
+- Fixed a license sync being treated as complete when its data wasn't saved to disk.
+- Fixed license data being written to disk at shutdown for accounts that hadn't allowed local storage.
+- Fixed `npm ci` failing because `package-lock.json` was out of date.
+- Fixed the Store starting a full license sync and returning to the Library on every visit after a sync link was used, because the sync flag stayed in the Store tab's URL.
+
 ### Added
 
 - Added a persistent advanced setting to show or hide Steam profile links and IDs in the giver friend finder.
@@ -15,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - Unified cache status and cache clearing into a single cache section in the settings sidebar.
 - Updated webkit startup sync to run license and friends cache refreshes in the background instead of awaiting them during `WebkitMain()` startup.
 - Reduced the chance that visiting Steam Store or Community pages will feel delayed while Gratitude refreshes cached data.
+- Updated the plugin description: gift data now updates in the background whenever you open the Steam Store.
 
 ## v1.1.0 - 2026-03-22
 
