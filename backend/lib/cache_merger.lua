@@ -91,15 +91,21 @@ local function normalize_loaded_cache(loadedCache)
     return cache
 end
 
--- The part of the cache that may be written to disk: the accounts whose consent is allowed.
-local function consented_only(cache, consentState)
+-- The part of the cache that may be written to disk: every account except those that denied
+-- storage. An account with no consent record keeps what is already cached: the webkit doesn't
+-- sync without consent, so its entries came from disk, and dropping them would let a missing or
+-- corrupt consent file, or another account's save on a shared PC, wipe its license history.
+local function without_denied(cache, consentState)
     local result = {}
-    if type(cache) ~= "table" or type(consentState) ~= "table" then
+    if type(cache) ~= "table" then
         return result
+    end
+    if type(consentState) ~= "table" then
+        consentState = {}
     end
     for steamUserID, userCache in pairs(cache) do
         local consent = consentState[steamUserID]
-        if type(consent) == "table" and consent.allowed == true then
+        if not (type(consent) == "table" and consent.allowed == false) then
             result[steamUserID] = userCache
         end
     end
@@ -109,5 +115,5 @@ end
 return {
     merge_license_page = merge_license_page,
     normalize_loaded_cache = normalize_loaded_cache,
-    consented_only = consented_only,
+    without_denied = without_denied,
 }

@@ -59,8 +59,10 @@ export const showConsentModal = (steamUserID: string, mainWindow: Window): Modal
                     consentAnswered = true;
                     consentModalWindow?.Close();
                     log("consent modal accepted, redirecting to store page to load cache for the first time");
-                    enableConsent(steamUserID);
-                    window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
+                    // The Store only syncs once consent is saved, so open it after the save
+                    void enableConsent(steamUserID).finally(() => {
+                        window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
+                    });
                 }}
                 onCancel={() => {
                     consentAnswered = true;

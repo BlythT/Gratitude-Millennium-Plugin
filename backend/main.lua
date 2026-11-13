@@ -31,10 +31,10 @@ local function table_size(t)
     return count
 end
 
--- Writes only the accounts that allowed local storage. Every caller, including on_unload, goes
--- through here, so a sync that ran before consent stays in memory and never reaches disk.
+-- Leaves out accounts that denied local storage. Every caller, including on_unload, goes through
+-- here. SetGameLicenseData separately refuses to save a sync for an account that hasn't allowed it.
 local function save_cache_to_file()
-    return cacheStore:save(cache_merger.consented_only(GameLicenseCache, consentState))
+    return cacheStore:save(cache_merger.without_denied(GameLicenseCache, consentState))
 end
 
 local function load_cache_from_file()
