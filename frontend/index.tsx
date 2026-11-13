@@ -7,7 +7,8 @@ import { gameLicenseCache } from './injection/gamelicensecache';
 import { friendsCache } from './injection/friendscache';
 import { giverCache } from './injection/givercache';
 import { useState, useEffect } from 'react';
-import { showConsentModal } from './components/ConsentModal';
+import { showConsentModal, isConsentAnswered, isConsentModalRendered } from './components/ConsentModal';
+import { showWithRetry } from './utils/showWithRetry';
 import { getCurrentAccountID } from '../lib/steamid';
 import { POPUPS, SELECTORS } from './types';
 import { useSettings } from './settings';
@@ -194,13 +195,23 @@ async function onPopupCreation(popup: SteamPopup) {
 				const userConsented = await hasUserConsented({ steamUserID: currentUserID });
 				logDebug('RAW IPC RETURN hasUserConsented:', JSON.stringify(userConsented), 'type:', typeof userConsented);
 				if (userConsented === null || userConsented === undefined || userConsented === 'null') {
-					const timeoutId = window.setTimeout(() => {
-						showConsentModal(currentUserID, popup.window);
-					}, 2500);
-
-					popup.window.addEventListener('beforeunload', () => {
-						window.clearTimeout(timeoutId);
+					// During startup Steam's main window can drop the modal, either before it renders or
+					// when it moves to the Library. Check it appeared, watch it for a minute, and show it
+					// again with longer waits if it vanished without an answer.
+					const cancelConsentModal = showWithRetry({
+						delaysMs: [2500, 5000, 10000, 20000, 40000],
+						verifyAfterMs: 1500,
+						watchForMs: 60000,
+						recheckMs: 1000,
+						show: () => showConsentModal(currentUserID, popup.window),
+						isShown: () => isConsentModalRendered(popup.window),
+						isAnswered: isConsentAnswered,
+						onShown: (attempt) => log(`Consent modal shown on attempt ${attempt}`),
+						onRetry: (attempt) => log(`Consent modal attempt ${attempt} isn't on screen; showing it again`),
+						onGiveUp: () => logError('Consent modal never appeared; consent can still be granted in settings'),
 					});
+
+					popup.window.addEventListener('beforeunload', cancelConsentModal);
 				}
 			} catch (error) {
 				logError('Error checking consent:', error);
