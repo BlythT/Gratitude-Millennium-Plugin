@@ -31,8 +31,10 @@ local function table_size(t)
     return count
 end
 
+-- Writes only the accounts that allowed local storage. Every caller, including on_unload, goes
+-- through here, so a sync that ran before consent stays in memory and never reaches disk.
 local function save_cache_to_file()
-    return cacheStore:save(GameLicenseCache)
+    return cacheStore:save(cache_merger.consented_only(GameLicenseCache, consentState))
 end
 
 local function load_cache_from_file()
@@ -253,10 +255,16 @@ function SetGameLicenseData(licenseData, steamUserID)
             logger:info(string.format("Cached %d license entries in legacy format for user %s", byNameSize, steamUserID))
         end
 
-        -- Only save if user has consented
+        -- Only save if user has consented. A completed-sync count is kept only once it is on disk,
+        -- so a sync that ran before consent, or whose save failed, runs again on the next visit.
         if consentState[steamUserID] and consentState[steamUserID].allowed then
-            save_cache_to_file()
+            if not save_cache_to_file() then
+                updatedCache.completedLicenseCount = nil
+                logger:error("Failed to save license cache for user " .. steamUserID)
+                return false, "Failed to save license cache"
+            end
         else
+            updatedCache.completedLicenseCount = nil
             logger:info("User " .. steamUserID .. " has not given consent, skipping cache save")
         end
     else
@@ -278,6 +286,18 @@ function GetGameLicenseData(steamUserID)
 
     logger:info("Returning " .. table_size(GameLicenseCache[steamUserID]) .. " entries for Steam ID " .. steamUserID)
     return json.encode(GameLicenseCache[steamUserID])
+end
+
+-- The license count from the last sync that finished and was saved, or 0 when there isn't one.
+-- The webkit compares it with the Store's count to skip an unchanged library.
+function GetCompletedLicenseCount(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+
+    local cache = GameLicenseCache[steamUserID]
+    if cache and type(cache.completedLicenseCount) == "number" then
+        return cache.completedLicenseCount
+    end
+    return 0
 end
 
 -- Check if the license cache is populated (for specific user)
@@ -584,7 +604,6 @@ end
 
 local function on_load()
     print("Gratitude plugin loaded")
-    logger:info("Comparing millennium version: " .. millennium.cmp_version(millennium.version(), "2.29.3"))
 
     -- Load existing cache and consent data from disk
     load_cache_from_file()

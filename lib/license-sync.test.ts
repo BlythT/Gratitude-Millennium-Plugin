@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount } from './license-sync';
+import { nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal } from './license-sync';
 
 describe('nextLicensePageUrl', () => {
 	it('resolves a query-only href against the licenses page', () => {
@@ -24,23 +24,21 @@ describe('nextLicensePageUrl', () => {
 
 describe('shouldSkipLicenseSync', () => {
 	it('skips when the last completed sync saw the same number of licenses', () => {
-		expect(shouldSkipLicenseSync({ completedLicenseCount: 120 }, 120, false)).toBe(true);
+		expect(shouldSkipLicenseSync(120, 120, false)).toBe(true);
+		expect(shouldSkipLicenseSync('120', 120, false)).toBe(true);
 	});
 
 	it('syncs when the count changed', () => {
-		expect(shouldSkipLicenseSync({ completedLicenseCount: 119 }, 120, false)).toBe(false);
-	});
-
-	it('ignores the old totalLicenses count, which a partial sync could have set', () => {
-		expect(shouldSkipLicenseSync({ totalLicenses: 120 }, 120, false)).toBe(false);
+		expect(shouldSkipLicenseSync(119, 120, false)).toBe(false);
 	});
 
 	it('always syncs when the user asked for it', () => {
-		expect(shouldSkipLicenseSync({ completedLicenseCount: 120 }, 120, true)).toBe(false);
+		expect(shouldSkipLicenseSync(120, 120, true)).toBe(false);
 	});
 
-	it('syncs when the page total is unknown or there is no cache', () => {
-		expect(shouldSkipLicenseSync({ completedLicenseCount: 0 }, 0, false)).toBe(false);
+	it('syncs when the page total is unknown or no sync has completed', () => {
+		expect(shouldSkipLicenseSync(0, 0, false)).toBe(false);
+		expect(shouldSkipLicenseSync(0, 120, false)).toBe(false);
 		expect(shouldSkipLicenseSync(null, 120, false)).toBe(false);
 	});
 });
@@ -57,5 +55,25 @@ describe('completedLicenseCount', () => {
 	it('is not set before the last page or after a failed save', () => {
 		expect(completedLicenseCount({ isLastPage: false, everyPageSaved: true, pageTotal: 120, parsedTotal: 50 })).toBeUndefined();
 		expect(completedLicenseCount({ isLastPage: true, everyPageSaved: false, pageTotal: 120, parsedTotal: 118 })).toBeUndefined();
+	});
+});
+
+describe('parseLicenseTotal', () => {
+	it('reads a plain total', () => {
+		expect(parseLicenseTotal('Showing 1 - 100 of 912')).toBe(912);
+	});
+
+	it('reads a total with a thousands separator', () => {
+		expect(parseLicenseTotal('Showing 1 - 100 of 1,234')).toBe(1234);
+		expect(parseLicenseTotal('Showing 1 - 100 of 12 345')).toBe(12345);
+	});
+
+	it('ignores trailing text after the total', () => {
+		expect(parseLicenseTotal('Showing 1 - 100 of 2,048 licenses')).toBe(2048);
+	});
+
+	it('returns 0 when there is no total', () => {
+		expect(parseLicenseTotal('Showing everything')).toBe(0);
+		expect(parseLicenseTotal(undefined)).toBe(0);
 	});
 });

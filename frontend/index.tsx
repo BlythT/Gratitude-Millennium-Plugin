@@ -211,7 +211,14 @@ async function onPopupCreation(popup: SteamPopup) {
 						onGiveUp: () => logError('Consent modal never appeared; consent can still be granted in settings'),
 					});
 
-					popup.window.addEventListener('beforeunload', cancelConsentModal);
+					// If Steam replaces this window before the user answers, stop prompting in it and let
+					// the next main window start the prompt again.
+					popup.window.addEventListener('beforeunload', () => {
+						cancelConsentModal();
+						if (!isConsentAnswered()) {
+							consentModalShown = false;
+						}
+					});
 				}
 			} catch (error) {
 				logError('Error checking consent:', error);

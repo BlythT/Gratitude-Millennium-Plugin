@@ -38,9 +38,6 @@ local function merge_license_page(currentCache, decodedData)
         for k, v in pairs(decodedData.byName or {}) do
             currentCache.byName[k] = v
         end
-        if decodedData.totalLicenses then
-            currentCache.totalLicenses = decodedData.totalLicenses
-        end
         -- Only the last page of a sync that fetched and saved every page carries this count
         if type(decodedData.completedLicenseCount) == "number" then
             currentCache.completedLicenseCount = decodedData.completedLicenseCount
@@ -94,7 +91,23 @@ local function normalize_loaded_cache(loadedCache)
     return cache
 end
 
+-- The part of the cache that may be written to disk: the accounts whose consent is allowed.
+local function consented_only(cache, consentState)
+    local result = {}
+    if type(cache) ~= "table" or type(consentState) ~= "table" then
+        return result
+    end
+    for steamUserID, userCache in pairs(cache) do
+        local consent = consentState[steamUserID]
+        if type(consent) == "table" and consent.allowed == true then
+            result[steamUserID] = userCache
+        end
+    end
+    return result
+end
+
 return {
     merge_license_page = merge_license_page,
     normalize_loaded_cache = normalize_loaded_cache,
+    consented_only = consented_only,
 }

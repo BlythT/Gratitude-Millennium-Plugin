@@ -21,9 +21,12 @@ export const CONSENT_MODAL_TITLE = "Gratitude: Local Storage Permission";
 
 export const isConsentAnswered = () => consentAnswered;
 
-// True when the consent modal's title is on screen in the given window
+// Marks the modal's description, so a check for the modal is one selector lookup
+const CONSENT_MODAL_MARKER = "data-gratitude-consent";
+
+// True when the consent modal is on screen in the given window
 export const isConsentModalRendered = (mainWindow: Window) =>
-    Boolean(mainWindow.document?.body?.textContent?.includes(CONSENT_MODAL_TITLE));
+    Boolean(mainWindow.document?.querySelector(`[${CONSENT_MODAL_MARKER}]`));
 
 // Shows the consent modal in the main window. Returns its handle, or null when it wasn't shown.
 export const showConsentModal = (steamUserID: string, mainWindow: Window): ModalHandle | null => {
@@ -41,12 +44,17 @@ export const showConsentModal = (steamUserID: string, mainWindow: Window): Modal
         const consentModalWindow = showModal(
             <ConfirmModal
                 strTitle={CONSENT_MODAL_TITLE}
-                strDescription="This plugin needs to store your Steam license history (acquisition dates and sources) and friends list locally to function. Your data never leaves your computer."
+                strDescription={
+                    <span {...{ [CONSENT_MODAL_MARKER]: "" }}>
+                        This plugin needs to store your Steam license history (acquisition dates and sources) and friends list locally to function. Your data never leaves your computer.
+                    </span>
+                }
                 strOKButtonText="Allow"
                 strCancelButtonText="Deny"
                 bAlertDialog={false}
                 bDisableBackgroundDismiss={true}
-                bHideCloseIcon={false}
+                // Allow or Deny are the only ways out, so a closed modal is always an answer
+                bHideCloseIcon={true}
                 onOK={() => {
                     consentAnswered = true;
                     consentModalWindow?.Close();
@@ -65,7 +73,8 @@ export const showConsentModal = (steamUserID: string, mainWindow: Window): Modal
             />,
             mainWindow,
             {
-                bNeverPopOut: false,
+                // Keep it in the main window, where isConsentModalRendered looks for it
+                bNeverPopOut: true,
             }
         );
         return consentModalWindow ?? null;

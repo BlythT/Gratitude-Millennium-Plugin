@@ -18,23 +18,28 @@ export function nextLicensePageUrl(href: string): string | null {
 	return url.toString();
 }
 
-export interface StoredLicenseCache {
-	completedLicenseCount?: unknown;
-	totalLicenses?: unknown;
+// Reads the total from the paginator text, e.g. "Showing 1 - 100 of 1,234" -> 1234. Accepts comma,
+// period, space and non-breaking space thousands separators. Returns 0 when there is no total.
+export function parseLicenseTotal(text: string | null | undefined): number {
+	const match = text?.match(/of\s+(\d[\d,.\s  ]*)/i);
+	if (!match) {
+		return 0;
+	}
+	const total = parseInt(match[1].replace(/\D/g, ''), 10);
+	return Number.isFinite(total) ? total : 0;
 }
 
-// A sync is skipped only when the user didn't ask for it and the last sync that finished every
-// page saw the same number of licenses. The older totalLicenses count isn't trusted: it was saved
-// with the first page, so a sync that stopped part way could have left it matching.
+// A sync is skipped only when the user didn't ask for it and the last sync that finished and saved
+// every page saw the same number of licenses. completedCount is that sync's count from the backend.
 export function shouldSkipLicenseSync(
-	existing: StoredLicenseCache | null | undefined,
+	completedCount: unknown,
 	pageTotal: number,
 	isExplicitSync: boolean,
 ): boolean {
-	if (isExplicitSync || pageTotal <= 0 || !existing) {
+	if (isExplicitSync || pageTotal <= 0) {
 		return false;
 	}
-	return existing.completedLicenseCount === pageTotal;
+	return Number(completedCount) === pageTotal;
 }
 
 // The count saved with a page: only the last page of a sync in which every page was fetched and
