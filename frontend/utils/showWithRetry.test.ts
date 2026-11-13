@@ -43,11 +43,15 @@ describe('showWithRetry', () => {
 	it('gives up after the last delay and reports it', () => {
 		const show = vi.fn(() => ({ Close: vi.fn() }));
 		const onGiveUp = vi.fn();
-		showWithRetry({ delaysMs: [100, 200], verifyAfterMs: 50, show, isShown: () => false, onGiveUp });
+		const onRetry = vi.fn();
+		showWithRetry({ delaysMs: [100, 200], verifyAfterMs: 50, show, isShown: () => false, onGiveUp, onRetry });
 
 		vi.advanceTimersByTime(100 + 50 + 200 + 50);
 		expect(show).toHaveBeenCalledTimes(2);
 		expect(onGiveUp).toHaveBeenCalledTimes(1);
+		// The last failed attempt reports giving up, not another retry
+		expect(onRetry).toHaveBeenCalledTimes(1);
+		expect(onRetry).toHaveBeenCalledWith(1);
 	});
 
 	it('retries when show throws or returns nothing', () => {

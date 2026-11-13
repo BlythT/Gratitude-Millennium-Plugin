@@ -208,7 +208,7 @@ async function onPopupCreation(popup: SteamPopup) {
 						isAnswered: isConsentAnswered,
 						onShown: (attempt) => log(`Consent modal shown on attempt ${attempt}`),
 						onRetry: (attempt) => log(`Consent modal attempt ${attempt} isn't on screen; showing it again`),
-						onGiveUp: () => logError('Consent modal never appeared; consent can still be granted in settings'),
+						onGiveUp: () => logError("Consent modal didn't stay on screen after every attempt; consent can still be granted in settings"),
 					});
 
 					// If Steam replaces this window before the user answers, stop prompting in it and let
