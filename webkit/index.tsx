@@ -4,6 +4,17 @@ import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
 import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from '../lib/license-sync';
+import {
+	FRIENDS_SYNC_INTERVAL_MS,
+	LICENSE_CHECK_INTERVAL_MS,
+	friendsSyncKey,
+	isDue,
+	licenseCheckKey,
+	readLastRun,
+	recordRun,
+	syncPriority,
+	waitForQuietPage,
+} from '../lib/background-sync';
 
 const setGameLicenseData = callable('SetGameLicenseData');
 const getCompletedLicenseCount = callable('GetCompletedLicenseCount');
@@ -20,6 +31,18 @@ async function isStorageAllowed(steamUserID) {
 		logError('Could not check storage consent:', error);
 		return false;
 	}
+}
+
+// For an automatic sync: false when it ran recently. Otherwise waits until the page is idle, so
+// Steam's own loading (the Library at startup, the Store page itself) goes first.
+async function readyForBackgroundSync(name, storageKey, intervalMs) {
+	const lastRun = readLastRun(window.localStorage, storageKey);
+	if (!isDue(lastRun, Date.now(), intervalMs)) {
+		log(`Skipping ${name}: last ran ${Math.round((Date.now() - lastRun) / 60000)} min ago.`);
+		return false;
+	}
+	await waitForQuietPage(window);
+	return true;
 }
 
 export default async function WebkitMain() {
@@ -45,7 +68,7 @@ export default async function WebkitMain() {
 	});
 }
 
-async function fetchOwnedGames(doc) {
+async function fetchOwnedGames(doc, priority) {
 	const configEl = doc.getElementById('application_config');
 	if (!configEl) {
 		log('application_config element not found.');
@@ -74,7 +97,8 @@ async function fetchOwnedGames(doc) {
 			`&steamid=${steamid}` +
 			`&include_appinfo=true` +
 			`&include_played_free_games=true` +
-			`&language=english`
+			`&language=english`,
+			{ priority }
 		);
 
 		if (!res.ok) {
@@ -108,7 +132,7 @@ async function shouldSkipSync(steamUserID, expectedTotal, isExplicitSync) {
 
 // Yields each licenses page with isLastPage set when it has no next link. Stops early, without a
 // last page, when a page can't be fetched or its next link can't be followed.
-async function* fetchAllLicensePages(startUrl) {
+async function* fetchAllLicensePages(startUrl, priority) {
 	let currentUrl = startUrl;
 	let pageCount = 1;
 	const parser = new DOMParser();
@@ -116,7 +140,7 @@ async function* fetchAllLicensePages(startUrl) {
 	log(`Fetching Steam Licenses HTML (l=english, offset=0)`);
 
 	while (currentUrl) {
-		const html = await fetchPage(currentUrl);
+		const html = await fetchPage(currentUrl, priority);
 		if (!html) {
 			log(`Failed to fetch Steam Licenses at page ${pageCount}.`);
 			return;
@@ -178,14 +202,20 @@ async function maybeSyncLicenses(steamUserID) {
 	}
 
 	const isExplicitSync = takeExplicitSyncFlag();
+	const storageKey = licenseCheckKey(steamUserID);
 
 	if (isExplicitSync) {
 		showSyncOverlay('Gratitude: Sync Licenses', 'Connecting to Steam store...');
+	} else if (!(await readyForBackgroundSync('license check', storageKey, LICENSE_CHECK_INTERVAL_MS))) {
+		return;
 	}
 
 	let completed = false;
 	try {
 		completed = await syncLicensePages(steamUserID, isExplicitSync);
+		if (completed) {
+			recordRun(window.localStorage, storageKey, Date.now());
+		}
 	} finally {
 		if (isExplicitSync) {
 			finishExplicitSync(completed);
@@ -203,7 +233,8 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 	let totalParsed = 0;
 	let everyPageSaved = true;
 
-	for await (const { doc, pageCount, isLastPage } of fetchAllLicensePages(startUrl)) {
+	const priority = syncPriority(isExplicitSync);
+	for await (const { doc, pageCount, isLastPage } of fetchAllLicensePages(startUrl, priority)) {
 		// 1. If we are on page 1, fetch ownedGames so we have them, and check cache optimization
 		if (pageCount === 1) {
 			// Extract total licenses from paginator
@@ -217,7 +248,7 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 				return true;
 			}
 
-			ownedGames = await fetchOwnedGames(doc);
+			ownedGames = await fetchOwnedGames(doc, priority);
 			log(`Fetched ${ownedGames.length} owned games from Web API`);
 			
 			// Create Map of owned games for fuzzy matching: Name -> { appid }
@@ -316,11 +347,14 @@ async function maybeSyncFriends(steamUserID) {
 	}
 
 	const isExplicitSync = takeExplicitSyncFlag();
+	const storageKey = friendsSyncKey(steamUserID);
 	if (isExplicitSync) {
 		showSyncOverlay('Gratitude: Sync Friends', 'Fetching friends list from Steam...');
+	} else if (!(await readyForBackgroundSync('friends sync', storageKey, FRIENDS_SYNC_INTERVAL_MS))) {
+		return;
 	}
 
-	const html = await fetchPage('https://steamcommunity.com/my/friends/');
+	const html = await fetchPage('https://steamcommunity.com/my/friends/', syncPriority(isExplicitSync));
 	if (!html) {
 		log('Failed to fetch Steam friends page.');
 		if (isExplicitSync) {
@@ -352,6 +386,7 @@ async function maybeSyncFriends(steamUserID) {
 	try {
 		await setFriendsCache({ friendsJson: JSON.stringify(friends), steamUserID });
 		log('Friends cache sent to backend successfully.');
+		recordRun(window.localStorage, storageKey, Date.now());
 		if (isExplicitSync) {
 			updateSyncOverlay('Sync complete! Returning to Library...', 100);
 			setTimeout(() => {
@@ -432,11 +467,13 @@ function closeSyncOverlay() {
 	}
 }
 
-async function fetchPage(url, retries = 3, delayMs = 1000) {
+// priority is a Fetch Priority hint: 'low' lets the page's own requests go first
+async function fetchPage(url, priority = 'auto', retries = 3, delayMs = 1000) {
 	for (let i = 0; i < retries; i++) {
 		try {
 			const response = await fetch(url, {
 				credentials: 'include',
+				priority,
 			});
 			if (response.ok) {
 				return await response.text();

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Automatic license and friends syncs now wait until the Steam page has finished loading and is idle, and request at low priority, so they don't slow Steam's startup, the Library or the Store, especially on slow connections. Syncs you start from a sync link still run straight away.
+- The automatic license check now runs at most once every 10 minutes instead of on every Store page, and the friends list refreshes at most every 6 hours instead of on every Community page.
+
 ## v1.3.1 - 2026-11-14
 
 ### Fixed
