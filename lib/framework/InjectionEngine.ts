@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { InjectionConfig } from './types';
+import { choosePlacement, needsMove, type Placement } from './placement';
 import { log, logError } from '../../../lib/logger';
 
 interface InjectedNode {
@@ -81,33 +82,43 @@ class InjectionEngine {
          this.cleanupInjected(config.id, existing);
          this.injectedNodes.delete(config.id);
       } else {
-         return; // Already injected and connected
+         // Already injected. If it went to the end of the row because the anchor (Play Time)
+         // wasn't drawn yet, move it after the anchor now that it is.
+         if (existing.container && config.insertAfterSelector) {
+           const parent = existing.container.parentElement;
+           const anchor = parent ? this.detectElementMulti(parent, config.insertAfterSelector) : null;
+           if (anchor && needsMove(existing.container, anchor)) {
+             anchor.after(existing.container);
+           }
+         }
+         return;
       }
     }
 
     const containerParent = this.detectElementMulti(doc, config.selector);
     if (!containerParent) return;
 
-    let insertTarget = containerParent;
-    if (config.insertAfterSelector) {
-        const afterTarget = this.detectElementMulti(containerParent, config.insertAfterSelector);
-        if (!afterTarget) return;
-        insertTarget = afterTarget;
-    }
-
-    this.inject(config, insertTarget, doc);
+    const anchor = config.insertAfterSelector
+      ? this.detectElementMulti(containerParent, config.insertAfterSelector)
+      : null;
+    this.inject(config, choosePlacement(containerParent, anchor, !!config.insertAfterSelector), doc);
   }
 
-  private inject(config: InjectionConfig, target: HTMLElement, doc: Document) {
-    if (config.alignment && target.parentElement) {
-      Object.assign(target.parentElement.style, config.alignment);
+  private inject(config: InjectionConfig, placement: Placement<HTMLElement>, doc: Document) {
+    const row = placement.kind === 'append' ? placement.target : placement.target.parentElement;
+    if (config.alignment && row) {
+      Object.assign(row.style, config.alignment);
     }
 
     const container = doc.createElement('div');
     container.id = `injection-${config.id}`;
     container.style.display = 'contents';
-    
-    target.after(container);
+
+    if (placement.kind === 'append') {
+      placement.target.append(container);
+    } else {
+      placement.target.after(container);
+    }
     
     const root = (ReactDOM as any).createRoot(container);
     root.render(React.createElement(config.component, { doc }));
