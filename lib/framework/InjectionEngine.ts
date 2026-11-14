@@ -8,6 +8,7 @@ interface InjectedNode {
   container: HTMLElement | null;
   reactRoot: any | null;
   teardownObserver: MutationObserver | null;
+  instanceKey?: string;
 }
 
 // How long to wait before trying to mount a component again after its mount threw
@@ -39,7 +40,8 @@ class InjectionEngine {
       this.sweep(doc);
     });
 
-    this.mainObserver.observe(doc.body, { childList: true, subtree: true });
+    // characterData too: in Big Picture, moving to another game can change only the title's text
+    this.mainObserver.observe(doc.body, { childList: true, subtree: true, characterData: true });
     log('[InjectionEngine] Started observing document body.');
     this.sweep(doc);
   }
@@ -80,6 +82,11 @@ class InjectionEngine {
     if (existing) {
       if (existing.container && !existing.container.isConnected) {
          // Container was removed from DOM by Steam
+         this.cleanupInjected(config.id, existing);
+         this.injectedNodes.delete(config.id);
+      } else if (config.instanceKey && config.instanceKey(doc) !== existing.instanceKey) {
+         // Still in the page but showing something else now (Big Picture keeps the same stats
+         // row between games): mount it afresh below, in this same sweep
          this.cleanupInjected(config.id, existing);
          this.injectedNodes.delete(config.id);
       } else {
@@ -162,7 +169,7 @@ class InjectionEngine {
        teardownObserver.observe(container.parentElement, { childList: true });
     }
 
-    this.injectedNodes.set(config.id, { container, reactRoot: root, teardownObserver });
+    this.injectedNodes.set(config.id, { container, reactRoot: root, teardownObserver, instanceKey: config.instanceKey?.(doc) });
     log(`[InjectionEngine] Injected component for ${config.id}`);
   }
 

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed the Gifted badge in Big Picture mode showing the previous game's gift date, or no badge at all, after moving from one game to another. Big Picture keeps the same stats row between games, so the badge stayed as it was for the first game.
+
 ## v1.3.2 - 2026-11-14
 
 ### Fixed

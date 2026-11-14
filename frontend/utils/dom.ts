@@ -64,7 +64,24 @@ function getAppIdFromImages(scope: ParentNode): number | null {
 // Finds the App ID of the game whose page is open, searching only around its title. Returns null
 // when none is found there, and the caller then matches by name. Searching the whole window would
 // find the first game in the library list instead of this one.
+// The App ID from the route of the Steam window showing doc (/library/app/<id>), in desktop and
+// Big Picture. Steam's window store maps a browser window to its navigator.
+function getAppIdFromRoute(doc: Document): number | null {
+  try {
+    const windowStore = (window as unknown as { SteamUIStore?: { WindowStore?: { GetWindowInstanceFromWindow?: (w: Window | null) => { History?: { location?: { pathname?: string } } } | null } } }).SteamUIStore?.WindowStore;
+    const path = windowStore?.GetWindowInstanceFromWindow?.(doc.defaultView)?.History?.location?.pathname ?? '';
+    return parseAppId(path.match(/\/library\/app\/(\d+)/)?.[1]);
+  } catch {
+    return null;
+  }
+}
+
 export function detectAppId(doc: Document): number | null {
+  const fromRoute = getAppIdFromRoute(doc);
+  if (fromRoute !== null) {
+    return fromRoute;
+  }
+
   const strategies = [getAppIdFromDataAttribute, getAppIdFromLinks, getAppIdFromImages];
 
   let scope = findGameNameElement(doc)?.parentElement ?? null;

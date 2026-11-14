@@ -11,6 +11,7 @@ import { showConsentModal, isConsentAnswered, isConsentModalRendered } from './c
 import { showWithRetry } from './utils/showWithRetry';
 import { getCurrentAccountID } from '../lib/steamid';
 import { POPUPS, SELECTORS } from './types';
+import { detectAppId, detectGameName } from './utils/dom';
 import { useSettings } from './settings';
 
 // Declare backend functions
@@ -245,7 +246,10 @@ injectionEngine.register({
 	id: 'gifted-badge',
 	selector: [SELECTORS.standard.tooltipContainer, SELECTORS.bigPicture.tooltipContainer],
 	insertAfterSelector: [SELECTORS.standard.playtimeTooltip, SELECTORS.bigPicture.playtimeTooltip],
-	component: GiftBadge
+	component: GiftBadge,
+	// The open game: Big Picture reuses the stats row between games, so the badge must be
+	// remounted when this changes or it keeps showing the first game's gift
+	instanceKey: (doc) => `${detectAppId(doc) ?? ''}|${detectGameName(doc) ?? ''}`,
 });
 
 // Initialize: check for existing main window and register callback for new ones
