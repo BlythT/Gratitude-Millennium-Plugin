@@ -28,14 +28,14 @@ Gratitude also works in Big Picture mode, providing the same gift information wh
   <img src="assets/small(big)picturemode.png" width="40%" alt="Big Picture Mode Tooltip">
 </p>
 
-### Gift Labeling ![NEW!](https://img.shields.io/badge/-NEW!-FFB347)
+### Gift Labeling
 Ever forgotten who gave you a game?
 
 | | |
 |:---|:---:|
-| Click the gift icon on any gifted game to open a details panel where you can record the gifter and add a personal note. | <a href="https://github.com/user-attachments/assets/8de0754f-ceba-45df-8fc8-fd237b7b1ce6"><img src="https://github.com/user-attachments/assets/8de0754f-ceba-45df-8fc8-fd237b7b1ce6" width="250" alt="Gift details panel"></a> |
-| <a href="https://github.com/user-attachments/assets/11bc1278-38fa-4a3c-81c5-6e8e19df4706"><img src="https://github.com/user-attachments/assets/11bc1278-38fa-4a3c-81c5-6e8e19df4706" width="250" alt="Friend autocomplete"></a> | The gifter field uses smart autocomplete against your Steam friends list, so you can find the right person without typing their full name. |
-| Once saved, the gifter's name shows up right in the tooltip so you never forget again! | <a href="https://github.com/user-attachments/assets/0af398fa-559e-4196-977e-aefac28d6af8"><img src="https://github.com/user-attachments/assets/0af398fa-559e-4196-977e-aefac28d6af8" width="250" alt="Gifter shown on hover"></a> |
+| Click the Gifted label on any gifted game to open a details panel where you can record the gifter and add a personal note. (Clicking the gift icon itself has a little surprise.) | <a href="assets/gift-details.png"><img src="assets/gift-details.png" width="250" alt="Gift details panel"></a> |
+| <a href="assets/edit-giver.png"><img src="assets/edit-giver.png" width="250" alt="Edit giver dialog"></a> | The gifter field suggests people from your Steam friends list as you type, so you can find the right person without typing their full name. Not sure who it was? The Gmail button searches your inbox for Steam's gift email. |
+| Once saved, the gifter's name shows up right in the tooltip so you never forget again! | <a href="assets/gifter-tooltip.png"><img src="assets/gifter-tooltip.png" width="420" alt="Gifter shown on hover"></a> |
 
 ## 🛠 Installation
 
@@ -53,7 +53,7 @@ Or:
     * Under the latest version, look for the **Assets** dropdown.
     * Download the file named `gratitude-for-millenium-<version>.zip`.
 2.  **Locate Plugins Directory:**
-    * Go to your Steam installation folder (often `C:\Program Files (x86)\Steam\plugins`). 
+    * Go to the `millennium\plugins` folder in your Steam installation (often `C:\Program Files (x86)\Steam\millennium\plugins`).
     * *Note: This folder is only created after Millennium has been installed and run for the first time.*
 3.  **Extract:**
     * Extract the contents of the ZIP file into a new folder within that `plugins` directory.
@@ -75,21 +75,14 @@ A: Using Millennium to customize your client is safe. As noted on the [Official 
 A: Yes! Gratitude fully supports both the standard Steam library and Big Picture mode.
 
 **Q: Why isn't the gift display loading or isn't showing for a game I was just gifted?**  
-A: Try visiting the Steam Store in your client, then go back: This plugin stores your game license data but can only do so when you visit one of Steam's non-library pages.
+A: Gratitude picks up new gifts from the Steam Store, so open the Store in the Steam client, wait a moment, then go back to your Library.
 
 **Q: Can it show who gifted me the game?**  
-A: Yes, with a little help from you! Steam doesn't store sender information in a way the client can retrieve, but you can label it yourself. Click the `Gifted` tooltip on any gifted game in your Library to open the details panel, where you can select the gifter from your Steam friends list and add a personal note. Once saved, the gifter's name will appear in the tooltip.
-
-### Matching Harness
-If you want to debug library-title vs license-name mismatches, there is a small report tool in `tools/license-match-report.mjs`.
-
-- Run it with `npm run match:licenses -- --cache backend/gratitude_cache.json --dom path/to/snapshots`
-- It accepts a single saved `.html` snapshot, a folder of snapshots, or a plain text file of titles
-- The report shows exact matches, the plugin's current prefix-based fuzzy matches, normalized-only matches, and misses
+A: Yes, with a little help from you! Steam doesn't store sender information in a way the client can retrieve, but you can label it yourself. Click the `Gifted` label on any gifted game in your Library to open the details panel, where you can select the gifter from your Steam friends list and add a personal note. Once saved, the gifter's name will appear in the tooltip.
 
 ## Acknowledgments
 
-A special thanks to **[HLTB for Millennium](https://github.com/jcdoll/hltb-millennium-plugin)** for executing another plugin which places game-specific tooltips: it made a great study/starting out point, especially for the observer and injection logic.
+A special thanks to **[HLTB for Millennium](https://github.com/jcdoll/hltb-millennium-plugin)**, another plugin that places game-specific tooltips: it was a great starting point to learn from, especially for the observer and injection logic.
 
 This project uses the **IoGiftSharp** icon from **[Ionicons](https://ionic.io/ionicons)** via **[react-icons](https://react-icons.github.io/react-icons/)**.  
 Ionicons and react-icons are licensed under the **MIT License**.
