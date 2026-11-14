@@ -33,10 +33,20 @@ async function isStorageAllowed(steamUserID) {
 	}
 }
 
+// The page's localStorage, or undefined where reading it throws (blocked storage). The sync
+// helpers then treat every sync as due rather than failing.
+function pageStorage() {
+	try {
+		return window.localStorage;
+	} catch {
+		return undefined;
+	}
+}
+
 // For an automatic sync: false when it ran recently. Otherwise waits until the page is idle, so
 // Steam's own loading (the Library at startup, the Store page itself) goes first.
 async function readyForBackgroundSync(name, storageKey, intervalMs) {
-	const lastRun = readLastRun(window.localStorage, storageKey);
+	const lastRun = readLastRun(pageStorage(), storageKey);
 	if (!isDue(lastRun, Date.now(), intervalMs)) {
 		log(`Skipping ${name}: last ran ${Math.round((Date.now() - lastRun) / 60000)} min ago.`);
 		return false;
@@ -214,7 +224,7 @@ async function maybeSyncLicenses(steamUserID) {
 	try {
 		completed = await syncLicensePages(steamUserID, isExplicitSync);
 		if (completed) {
-			recordRun(window.localStorage, storageKey, Date.now());
+			recordRun(pageStorage(), storageKey, Date.now());
 		}
 	} finally {
 		if (isExplicitSync) {
@@ -384,9 +394,13 @@ async function maybeSyncFriends(steamUserID) {
 	log(`Parsed ${friends.length} Steam friends`);
 
 	try {
-		await setFriendsCache({ friendsJson: JSON.stringify(friends), steamUserID });
+		// The backend reports a failed save by returning false, not by throwing
+		const saved = await setFriendsCache({ friendsJson: JSON.stringify(friends), steamUserID });
+		if (saved === false || saved === 'false') {
+			throw new Error('backend rejected the friends list');
+		}
 		log('Friends cache sent to backend successfully.');
-		recordRun(window.localStorage, storageKey, Date.now());
+		recordRun(pageStorage(), storageKey, Date.now());
 		if (isExplicitSync) {
 			updateSyncOverlay('Sync complete! Returning to Library...', 100);
 			setTimeout(() => {
