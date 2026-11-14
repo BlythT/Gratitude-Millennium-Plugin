@@ -1,9 +1,13 @@
-import { DialogButton, TextField } from '@steambrew/client';
+import { DialogButton, Focusable, TextField, type FocusableProps } from '@steambrew/client';
 import React, { useEffect, useState } from 'react';
 import { friendsCache } from '../injection/friendscache';
 import type { FriendRecord, FriendsCacheSnapshot, GiverSource } from '../types';
 import { type GratitudeSettings } from '../settings';
 import { SteamTooltip } from './SteamTooltip';
+
+// Focusable declares children as required, which this project's JSX typing doesn't count as
+// passed; the alias only relaxes that for the type checker
+const FocusGroup = Focusable as unknown as React.FC<Omit<FocusableProps, 'children'> & { children?: React.ReactNode }>;
 
 function LinkIndicator({ title }: { title: string }) {
 	return (
@@ -106,21 +110,20 @@ function FriendSuggestionItem({
 }) {
 	const friendLinkLabel = getFriendLinkLabel(friend, settings);
 	return (
-		<button
-			type="button"
+		// Steam's own button, so the row looks native and a controller can focus and pick it.
+		// minWidth 0 drops Steam's minimum button width, which would overflow the list.
+		<DialogButton
 			onClick={onClick}
 			style={{
 				display: 'grid',
 				gridTemplateColumns: friend.avatarUrl ? '32px minmax(0, 1fr)' : 'minmax(0, 1fr)',
+				alignItems: 'center',
 				gap: '8px',
 				padding: '6px 8px',
 				textAlign: 'left',
-				background: 'rgba(255,255,255,0.04)',
-				border: '1px solid rgba(255,255,255,0.08)',
-				borderRadius: '6px',
-				color: 'inherit',
-				cursor: 'pointer',
+				minWidth: 0,
 				width: '100%',
+				boxSizing: 'border-box',
 			}}
 		>
 			{friend.avatarUrl ? (
@@ -148,7 +151,7 @@ function FriendSuggestionItem({
 					</div>
 				) : null}
 			</div>
-		</button>
+		</DialogButton>
 	);
 }
 
@@ -339,8 +342,18 @@ export function FriendSelector({
 		}
 	};
 
+	// The name field and the suggestions form one controller navigation group, so pressing down
+	// from the field moves into the list. The list stays open while focus is anywhere in the group
+	// (a controller moving onto a suggestion takes focus off the field) and closes when it leaves.
 	return (
-		<>
+		<FocusGroup
+			flow-children="column"
+			onBlur={(event: React.FocusEvent<HTMLDivElement>) => {
+				if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+					setIsDropdownOpen(false);
+				}
+			}}
+		>
 			<TextField
 				label={(
 					<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -353,10 +366,6 @@ export function FriendSelector({
 				value={displayName}
 				onChange={(event) => updateDisplayName(event.currentTarget.value)}
 				onFocus={() => setIsDropdownOpen(true)}
-				onBlur={() => {
-					// Delay closing to allow dropdown item clicks to execute first
-					setTimeout(() => setIsDropdownOpen(false), 150);
-				}}
 				onKeyDown={handleDisplayNameKeyDown}
 				inlineControls={(
 					<div
@@ -368,9 +377,11 @@ export function FriendSelector({
 						style={{ display: 'flex', alignItems: 'center', height: '100%', cursor: 'default' }}
 					>
 						<SteamTooltip toolTipContent="Search Gmail for gift email">
-							<button
-								type="button"
+							<FocusGroup
+								onActivate={onEmailSearch}
 								onClick={onEmailSearch}
+								role="button"
+								aria-label="Search Gmail for gift email"
 								style={{
 									background: 'none',
 									border: 'none',
@@ -386,13 +397,13 @@ export function FriendSelector({
 									opacity: 0.6,
 									transition: 'opacity 0.2s',
 								}}
-								onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '1'; }}
-								onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => { e.currentTarget.style.opacity = '0.6'; }}
+								onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => { e.currentTarget.style.opacity = '1'; }}
+								onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => { e.currentTarget.style.opacity = '0.6'; }}
 							>
 								<svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '22px', height: '22px' }}>
 									<path d="m18.73 5.41-1.28 1L12 10.46 6.55 6.37l-1.28-1A2 2 0 0 0 2 7.05v11.59A1.36 1.36 0 0 0 3.36 20h3.19v-7.72L12 16.37l5.45-4.09V20h3.19A1.36 1.36 0 0 0 22 18.64V7.05a2 2 0 0 0-3.27-1.64z"></path>
 								</svg>
-							</button>
+							</FocusGroup>
 						</SteamTooltip>
 					</div>
 				)}
@@ -409,6 +420,6 @@ export function FriendSelector({
 				}}
 				onRefreshFriends={onRefreshFriends}
 			/>
-		</>
+		</FocusGroup>
 	);
 }
