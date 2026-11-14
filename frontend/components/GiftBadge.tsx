@@ -7,6 +7,7 @@ import { gameLicenseCache, type UserLicenseCache } from '../injection/gamelicens
 import { giverCache } from '../injection/givercache';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { detectGameName, detectAppId } from '../utils/dom';
+import { isBorrowed, ownerAccountIdOf } from '../utils/ownership';
 import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
 
 import { SteamTooltip } from './SteamTooltip';
@@ -142,6 +143,13 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
   if (!licenseDataMap) {
     logDebug(`[GiftBadge] Render aborted: Cache data is missing or not yet loaded.`);
     return null; 
+  }
+
+  // A game borrowed through Family Sharing isn't the user's license, so it can't have been gifted
+  // to them, and a sync would never find it
+  if (appId && isBorrowed(ownerAccountIdOf(appId), steamID)) {
+    logDebug(`[GiftBadge] Render aborted: "${gameName}" is borrowed through Family Sharing.`);
+    return null;
   }
 
   let match: LicenseMatch | null = null;
