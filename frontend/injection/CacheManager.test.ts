@@ -31,6 +31,25 @@ describe('CacheManager.getDataSync', () => {
 		expect(listener).toHaveBeenLastCalledWith('v2');
 	});
 
+	it('waits a full TTL before retrying after a failed refresh, and keeps the old data', async () => {
+		vi.useFakeTimers();
+		let fail = false;
+		const fetcher = vi.fn(async () => { if (fail) throw new Error('backend down'); return 'data'; });
+		const cache = new CacheManager<string>('test', fetcher, undefined, 1000);
+		await cache.getData('1');
+		fail = true;
+		vi.advanceTimersByTime(1001);
+		expect(cache.getDataSync('1')).toBe('data');
+		await vi.runAllTimersAsync();
+		expect(fetcher).toHaveBeenCalledTimes(2);
+		// Reads right after the failure don't call the backend again
+		cache.getDataSync('1');
+		cache.getDataSync('1');
+		await vi.runAllTimersAsync();
+		expect(fetcher).toHaveBeenCalledTimes(2);
+		expect(cache.getDataSync('1')).toBe('data');
+	});
+
 	it('starts only one refresh for repeated reads of stale data', async () => {
 		vi.useFakeTimers();
 		const fetcher = vi.fn(async () => 'data');

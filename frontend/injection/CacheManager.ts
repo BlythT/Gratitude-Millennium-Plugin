@@ -83,7 +83,9 @@ export class CacheManager<T> {
 			} catch (error) {
 				logError(`Error loading ${this.name} cache for user ${steamUserID}:`, error);
 				if (cached && cached.isLoaded) {
-					// We don't notify on failure if we already have stale data displayed
+					// Keep showing the stale data, and wait a full TTL before trying again, so a backend
+					// that keeps failing isn't called on every read
+					this.cache.set(steamUserID, { ...cached, timestamp: Date.now() });
 					return cached.data;
 				}
 				this.notifyListeners(steamUserID, null);
