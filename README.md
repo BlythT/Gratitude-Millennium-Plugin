@@ -33,9 +33,9 @@ Ever forgotten who gave you a game?
 
 | | |
 |:---|:---:|
-| Click the gift icon on any gifted game to open a details panel where you can record the gifter and add a personal note. | <a href="https://github.com/user-attachments/assets/8de0754f-ceba-45df-8fc8-fd237b7b1ce6"><img src="https://github.com/user-attachments/assets/8de0754f-ceba-45df-8fc8-fd237b7b1ce6" width="250" alt="Gift details panel"></a> |
-| <a href="https://github.com/user-attachments/assets/11bc1278-38fa-4a3c-81c5-6e8e19df4706"><img src="https://github.com/user-attachments/assets/11bc1278-38fa-4a3c-81c5-6e8e19df4706" width="250" alt="Friend autocomplete"></a> | The gifter field uses smart autocomplete against your Steam friends list, so you can find the right person without typing their full name. |
-| Once saved, the gifter's name shows up right in the tooltip so you never forget again! | <a href="https://github.com/user-attachments/assets/0af398fa-559e-4196-977e-aefac28d6af8"><img src="https://github.com/user-attachments/assets/0af398fa-559e-4196-977e-aefac28d6af8" width="250" alt="Gifter shown on hover"></a> |
+| Click the gift icon on any gifted game to open a details panel where you can record the gifter and add a personal note. | <a href="assets/gift-details.png"><img src="assets/gift-details.png" width="250" alt="Gift details panel"></a> |
+| <a href="assets/edit-giver.png"><img src="assets/edit-giver.png" width="250" alt="Edit giver dialog"></a> | The gifter field uses smart autocomplete against your Steam friends list, so you can find the right person without typing their full name. |
+| Once saved, the gifter's name shows up right in the tooltip so you never forget again! | <a href="assets/gifter-tooltip.png"><img src="assets/gifter-tooltip.png" width="420" alt="Gifter shown on hover"></a> |
 
 ## 🛠 Installation
 
