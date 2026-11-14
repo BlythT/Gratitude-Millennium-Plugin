@@ -75,14 +75,14 @@ A: Using Millennium to customize your client is safe. As noted on the [Official 
 A: Yes! Gratitude fully supports both the standard Steam library and Big Picture mode.
 
 **Q: Why isn't the gift display loading or isn't showing for a game I was just gifted?**  
-A: Gratitude reads your license list from the Steam Store, so open the Store in the Steam client, wait a moment, then go back to your Library. It checks for new licenses in the background at most every 10 minutes. A game Gratitude has no license data for shows a question mark instead, which you can click to sync.
+A: Gratitude picks up new gifts from the Steam Store, so open the Store in the Steam client, wait a moment, then go back to your Library.
 
 **Q: Can it show who gifted me the game?**  
 A: Yes, with a little help from you! Steam doesn't store sender information in a way the client can retrieve, but you can label it yourself. Click the `Gifted` label on any gifted game in your Library to open the details panel, where you can select the gifter from your Steam friends list and add a personal note. Once saved, the gifter's name will appear in the tooltip.
 
 ## Acknowledgments
 
-A special thanks to **[HLTB for Millennium](https://github.com/jcdoll/hltb-millennium-plugin)** for executing another plugin which places game-specific tooltips: it made a great study/starting out point, especially for the observer and injection logic.
+A special thanks to **[HLTB for Millennium](https://github.com/jcdoll/hltb-millennium-plugin)**, another plugin that places game-specific tooltips: it was a great starting point to learn from, especially for the observer and injection logic.
 
 This project uses the **IoGiftSharp** icon from **[Ionicons](https://ionic.io/ionicons)** via **[react-icons](https://react-icons.github.io/react-icons/)**.  
 Ionicons and react-icons are licensed under the **MIT License**.
