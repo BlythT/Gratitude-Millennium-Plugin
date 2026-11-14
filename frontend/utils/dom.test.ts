@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { detectAppId, detectGameName } from './dom';
 import { SELECTORS } from '../types';
 
@@ -85,6 +85,35 @@ describe('detectAppId', () => {
   it('returns null when no game page is open', () => {
     const empty = { querySelector: () => null, querySelectorAll: () => [] } as unknown as Document;
     expect(detectAppId(empty)).toBeNull();
+  });
+
+  describe('from the route, for Big Picture, whose title icon has no App ID', () => {
+    const g = globalThis as unknown as { window?: unknown };
+    const original = g.window;
+    afterEach(() => { g.window = original; });
+
+    // Steam's window store reports route for every window; the app store knows Garry's Mod
+    const steam = (route: string) => {
+      g.window = {
+        SteamUIStore: { WindowStore: { GetWindowInstanceFromWindow: () => ({ History: { location: { pathname: route } } }) } },
+        appStore: { GetAppOverviewByAppID: (id: number) => (id === 4000 ? { display_name: "Garry's Mod" } : { display_name: 'Dino D-Day' }) },
+      };
+    };
+
+    it('uses the route when its game is the one whose title is shown', () => {
+      steam('/library/app/4000');
+      expect(detectAppId(libraryWindow(null, "Garry's Mod"))).toBe(4000);
+    });
+
+    it('ignores the route while Steam still shows the previous game', () => {
+      steam('/library/app/70000');
+      expect(detectAppId(libraryWindow(null, "Garry's Mod"))).toBeNull();
+    });
+
+    it('prefers the App ID next to the title over the route', () => {
+      steam('/library/app/70000');
+      expect(detectAppId(libraryWindow(4000, "Garry's Mod"))).toBe(4000);
+    });
   });
 });
 

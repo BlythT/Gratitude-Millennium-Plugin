@@ -12,7 +12,11 @@
 // minimised or fully covered); otherwise only milliseconds are reported and pop-in isn't checked.
 //
 // Pages are opened with Steam's own navigator, so the Steam window isn't focused and you can keep
-// typing elsewhere while it runs. Only the desktop Library is checked, not Big Picture mode.
+// typing elsewhere while it runs. That holds for the desktop Library; with --big-picture the sweep
+// opens Big Picture mode (full screen) if it isn't open, checks the games there, and closes it after
+// if it opened it. Big Picture keeps the same stats row between games, so there it also checks that
+// no badge is left over from the previous game. Big Picture doesn't draw the stat icons (even
+// Steam's own have no size), so the icon alignment checks only run on the desktop.
 //
 // Needs Node 22 or later (for its built-in WebSocket), and Steam running with Gratitude installed
 // and CEF remote debugging enabled: create an empty `.cef-enable-remote-debugging` file in the Steam
@@ -27,6 +31,7 @@
 //   --devtools <url>   CEF DevTools address (default http://127.0.0.1:8080)
 //   --timeout <ms>     How long to wait for each page to open (default 15000)
 //   --max-popin-frames <n>  Frames the badge may trail Steam's stats row by (default 0: same frame)
+//   --big-picture      Check Big Picture mode instead of the desktop Library
 //   --json             Print results as JSON
 //
 // Exit codes: 0 every check passed; 1 a check failed or a page didn't open; 2 the sweep couldn't
@@ -45,6 +50,17 @@ const SETTLE_TIMEOUT_MS = 2500;
 const NAV_ATTEMPT_MS = 3000;
 const EVALUATE_TIMEOUT_MS = 5000;
 const CONNECT_TIMEOUT_MS = 5000;
+const BIG_PICTURE_OPEN_TIMEOUT_MS = 15000;
+// Big Picture finishes drawing its first page a moment after its window appears
+const BIG_PICTURE_SETTLE_MS = 2000;
+
+// Each Steam window the sweep can check: its DevTools page title, the navigator that drives it,
+// its selectors, whether it draws the stat icons (so a badge isn't finished until its icon is),
+// and whether it keeps the same stats row from one game to the next
+const MODES = {
+	desktop: { label: 'the desktop Library', title: 'Steam', navigator: 'MainWindowInstance', selectors: SELECTORS.standard, drawsIcons: true, reusesRow: false },
+	bigPicture: { label: 'Big Picture', title: 'Steam Big Picture Mode', navigator: 'GamepadUIMainWindowInstance', selectors: SELECTORS.bigPicture, drawsIcons: false, reusesRow: true },
+};
 // The timing observer in Steam's window stops itself after this, even if the sweep dies
 const TIMING_SELF_STOP_MS = 30000;
 
@@ -60,6 +76,7 @@ function parseArgs(argv) {
 		timeoutMs: 15000,
 		maxPopinFrames: 0,
 		json: false,
+		bigPicture: false,
 	};
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
@@ -85,6 +102,7 @@ function parseArgs(argv) {
 		else if (arg === '--timeout') options.timeoutMs = count();
 		else if (arg === '--max-popin-frames') options.maxPopinFrames = count();
 		else if (arg === '--json') options.json = true;
+		else if (arg === '--big-picture') options.bigPicture = true;
 		else throw new UsageError(`Unknown argument: ${arg}`);
 	}
 	return options;
@@ -133,48 +151,101 @@ async function connect(target) {
 	};
 }
 
-async function findTargets(devtools) {
-	let list;
+async function listTargets(devtools) {
 	try {
 		const response = await fetch(`${devtools}/json/list`, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
-		list = await response.json();
+		return await response.json();
 	} catch {
 		throw new Error(`No DevTools at ${devtools}. Launch Steam with .cef-enable-remote-debugging in the Steam folder.`);
 	}
-	const shared = list.find((t) => t.title === 'SharedJSContext');
-	const main = list.find((t) => t.type === 'page' && t.title === 'Steam');
-	if (!shared || !main) {
-		throw new Error("Steam's SharedJSContext or main window was not found. Is the Steam window open?");
+}
+
+const findPage = (list, title) => list.find((t) => t.type === 'page' && t.title === title);
+
+async function findShared(devtools) {
+	const shared = (await listTargets(devtools)).find((t) => t.title === 'SharedJSContext');
+	if (!shared) throw new Error("Steam's SharedJSContext was not found. Is Steam running?");
+	return shared;
+}
+
+async function findMain(devtools) {
+	const main = findPage(await listTargets(devtools), MODES.desktop.title);
+	if (!main) throw new Error("Steam's main window was not found. Is the Steam window open?");
+	return main;
+}
+
+const BIG_PICTURE_URL = (action) => `window.SteamClient.URL.ExecuteSteamURL('steam://${action}/bigpicture'); true`;
+
+// Returns Big Picture's window, opening Big Picture if needed. onOpening runs as soon as the sweep
+// asks Steam to open it, so the caller can close it again even if the sweep stops while waiting;
+// Big Picture is only closed if it wasn't open before.
+async function openBigPicture(devtools, shared, onOpening) {
+	const existing = findPage(await listTargets(devtools), MODES.bigPicture.title);
+	if (existing) return existing;
+	onOpening();
+	await shared.evaluate(BIG_PICTURE_URL('open'));
+	const deadline = Date.now() + BIG_PICTURE_OPEN_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		await sleep(250);
+		const target = findPage(await listTargets(devtools), MODES.bigPicture.title);
+		if (target) {
+			await sleep(BIG_PICTURE_SETTLE_MS);
+			return target;
+		}
 	}
-	return { shared, main };
+	throw new Error(`Big Picture didn't open within ${BIG_PICTURE_OPEN_TIMEOUT_MS / 1000}s.`);
 }
 
 // Page-side helpers shared by the probe and the timing observer. A game's page is identified by
-// the icon next to its title. Stats rows that existed before the current navigation are recorded
-// in window.__gratitudeSweepOldRows and ignored, so a badge left from the previous game can't pass
-// as the new game's. String.raw keeps the page script's backslashes (\n, \d) as written.
-const PAGE_HELPERS = String.raw`
-	const sel = ${JSON.stringify(SELECTORS.standard)};
+// the icon next to its title, or in Big Picture, whose icon has no App ID, by the window's route.
+// The stats rows, Gratitude containers and title from before the current navigation are recorded
+// in window.__gratitudeSweep and ignored, so a badge left from the previous game can't pass as the
+// new game's. Desktop builds a new stats row for each game; Big Picture keeps the same one between
+// games, so there a kept row counts as this game's once the title has changed. On the desktop the
+// new title can appear before the new row, so only a new row counts. String.raw keeps the page
+// script's backslashes (\n, \d) as written.
+const PAGE_HELPERS = (mode) => String.raw`
+	const sel = ${JSON.stringify(mode.selectors)};
+	const reusesRow = ${mode.reusesRow};
 	const last = (selector) => { const all = document.querySelectorAll(selector); return all[all.length - 1] || null; };
+	const title = () => (last(sel.gameName)?.textContent || '').trim();
 	const openAppId = () => {
 		const src = last(sel.gameName)?.parentElement?.querySelector('img[src]')?.getAttribute('src') || '';
-		return (src.match(/\/(?:apps|assets)\/(\d+)\//i) || [])[1] || null;
+		const fromIcon = (src.match(/\/(?:apps|assets)\/(\d+)\//i) || [])[1];
+		if (fromIcon) return fromIcon;
+		const store = (window.opener || window).SteamUIStore?.WindowStore;
+		const route = store?.GetWindowInstanceFromWindow?.(window)?.History?.location?.pathname || '';
+		return (route.match(/\/library\/app\/(\d+)/) || [])[1] || null;
 	};
+	const before = window.__gratitudeSweep;
 	const freshRow = () => {
-		const old = window.__gratitudeSweepOldRows;
-		const rows = [...document.querySelectorAll(sel.tooltipContainer)].filter((row) => !old?.has(row));
-		return rows[rows.length - 1] || null;
+		const row = last(sel.tooltipContainer);
+		if (!row) return null;
+		return !before?.rows.has(row) || (reusesRow && title() !== before.title) ? row : null;
 	};
+	const freshContainers = (row) => row ? [...row.querySelectorAll('#injection-gifted-badge')].filter((c) => !before?.containers.has(c)) : [];
 `;
 
-// Runs in the Library window: reports the open game and everything the checks need about its badge
-const PAGE_PROBE = String.raw`(() => {
-	${PAGE_HELPERS}
+// Runs in the game's window before each navigation: records what belongs to the previous page
+const MARK_OLD = (mode) => String.raw`(() => {
+	${PAGE_HELPERS(mode)}
+	window.__gratitudeSweep = {
+		rows: new WeakSet(document.querySelectorAll(sel.tooltipContainer)),
+		containers: new WeakSet(document.querySelectorAll('#injection-gifted-badge')),
+		title: title(),
+	};
+	return true;
+})()`;
+
+// Runs in the game's window: reports the open game and everything the checks need about its badge
+const PAGE_PROBE = (mode) => String.raw`(() => {
+	${PAGE_HELPERS(mode)}
 	const round = (n) => Math.round(n * 10) / 10;
 	const row = freshRow();
-	const containers = row ? [...row.querySelectorAll('#injection-gifted-badge')] : [];
+	const containers = freshContainers(row);
 	const badge = containers.find((b) => b.innerText.trim()) || containers[0] || null;
-	const children = row ? [...row.children] : [];
+	// The badge's siblings: the stats row on the desktop, a section inside it in Big Picture
+	const children = badge?.parentElement ? [...badge.parentElement.children] : [];
 	const firstLine = (el) => (el.innerText || '').split('\n')[0].trim().toUpperCase();
 	const playtime = children.find((el) => el.matches(sel.playtimeTooltip));
 	const achievements = children.find((el) => firstLine(el) === 'ACHIEVEMENTS');
@@ -195,7 +266,7 @@ const PAGE_PROBE = String.raw`(() => {
 	const textLines = badge ? [...badge.querySelectorAll('div')].filter((d) => !d.children.length && d.textContent.trim()) : [];
 	const badgeSvg = badge?.querySelector('svg') || null;
 	return JSON.stringify({
-		name: (last(sel.gameName)?.textContent || '').trim(),
+		name: title(),
 		appId: openAppId(),
 		freshRow: !!row,
 		injected: containers.length > 0,
@@ -212,23 +283,22 @@ const PAGE_PROBE = String.raw`(() => {
 
 // Navigates the Library without bringing the Steam window to the front, so the sweep can run
 // while you type in another window. window.open("steam://nav/...") would steal keyboard focus.
-const navigate = (route) => `(() => {
-	const main = window.SteamUIStore?.WindowStore?.MainWindowInstance;
+const navigate = (mode, route) => `(() => {
+	const main = window.SteamUIStore?.WindowStore?.${mode.navigator};
 	if (typeof main?.NavigateWithoutChangingFocus !== 'function') return false;
 	main.NavigateWithoutChangingFocus(${JSON.stringify(route)});
 	return true;
 })()`;
 
-// Armed in the Library window before each navigation. Records the stats rows already on the page
-// (they belong to the previous game), then a MutationObserver notes when the target game's new
-// stats row, Gratitude's container in it, and the badge's content first appear, each with
+// Armed in the game's window before each navigation, after MARK_OLD. A MutationObserver notes
+// when the target game's stats row, a new Gratitude container in it, and the badge's content first
+// appear, each with
 // performance.now() and a count of the window's animation frames. Gratitude's own observer was
 // registered first, so when it renders synchronously its badge is already there when this one runs.
 // It also watches src changes, in case Steam reuses the header icon instead of replacing it.
-const ARM_TIMING = (appId) => String.raw`(() => {
+const ARM_TIMING = (mode, appId) => String.raw`(() => {
 	window.__gratitudeSweepTiming?.stop();
-	${PAGE_HELPERS}
-	window.__gratitudeSweepOldRows = new WeakSet(document.querySelectorAll(sel.tooltipContainer));
+	${PAGE_HELPERS(mode)}
 	const target = ${JSON.stringify(String(appId))};
 	const st = { frames: 0, framesAvailable: false, row: null, container: null, badge: null };
 	let running = true;
@@ -240,7 +310,7 @@ const ARM_TIMING = (appId) => String.raw`(() => {
 		const row = freshRow();
 		if (!row) return;
 		st.row ??= mark();
-		const container = row.querySelector('#injection-gifted-badge');
+		const container = freshContainers(row)[0];
 		if (container) st.container ??= mark();
 		if (container && container.innerText.trim()) st.badge ??= mark();
 	};
@@ -270,21 +340,21 @@ const STOP_TIMING = 'window.__gratitudeSweepTiming?.stop(); true';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function probePage(main) {
-	return JSON.parse(await main.evaluate(PAGE_PROBE));
+async function probePage(mode, main) {
+	return JSON.parse(await main.evaluate(PAGE_PROBE(mode)));
 }
 
 // Navigates and waits until the page shows appId with a stats row it rendered for this visit.
 // A navigation that doesn't take is sent again until the deadline.
-async function openPage(shared, main, appId, deadline) {
+async function openPage(mode, shared, main, appId, deadline) {
 	let page = null;
 	while (Date.now() < deadline) {
-		if (!(await shared.evaluate(navigate(`/library/app/${appId}`)))) {
-			throw new Error("Steam's navigator (SteamUIStore.WindowStore.MainWindowInstance) is unavailable.");
+		if (!(await shared.evaluate(navigate(mode, `/library/app/${appId}`)))) {
+			throw new Error(`Steam's navigator (SteamUIStore.WindowStore.${mode.navigator}) is unavailable.`);
 		}
 		const attemptDeadline = Math.min(deadline, Date.now() + NAV_ATTEMPT_MS);
 		while (Date.now() < attemptDeadline) {
-			page = await probePage(main);
+			page = await probePage(mode, main);
 			if (page.appId === String(appId) && page.freshRow) return { opened: true, page };
 			await sleep(POLL_MS);
 		}
@@ -297,33 +367,34 @@ async function openPage(shared, main, appId, deadline) {
 // game finishes as soon as its date shows; a game with no badge finishes once Gratitude's
 // container has been on the page for EMPTY_GRACE_MS and is still empty (the badge renders within a
 // frame of its container).
-async function openAndProbe(shared, main, appId, expectDate, timeoutMs) {
+async function openAndProbe(mode, shared, main, appId, expectDate, timeoutMs) {
 	const deadline = Date.now() + timeoutMs;
 	// Already showing this game: go to the Library home first, so the game's page renders anew and
 	// both the checks and the timing see this visit, not an earlier one
-	if ((await probePage(main)).appId === String(appId)) {
-		await shared.evaluate(navigate('/library/home'));
+	if ((await probePage(mode, main)).appId === String(appId)) {
+		await shared.evaluate(navigate(mode, '/library/home'));
 		const leaveDeadline = Math.min(deadline, Date.now() + NAV_ATTEMPT_MS);
-		while (Date.now() < leaveDeadline && (await probePage(main)).appId === String(appId)) await sleep(POLL_MS);
+		while (Date.now() < leaveDeadline && (await probePage(mode, main)).appId === String(appId)) await sleep(POLL_MS);
 	}
 
-	await main.evaluate(ARM_TIMING(appId));
+	await main.evaluate(MARK_OLD(mode));
+	await main.evaluate(ARM_TIMING(mode, appId));
 	try {
-		const { opened, page: openedPage } = await openPage(shared, main, appId, deadline);
+		const { opened, page: openedPage } = await openPage(mode, shared, main, appId, deadline);
 		if (!opened) return { opened, page: openedPage, timing: null };
 
 		let page = openedPage;
 		const settleDeadline = Date.now() + SETTLE_TIMEOUT_MS;
 		let emptySince = null;
 		while (Date.now() < settleDeadline) {
-			if (expectDate !== null && page.badgeText.includes(expectDate) && page.iconBox) break;
+			if (expectDate !== null && page.badgeText.includes(expectDate) && (page.iconBox || !mode.drawsIcons)) break;
 			if (expectDate === null && page.badgeText) break;
 			if (expectDate === null && page.injected) {
 				emptySince ??= Date.now();
 				if (Date.now() - emptySince >= EMPTY_GRACE_MS) break;
 			}
 			await sleep(POLL_MS);
-			page = await probePage(main);
+			page = await probePage(mode, main);
 		}
 		const timing = JSON.parse(await main.evaluate(READ_TIMING));
 		return { opened, page, timing };
@@ -364,8 +435,10 @@ function checkGifted(page, license, timing, maxPopinFrames) {
 	return problems;
 }
 
+// badgeCount covers the whole window, so a badge left over from the previous game fails too
 function checkNoBadge(page) {
-	return page.badgeText ? [`shows a badge: "${page.badgeText}"`] : [];
+	if (page.badgeText) return [`shows a badge: "${page.badgeText}"`];
+	return page.badgeCount ? ['a badge from another game is still shown'] : [];
 }
 
 // One line on how the badges rendered across the run, so pop-in regressions stand out
@@ -386,7 +459,7 @@ function renderSummary(results) {
 	return `Render timing: ${frames}; median ${median}ms, max ${max}ms after the row.`;
 }
 
-async function sweep(options, account, byAppId, shared, main) {
+async function sweep(mode, options, account, byAppId, shared, main) {
 	const borrowed = JSON.parse(await shared.evaluate(`JSON.stringify((window.appStore?.allApps || [])
 		.filter((a) => a.app_type === 1 && a.owner_account_id && String(a.owner_account_id) !== ${JSON.stringify(account)})
 		.map((a) => a.appid))`));
@@ -403,13 +476,20 @@ async function sweep(options, account, byAppId, shared, main) {
 	}
 	if (!options.only && options.controls > 0) {
 		const notGifted = Object.keys(byAppId).filter((id) => byAppId[id].acquisition !== GIFT && !borrowedSet.has(id));
-		for (const id of notGifted.slice(0, options.controls)) cases.push({ appId: id, kind: 'not gifted' });
-		for (const id of borrowed.slice(0, options.controls)) cases.push({ appId: String(id), kind: 'borrowed' });
+		const controls = [
+			...notGifted.slice(0, options.controls).map((id) => ({ appId: id, kind: 'not gifted' })),
+			...borrowed.slice(0, options.controls).map((id) => ({ appId: String(id), kind: 'borrowed' })),
+		];
+		// Spread the controls through the gifted games, starting with one, so the sweep also moves
+		// from a game with no badge to a gifted one. Big Picture keeps the stats row between games,
+		// and a badge that doesn't follow the open game shows up on exactly that move.
+		const step = cases.length / controls.length;
+		controls.forEach((control, i) => cases.splice(Math.round(i * step) + i, 0, control));
 	}
 
 	const results = [];
 	for (const testCase of cases) {
-		const { opened, page, timing } = await openAndProbe(shared, main, testCase.appId, testCase.license?.date ?? null, options.timeoutMs);
+		const { opened, page, timing } = await openAndProbe(mode, shared, main, testCase.appId, testCase.license?.date ?? null, options.timeoutMs);
 		let status;
 		let problems = [];
 		if (!opened) {
@@ -432,15 +512,17 @@ async function sweep(options, account, byAppId, shared, main) {
 	if (options.json) {
 		console.log(JSON.stringify({ account, results }, null, 2));
 	} else {
-		console.log(`\n${count('PASS')} passed, ${count('FAIL')} failed, ${count('SKIP')} skipped (${results.length} games; ${giftedIds.length} gifted in cache)`);
+		console.log(`\n${count('PASS')} passed, ${count('FAIL')} failed, ${count('SKIP')} skipped in ${mode.label} (${results.length} games; ${giftedIds.length} gifted in cache)`);
 		console.log(renderSummary(results));
 		if (count('SKIP')) console.log('Skipped pages count as a failure: those games were not checked.');
 	}
 	return count('FAIL') || count('SKIP') ? 1 : 0;
 }
 
-// Set once connected, so Ctrl+C can stop the timing observer in Steam's window before exiting
+// Set once connected, so Ctrl+C can stop the timing observer in Steam's window, and close Big
+// Picture if the sweep opened it, before exiting
 let mainConnection = null;
+let closeBigPicture = null;
 
 async function run() {
 	if (typeof WebSocket !== 'function') {
@@ -456,23 +538,37 @@ async function run() {
 	}
 	const byAppId = cache[account].byAppId ?? {};
 
-	const { shared: sharedTarget, main: mainTarget } = await findTargets(options.devtools);
-	const shared = await connect(sharedTarget);
-	const main = await connect(mainTarget);
-	mainConnection = main;
+	const mode = options.bigPicture ? MODES.bigPicture : MODES.desktop;
+	const shared = await connect(await findShared(options.devtools));
+	let main = null;
 	try {
-		return await sweep(options, account, byAppId, shared, main);
+		let mainTarget;
+		if (options.bigPicture) {
+			mainTarget = await openBigPicture(options.devtools, shared, () => {
+				closeBigPicture = () => shared.evaluate(BIG_PICTURE_URL('close'));
+			});
+		} else {
+			mainTarget = await findMain(options.devtools);
+		}
+		main = await connect(mainTarget);
+		mainConnection = main;
+		return await sweep(mode, options, account, byAppId, shared, main);
 	} finally {
-		await main.evaluate(STOP_TIMING).catch(() => {});
+		await main?.evaluate(STOP_TIMING).catch(() => {});
 		mainConnection = null;
+		await closeBigPicture?.().catch(() => {});
+		closeBigPicture = null;
 		// Open connections would keep Node running after an error
 		shared.close();
-		main.close();
+		main?.close();
 	}
 }
 
 process.on('SIGINT', () => {
-	const stop = mainConnection ? mainConnection.evaluate(STOP_TIMING).catch(() => {}) : Promise.resolve();
+	const stop = Promise.all([
+		mainConnection?.evaluate(STOP_TIMING).catch(() => {}),
+		closeBigPicture?.().catch(() => {}),
+	]);
 	withTimeout(stop, 1000, '').catch(() => {}).finally(() => process.exit(130));
 });
 
