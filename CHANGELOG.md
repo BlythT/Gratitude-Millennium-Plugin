@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v1.3.3 - 2026-11-14
+
 ### Fixed
 
 - Fixed the Gifted badge in Big Picture mode showing the previous game's gift date, or no badge at all, after moving from one game to another. Big Picture keeps the same stats row between games, so the badge stayed as it was for the first game.
@@ -13,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 - Friend suggestions in the giver dialog now use Steam's own button style, and the Gmail search button can be reached with a controller.
 - Typing in the giver dialog's name field now opens the friend suggestions, not just clicking into it.
+- Retook the README screenshots and brought its text up to date.
 
 ## v1.3.2 - 2026-11-14
 
