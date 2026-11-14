@@ -13,7 +13,6 @@ interface InjectedNode {
 class InjectionEngine {
   private configs: InjectionConfig[] = [];
   private mainObserver: MutationObserver | null = null;
-  private isAnimationFramePending = false;
   private injectedNodes: Map<string, InjectedNode> = new Map();
 
   register(config: InjectionConfig) {
@@ -26,16 +25,13 @@ class InjectionEngine {
       this.mainObserver.disconnect();
     }
 
+    // Sweep in the observer callback itself. It runs as a microtask right after Steam changes the
+    // DOM, before the browser paints, so the component lands in the same frame as Steam's markup.
+    // Deferring to requestAnimationFrame let Steam's row paint one or two frames before it.
+    // Mutation records are already batched per callback, and a sweep with nothing to do is a few
+    // selector lookups.
     this.mainObserver = new MutationObserver(() => {
-      if (this.isAnimationFramePending) return;
-      this.isAnimationFramePending = true;
-      requestAnimationFrame(() => {
-        try {
-          this.sweep(doc);
-        } finally {
-          this.isAnimationFramePending = false;
-        }
-      });
+      this.sweep(doc);
     });
 
     this.mainObserver.observe(doc.body, { childList: true, subtree: true });
@@ -120,8 +116,17 @@ class InjectionEngine {
       placement.target.after(container);
     }
     
+    // root.render on its own schedules the render for a later task, and right after a page change
+    // Steam's UI keeps that task waiting 100ms or more, so the component popped in after the page.
+    // flushSync renders it now, in the same task as its container, before the browser paints.
     const root = (ReactDOM as any).createRoot(container);
-    root.render(React.createElement(config.component, { doc }));
+    const element = React.createElement(config.component, { doc });
+    const flushSync = (ReactDOM as any).flushSync;
+    if (typeof flushSync === 'function') {
+      flushSync(() => root.render(element));
+    } else {
+      root.render(element);
+    }
 
     const teardownObserver = new MutationObserver(() => {
       if (!container.isConnected) {
