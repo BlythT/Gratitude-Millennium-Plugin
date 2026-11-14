@@ -1,8 +1,14 @@
 import { SELECTORS } from '../types';
 import { log } from '../../lib/logger';
 
+// The last title in the document, matching the injection engine, which uses the last stats row.
+// While Steam swaps pages both can be present, and the badge must describe the page it sits in.
 function findGameNameElement(doc: Document): Element | null {
-  return doc.querySelector(SELECTORS.standard.gameName) ?? doc.querySelector(SELECTORS.bigPicture.gameName);
+  for (const selector of [SELECTORS.standard.gameName, SELECTORS.bigPicture.gameName]) {
+    const matches = doc.querySelectorAll(selector);
+    if (matches.length) return matches[matches.length - 1];
+  }
+  return null;
 }
 
 export function detectGameName(doc: Document): string | null {

@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Fixed the Gifted badge not showing on gifted games you have never played.
 - Fixed a question mark badge on games borrowed through Steam Family Sharing, which are not your licenses and can't be synced.
 - Fixed the gift icon sitting lower than Steam's Play Time and Achievements icons.
+- Fixed the Gifted badge popping in after the game page appeared. It now appears in the same frame as Steam's stats row, including on the first game opened after Steam starts and after the cache's five-minute refresh.
 
 ## v1.3.1 - 2026-11-14
 

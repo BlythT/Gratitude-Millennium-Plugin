@@ -67,7 +67,10 @@ function libraryWindow(openAppId: number | null, name = 'Garry\'s Mod'): any {
       },
     ],
   });
-  return { querySelector: (sel: string) => toElement(root).querySelector(sel) };
+  return {
+    querySelector: (sel: string) => toElement(root).querySelector(sel),
+    querySelectorAll: (sel: string) => toElement(root).querySelectorAll(sel),
+  };
 }
 
 describe('detectAppId', () => {
@@ -80,7 +83,7 @@ describe('detectAppId', () => {
   });
 
   it('returns null when no game page is open', () => {
-    const empty = { querySelector: () => null } as unknown as Document;
+    const empty = { querySelector: () => null, querySelectorAll: () => [] } as unknown as Document;
     expect(detectAppId(empty)).toBeNull();
   });
 });
