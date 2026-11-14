@@ -1,5 +1,5 @@
 import { DialogButton, Focusable, TextField, type FocusableProps } from '@steambrew/client';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { friendsCache } from '../injection/friendscache';
 import type { FriendRecord, FriendsCacheSnapshot, GiverSource } from '../types';
 import { type GratitudeSettings } from '../settings';
@@ -268,6 +268,19 @@ export function FriendSelector({
 	const [friendsSnapshot, setFriendsSnapshot] = useState<FriendsCacheSnapshot | null>(null);
 	const [isLoadingFriends, setIsLoadingFriends] = useState(true);
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+	// Whether focus is on the name field, and whether its next focus should leave the list closed.
+	// Picking a friend with a controller closes the list while the picked row has focus, and Steam
+	// then puts focus back on the field, which would open the list again straight away.
+	const isFieldFocused = useRef(false);
+	const keepClosedOnNextFocus = useRef(false);
+	// The Gmail icon answers a click, Enter or Space, and a controller's A. One press can arrive
+	// as more than one of those (a keyboard Enter in Big Picture is also an A), so it searches once.
+	const lastEmailSearch = useRef(0);
+	const searchEmailOnce = () => {
+		if (Date.now() - lastEmailSearch.current < 500) return;
+		lastEmailSearch.current = Date.now();
+		onEmailSearch();
+	};
 
 	useEffect(() => {
 		let disposed = false;
@@ -322,6 +335,7 @@ export function FriendSelector({
 
 	const updateDisplayName = (nextValue: string) => {
 		onChangeDisplayName(nextValue);
+		setIsDropdownOpen(true);
 		if (source === 'friend-cache' || profileField) {
 			onChangeSource('manual');
 			onChangeProfileField('');
@@ -348,8 +362,13 @@ export function FriendSelector({
 	return (
 		<FocusGroup
 			flow-children="column"
+			onFocus={(event: React.FocusEvent<HTMLDivElement>) => {
+				isFieldFocused.current = (event.target as HTMLElement).tagName === 'INPUT';
+			}}
 			onBlur={(event: React.FocusEvent<HTMLDivElement>) => {
 				if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+					isFieldFocused.current = false;
+					keepClosedOnNextFocus.current = false;
 					setIsDropdownOpen(false);
 				}
 			}}
@@ -365,7 +384,13 @@ export function FriendSelector({
 				)}
 				value={displayName}
 				onChange={(event) => updateDisplayName(event.currentTarget.value)}
-				onFocus={() => setIsDropdownOpen(true)}
+				onFocus={() => {
+					if (keepClosedOnNextFocus.current) {
+						keepClosedOnNextFocus.current = false;
+						return;
+					}
+					setIsDropdownOpen(true);
+				}}
 				onKeyDown={handleDisplayNameKeyDown}
 				inlineControls={(
 					<div
@@ -378,8 +403,14 @@ export function FriendSelector({
 					>
 						<SteamTooltip toolTipContent="Search Gmail for gift email">
 							<FocusGroup
-								onActivate={onEmailSearch}
-								onClick={onEmailSearch}
+								onActivate={searchEmailOnce}
+								onClick={searchEmailOnce}
+								onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										e.preventDefault();
+										searchEmailOnce();
+									}
+								}}
 								role="button"
 								aria-label="Search Gmail for gift email"
 								style={{
@@ -417,6 +448,8 @@ export function FriendSelector({
 				onSelectFriend={(friend) => {
 					handleSelectFriend(friend);
 					setIsDropdownOpen(false);
+					// A mouse pick leaves focus on the field, so there's no refocus to skip
+					keepClosedOnNextFocus.current = !isFieldFocused.current;
 				}}
 				onRefreshFriends={onRefreshFriends}
 			/>
