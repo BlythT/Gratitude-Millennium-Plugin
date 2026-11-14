@@ -247,8 +247,8 @@ injectionEngine.register({
 	selector: [SELECTORS.standard.tooltipContainer, SELECTORS.bigPicture.tooltipContainer],
 	insertAfterSelector: [SELECTORS.standard.playtimeTooltip, SELECTORS.bigPicture.playtimeTooltip],
 	component: GiftBadge,
-	// The open game: Big Picture reuses the stats row between games, so the badge must be
-	// remounted when this changes or it keeps showing the first game's gift
+	// The game the page shows: Big Picture reuses the stats row between games, so the badge must
+	// be remounted when this changes or it keeps showing the first game's gift
 	instanceKey: (doc) => `${detectAppId(doc) ?? ''}|${detectGameName(doc) ?? ''}`,
 });
 

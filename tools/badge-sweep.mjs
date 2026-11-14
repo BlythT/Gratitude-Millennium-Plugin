@@ -55,10 +55,11 @@ const BIG_PICTURE_OPEN_TIMEOUT_MS = 15000;
 const BIG_PICTURE_SETTLE_MS = 2000;
 
 // Each Steam window the sweep can check: its DevTools page title, the navigator that drives it,
-// its selectors, and whether it draws the stat icons (so a badge isn't finished until its icon is)
+// its selectors, whether it draws the stat icons (so a badge isn't finished until its icon is),
+// and whether it keeps the same stats row from one game to the next
 const MODES = {
-	desktop: { label: 'the desktop Library', title: 'Steam', navigator: 'MainWindowInstance', selectors: SELECTORS.standard, drawsIcons: true },
-	bigPicture: { label: 'Big Picture', title: 'Steam Big Picture Mode', navigator: 'GamepadUIMainWindowInstance', selectors: SELECTORS.bigPicture, drawsIcons: false },
+	desktop: { label: 'the desktop Library', title: 'Steam', navigator: 'MainWindowInstance', selectors: SELECTORS.standard, drawsIcons: true, reusesRow: false },
+	bigPicture: { label: 'Big Picture', title: 'Steam Big Picture Mode', navigator: 'GamepadUIMainWindowInstance', selectors: SELECTORS.bigPicture, drawsIcons: false, reusesRow: true },
 };
 // The timing observer in Steam's window stops itself after this, even if the sweep dies
 const TIMING_SELF_STOP_MS = 30000;
@@ -175,11 +176,13 @@ async function findMain(devtools) {
 
 const BIG_PICTURE_URL = (action) => `window.SteamClient.URL.ExecuteSteamURL('steam://${action}/bigpicture'); true`;
 
-// Returns Big Picture's window, opening Big Picture if needed. opened says whether the sweep opened
-// it, so it only closes Big Picture if it wasn't open before.
-async function openBigPicture(devtools, shared) {
+// Returns Big Picture's window, opening Big Picture if needed. onOpening runs as soon as the sweep
+// asks Steam to open it, so the caller can close it again even if the sweep stops while waiting;
+// Big Picture is only closed if it wasn't open before.
+async function openBigPicture(devtools, shared, onOpening) {
 	const existing = findPage(await listTargets(devtools), MODES.bigPicture.title);
-	if (existing) return { target: existing, opened: false };
+	if (existing) return existing;
+	onOpening();
 	await shared.evaluate(BIG_PICTURE_URL('open'));
 	const deadline = Date.now() + BIG_PICTURE_OPEN_TIMEOUT_MS;
 	while (Date.now() < deadline) {
@@ -187,10 +190,9 @@ async function openBigPicture(devtools, shared) {
 		const target = findPage(await listTargets(devtools), MODES.bigPicture.title);
 		if (target) {
 			await sleep(BIG_PICTURE_SETTLE_MS);
-			return { target, opened: true };
+			return target;
 		}
 	}
-	await shared.evaluate(BIG_PICTURE_URL('close')).catch(() => {});
 	throw new Error(`Big Picture didn't open within ${BIG_PICTURE_OPEN_TIMEOUT_MS / 1000}s.`);
 }
 
@@ -199,10 +201,12 @@ async function openBigPicture(devtools, shared) {
 // The stats rows, Gratitude containers and title from before the current navigation are recorded
 // in window.__gratitudeSweep and ignored, so a badge left from the previous game can't pass as the
 // new game's. Desktop builds a new stats row for each game; Big Picture keeps the same one between
-// games, so a kept row counts as this game's once the title has changed. String.raw keeps the page
+// games, so there a kept row counts as this game's once the title has changed. On the desktop the
+// new title can appear before the new row, so only a new row counts. String.raw keeps the page
 // script's backslashes (\n, \d) as written.
-const PAGE_HELPERS = (selectors) => String.raw`
-	const sel = ${JSON.stringify(selectors)};
+const PAGE_HELPERS = (mode) => String.raw`
+	const sel = ${JSON.stringify(mode.selectors)};
+	const reusesRow = ${mode.reusesRow};
 	const last = (selector) => { const all = document.querySelectorAll(selector); return all[all.length - 1] || null; };
 	const title = () => (last(sel.gameName)?.textContent || '').trim();
 	const openAppId = () => {
@@ -217,14 +221,14 @@ const PAGE_HELPERS = (selectors) => String.raw`
 	const freshRow = () => {
 		const row = last(sel.tooltipContainer);
 		if (!row) return null;
-		return !before?.rows.has(row) || title() !== before.title ? row : null;
+		return !before?.rows.has(row) || (reusesRow && title() !== before.title) ? row : null;
 	};
 	const freshContainers = (row) => row ? [...row.querySelectorAll('#injection-gifted-badge')].filter((c) => !before?.containers.has(c)) : [];
 `;
 
 // Runs in the game's window before each navigation: records what belongs to the previous page
-const MARK_OLD = (selectors) => String.raw`(() => {
-	${PAGE_HELPERS(selectors)}
+const MARK_OLD = (mode) => String.raw`(() => {
+	${PAGE_HELPERS(mode)}
 	window.__gratitudeSweep = {
 		rows: new WeakSet(document.querySelectorAll(sel.tooltipContainer)),
 		containers: new WeakSet(document.querySelectorAll('#injection-gifted-badge')),
@@ -234,8 +238,8 @@ const MARK_OLD = (selectors) => String.raw`(() => {
 })()`;
 
 // Runs in the game's window: reports the open game and everything the checks need about its badge
-const PAGE_PROBE = (selectors) => String.raw`(() => {
-	${PAGE_HELPERS(selectors)}
+const PAGE_PROBE = (mode) => String.raw`(() => {
+	${PAGE_HELPERS(mode)}
 	const round = (n) => Math.round(n * 10) / 10;
 	const row = freshRow();
 	const containers = freshContainers(row);
@@ -292,9 +296,9 @@ const navigate = (mode, route) => `(() => {
 // performance.now() and a count of the window's animation frames. Gratitude's own observer was
 // registered first, so when it renders synchronously its badge is already there when this one runs.
 // It also watches src changes, in case Steam reuses the header icon instead of replacing it.
-const ARM_TIMING = (selectors, appId) => String.raw`(() => {
+const ARM_TIMING = (mode, appId) => String.raw`(() => {
 	window.__gratitudeSweepTiming?.stop();
-	${PAGE_HELPERS(selectors)}
+	${PAGE_HELPERS(mode)}
 	const target = ${JSON.stringify(String(appId))};
 	const st = { frames: 0, framesAvailable: false, row: null, container: null, badge: null };
 	let running = true;
@@ -337,7 +341,7 @@ const STOP_TIMING = 'window.__gratitudeSweepTiming?.stop(); true';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function probePage(mode, main) {
-	return JSON.parse(await main.evaluate(PAGE_PROBE(mode.selectors)));
+	return JSON.parse(await main.evaluate(PAGE_PROBE(mode)));
 }
 
 // Navigates and waits until the page shows appId with a stats row it rendered for this visit.
@@ -373,8 +377,8 @@ async function openAndProbe(mode, shared, main, appId, expectDate, timeoutMs) {
 		while (Date.now() < leaveDeadline && (await probePage(mode, main)).appId === String(appId)) await sleep(POLL_MS);
 	}
 
-	await main.evaluate(MARK_OLD(mode.selectors));
-	await main.evaluate(ARM_TIMING(mode.selectors, appId));
+	await main.evaluate(MARK_OLD(mode));
+	await main.evaluate(ARM_TIMING(mode, appId));
 	try {
 		const { opened, page: openedPage } = await openPage(mode, shared, main, appId, deadline);
 		if (!opened) return { opened, page: openedPage, timing: null };
@@ -540,9 +544,9 @@ async function run() {
 	try {
 		let mainTarget;
 		if (options.bigPicture) {
-			const bigPicture = await openBigPicture(options.devtools, shared);
-			if (bigPicture.opened) closeBigPicture = () => shared.evaluate(BIG_PICTURE_URL('close'));
-			mainTarget = bigPicture.target;
+			mainTarget = await openBigPicture(options.devtools, shared, () => {
+				closeBigPicture = () => shared.evaluate(BIG_PICTURE_URL('close'));
+			});
 		} else {
 			mainTarget = await findMain(options.devtools);
 		}
