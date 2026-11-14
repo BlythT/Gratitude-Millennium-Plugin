@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed the Gifted badge missing on some gifted games, depending on which games were at the top of the library list, because the badge read the App ID of a game in the list instead of the open game.
+- Fixed the Gifted badge not showing on gifted games you have never played.
+- Fixed a question mark badge on games borrowed through Steam Family Sharing, which are not your licenses and can't be synced.
+- Fixed the gift icon sitting lower than Steam's Play Time and Achievements icons.
+- Fixed the Gifted badge popping in after the game page appeared. It now appears in the same frame as Steam's stats row, including on the first game opened after Steam starts and after the cache's five-minute refresh.
+
 ### Changed
 
 - Automatic license and friends syncs now wait until the Steam page has finished loading and is idle, and request at low priority, so they don't slow Steam's startup, the Library or the Store, especially on slow connections. Syncs you start from a sync link still run straight away.

@@ -83,7 +83,9 @@ export class CacheManager<T> {
 			} catch (error) {
 				logError(`Error loading ${this.name} cache for user ${steamUserID}:`, error);
 				if (cached && cached.isLoaded) {
-					// We don't notify on failure if we already have stale data displayed
+					// Keep showing the stale data, and wait a full TTL before trying again, so a backend
+					// that keeps failing isn't called on every read
+					this.cache.set(steamUserID, { ...cached, timestamp: Date.now() });
 					return cached.data;
 				}
 				this.notifyListeners(steamUserID, null);
@@ -97,16 +99,19 @@ export class CacheManager<T> {
 		return fetchPromise;
 	}
 
+	// The cached data, even when older than the TTL: a stale copy is refreshed in the background and
+	// listeners get the new data. Returning nothing once stale made components render empty and
+	// pop in after the reload, every TTL.
 	getDataSync(steamUserID: string): T | null | undefined {
 		const cached = this.cache.get(steamUserID);
-		if (cached && cached.isLoaded) {
-			const isStale = Date.now() - cached.timestamp > this.ttlMs;
-			if (isStale) {
-				return undefined;
-			}
-			return cached.data;
+		if (!cached || !cached.isLoaded) {
+			return undefined;
 		}
-		return undefined;
+		const isStale = Date.now() - cached.timestamp > this.ttlMs;
+		if (isStale && !this.pendingFetches.has(steamUserID)) {
+			void this.getData(steamUserID, true).catch(() => {});
+		}
+		return cached.data;
 	}
 
 	async clearCache(steamUserID: string): Promise<boolean> {

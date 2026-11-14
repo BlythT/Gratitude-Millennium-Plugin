@@ -225,6 +225,14 @@ async function onPopupCreation(popup: SteamPopup) {
 			}
 		}
 
+		// Load the caches the badge reads now, so the first game page renders its badge in the same
+		// frame as the page instead of waiting for a backend call
+		const accountID = getCurrentAccountID();
+		if (accountID) {
+			void gameLicenseCache.getData(accountID).catch(() => {});
+			void giverCache.getAll(accountID).catch(() => {});
+		}
+
 		// Set up observer for library patching
 		const doc = popup.m_popup?.document;
 		if (doc?.body) {

@@ -104,8 +104,8 @@ Since Steam installations can be shared by multiple users, all state data is par
 - `gratitude_friends.json` isolates friends lists per Steam ID.
 - `gratitude_settings.json` houses settings per Steam ID.
 
-### 4.3 Debounced Mutations
-Mutations in Steam's React DOM can trigger observers multiple times in a single frame. To maintain smooth UI rendering, [observer.ts](frontend/injection/observer.ts) schedules processing tasks via `requestAnimationFrame`, ensuring a maximum of one DOM sweep per frame.
+### 4.3 Same-Frame Injection
+Injected components must appear in the same frame as the Steam markup they attach to, with no pop-in. [InjectionEngine.ts](lib/framework/InjectionEngine.ts) therefore sweeps directly in its `MutationObserver` callback, a microtask that runs before the browser paints Steam's change. It doesn't defer to `requestAnimationFrame`: that runs in the hidden SharedJSContext's frame clock and let Steam's row paint 1-2 frames first. It also mounts components inside `flushSync`, because `createRoot().render()` alone schedules the render for a later task. Components read their data synchronously (`getDataSync`), and the caches they read are loaded when the main window opens. `npm run test:badges` measures this per game and fails on pop-in.
 
 ---
 
