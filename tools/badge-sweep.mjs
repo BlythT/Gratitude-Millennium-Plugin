@@ -15,8 +15,8 @@
 // typing elsewhere while it runs. That holds for the desktop Library; with --big-picture the sweep
 // opens Big Picture mode (full screen) if it isn't open, checks the games there, and closes it after
 // if it opened it. Big Picture keeps the same stats row between games, so there it also checks that
-// no badge is left over from the previous game. Its stat icons have no size the probe can measure,
-// so the icon alignment checks only run on the desktop.
+// no badge is left over from the previous game. Big Picture doesn't draw the stat icons (even
+// Steam's own have no size), so the icon alignment checks only run on the desktop.
 //
 // Needs Node 22 or later (for its built-in WebSocket), and Steam running with Gratitude installed
 // and CEF remote debugging enabled: create an empty `.cef-enable-remote-debugging` file in the Steam
@@ -55,10 +55,10 @@ const BIG_PICTURE_OPEN_TIMEOUT_MS = 15000;
 const BIG_PICTURE_SETTLE_MS = 2000;
 
 // Each Steam window the sweep can check: its DevTools page title, the navigator that drives it,
-// and its selectors
+// its selectors, and whether it draws the stat icons (so a badge isn't finished until its icon is)
 const MODES = {
-	desktop: { label: 'the desktop Library', title: 'Steam', navigator: 'MainWindowInstance', selectors: SELECTORS.standard },
-	bigPicture: { label: 'Big Picture', title: 'Steam Big Picture Mode', navigator: 'GamepadUIMainWindowInstance', selectors: SELECTORS.bigPicture },
+	desktop: { label: 'the desktop Library', title: 'Steam', navigator: 'MainWindowInstance', selectors: SELECTORS.standard, drawsIcons: true },
+	bigPicture: { label: 'Big Picture', title: 'Steam Big Picture Mode', navigator: 'GamepadUIMainWindowInstance', selectors: SELECTORS.bigPicture, drawsIcons: false },
 };
 // The timing observer in Steam's window stops itself after this, even if the sweep dies
 const TIMING_SELF_STOP_MS = 30000;
@@ -240,7 +240,8 @@ const PAGE_PROBE = (selectors) => String.raw`(() => {
 	const row = freshRow();
 	const containers = freshContainers(row);
 	const badge = containers.find((b) => b.innerText.trim()) || containers[0] || null;
-	const children = row ? [...row.children] : [];
+	// The badge's siblings: the stats row on the desktop, a section inside it in Big Picture
+	const children = badge?.parentElement ? [...badge.parentElement.children] : [];
 	const firstLine = (el) => (el.innerText || '').split('\n')[0].trim().toUpperCase();
 	const playtime = children.find((el) => el.matches(sel.playtimeTooltip));
 	const achievements = children.find((el) => firstLine(el) === 'ACHIEVEMENTS');
@@ -382,7 +383,7 @@ async function openAndProbe(mode, shared, main, appId, expectDate, timeoutMs) {
 		const settleDeadline = Date.now() + SETTLE_TIMEOUT_MS;
 		let emptySince = null;
 		while (Date.now() < settleDeadline) {
-			if (expectDate !== null && page.badgeText.includes(expectDate) && page.iconBox) break;
+			if (expectDate !== null && page.badgeText.includes(expectDate) && (page.iconBox || !mode.drawsIcons)) break;
 			if (expectDate === null && page.badgeText) break;
 			if (expectDate === null && page.injected) {
 				emptySince ??= Date.now();
