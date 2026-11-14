@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v1.3.2 - 2026-11-14
+
 ### Fixed
 
 - Fixed the Gifted badge missing on some gifted games, depending on which games were at the top of the library list, because the badge read the App ID of a game in the list instead of the open game.
