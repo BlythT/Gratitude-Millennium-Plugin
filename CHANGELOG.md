@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed friend suggestions in the giver dialog not being reachable with a controller in Big Picture mode: moving down from the name field now goes into the list, and a suggestion can be picked with A.
+
+### Changed
+
+- Friend suggestions in the giver dialog now use Steam's own button style, and the Gmail search button can be reached with a controller.
+
 ## v1.3.2 - 2026-11-14
 
 ### Fixed
