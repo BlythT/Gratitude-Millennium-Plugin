@@ -43,7 +43,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { SELECTORS } from '../frontend/types.ts';
+import { SELECTORS, POPUPS } from '../frontend/types.ts';
 import { chooseLicenseByDate } from '../lib/license-by-date.ts';
 import { giftVerdictForApp, formatLicenseDate, checkLicensesPrintFormat } from '../lib/client-licenses.ts';
 import { captureLicensesPrint } from './license-list-capture.mjs';
@@ -61,12 +61,13 @@ const BIG_PICTURE_OPEN_TIMEOUT_MS = 15000;
 // Big Picture finishes drawing its first page a moment after its window appears
 const BIG_PICTURE_SETTLE_MS = 2000;
 
-// Each Steam window the sweep can check: its DevTools page title, the navigator that drives it,
+// Each Steam window the sweep can check: Steam's name for its popup (its DevTools page title is
+// translated, so the sweep asks Steam for it), the navigator that drives it,
 // its selectors, whether it draws the stat icons (so a badge isn't finished until its icon is),
 // and whether it keeps the same stats row from one game to the next
 const MODES = {
-	desktop: { label: 'the desktop Library', title: 'Steam', navigator: 'MainWindowInstance', selectors: SELECTORS.standard, drawsIcons: true, reusesRow: false },
-	bigPicture: { label: 'Big Picture', title: 'Steam Big Picture Mode', navigator: 'GamepadUIMainWindowInstance', selectors: SELECTORS.bigPicture, drawsIcons: false, reusesRow: true },
+	desktop: { label: 'the desktop Library', popup: POPUPS.main, navigator: 'MainWindowInstance', selectors: SELECTORS.standard, drawsIcons: true, reusesRow: false },
+	bigPicture: { label: 'Big Picture', popup: POPUPS.bigPicture, navigator: 'GamepadUIMainWindowInstance', selectors: SELECTORS.bigPicture, drawsIcons: false, reusesRow: true },
 };
 // The timing observer in Steam's window stops itself after this, even if the sweep dies
 const TIMING_SELF_STOP_MS = 30000;
@@ -169,14 +170,21 @@ async function listTargets(devtools) {
 
 const findPage = (list, title) => list.find((t) => t.type === 'page' && t.title === title);
 
+// The DevTools page of one of Steam's windows, or undefined when it isn't open. Window titles are
+// translated ("Modalità Big Picture di Steam"), so the title comes from Steam's popup manager.
+async function findWindow(devtools, shared, mode) {
+	const title = await shared.evaluate(`window.g_PopupManager?.GetExistingPopup?.(${JSON.stringify(mode.popup)})?.m_popup?.document?.title ?? null`);
+	return title ? findPage(await listTargets(devtools), title) : undefined;
+}
+
 async function findShared(devtools) {
 	const shared = (await listTargets(devtools)).find((t) => t.title === 'SharedJSContext');
 	if (!shared) throw new Error("Steam's SharedJSContext was not found. Is Steam running?");
 	return shared;
 }
 
-async function findMain(devtools) {
-	const main = findPage(await listTargets(devtools), MODES.desktop.title);
+async function findMain(devtools, shared) {
+	const main = await findWindow(devtools, shared, MODES.desktop);
 	if (!main) throw new Error("Steam's main window was not found. Is the Steam window open?");
 	return main;
 }
@@ -187,14 +195,14 @@ const BIG_PICTURE_URL = (action) => `window.SteamClient.URL.ExecuteSteamURL('ste
 // asks Steam to open it, so the caller can close it again even if the sweep stops while waiting;
 // Big Picture is only closed if it wasn't open before.
 async function openBigPicture(devtools, shared, onOpening) {
-	const existing = findPage(await listTargets(devtools), MODES.bigPicture.title);
+	const existing = await findWindow(devtools, shared, MODES.bigPicture);
 	if (existing) return existing;
 	onOpening();
 	await shared.evaluate(BIG_PICTURE_URL('open'));
 	const deadline = Date.now() + BIG_PICTURE_OPEN_TIMEOUT_MS;
 	while (Date.now() < deadline) {
 		await sleep(250);
-		const target = findPage(await listTargets(devtools), MODES.bigPicture.title);
+		const target = await findWindow(devtools, shared, MODES.bigPicture);
 		if (target) {
 			await sleep(BIG_PICTURE_SETTLE_MS);
 			return target;
@@ -255,7 +263,8 @@ const PAGE_PROBE = (mode) => String.raw`(() => {
 	const children = badge?.parentElement ? [...badge.parentElement.children] : [];
 	const firstLine = (el) => (el.innerText || '').split('\n')[0].trim().toUpperCase();
 	const playtime = children.find((el) => el.matches(sel.playtimeTooltip));
-	const achievements = children.find((el) => firstLine(el) === 'ACHIEVEMENTS');
+	// Steam's MiniAchievements class doesn't change with the client's language; its label does
+	const achievements = children.find((el) => el.classList.contains('MiniAchievements') || firstLine(el) === 'ACHIEVEMENTS');
 	const box = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return b.height ? [round(b.top), round(b.bottom)] : null; };
 	const shapeBottom = (svg) => {
 		const rs = svg ? [...svg.querySelectorAll('path, circle, rect, polygon')].filter((p) => p.getAttribute('fill') !== 'none').map((p) => p.getBoundingClientRect()).filter((b) => b.height) : [];
@@ -630,7 +639,7 @@ async function run() {
 				closeBigPicture = () => shared.evaluate(BIG_PICTURE_URL('close'));
 			});
 		} else {
-			mainTarget = await findMain(options.devtools);
+			mainTarget = await findMain(options.devtools, shared);
 		}
 		main = await connect(mainTarget);
 		mainConnection = main;

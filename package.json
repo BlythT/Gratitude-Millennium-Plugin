@@ -4,6 +4,7 @@
 		"build": "millennium-ttc --build prod",
 		"match:licenses": "tsx ./tools/license-match-report.mjs",
 		"test:badges": "tsx ./tools/badge-sweep.mjs",
+		"test:badges:languages": "node ./tools/language-sweep.mjs",
 		"test:license-list": "tsx ./tools/license-list-check.mjs",
 		"i18n:review": "tsx ./tools/i18n-review.mjs",
 		"release": "node ./tools/release.mjs",
