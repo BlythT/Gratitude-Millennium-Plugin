@@ -17,6 +17,8 @@ import { giftVerdictForApp, formatLicenseDate, type ClientLicense } from '../../
 import { getClientLicensesSync, loadClientLicenses, observeClientLicenses } from '../injection/clientlicenses';
 
 import { SteamTooltip } from './SteamTooltip';
+import { playPartySound } from '../utils/partySound';
+import { getSettings } from '../settings';
 
 let confettiTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -276,6 +278,8 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
     e?.preventDefault();
     e?.stopPropagation();
     fireConfetti(doc);
+    const win = doc.defaultView;
+    if (win) void getSettings(steamID).then((settings) => { if (settings.playSound) playPartySound(win); });
   };
 
   const handleManageGiver = (e?: React.SyntheticEvent) => {
