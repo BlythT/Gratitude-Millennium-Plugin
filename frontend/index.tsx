@@ -1,5 +1,6 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
 import { applyGiftHistory } from './injection/gifthistory';
+import { startBackgroundGifterSearch } from './injection/historysearch';
 import { t, uiLanguage } from './i18n';
 import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
@@ -246,6 +247,7 @@ async function onPopupCreation(popup: SteamPopup) {
 		if (accountID) {
 			void gameLicenseCache.getData(accountID).catch(() => {});
 			void loadClientLicenses(accountID).then(() => applyGiftHistory(accountID));
+			startBackgroundGifterSearch(accountID);
 			void giverCache.getAll(accountID).catch(() => {});
 		}
 

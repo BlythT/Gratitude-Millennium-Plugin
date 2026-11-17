@@ -68,7 +68,10 @@ export const en = {
 
 	// Finding gifters in the inventory history, on the Community page
 	'import.title': 'Gratitude: Finding Gifters',
-	'import.page': 'Reading your inventory history (page {page})...',
+	'import.starting': 'Getting ready...',
+	'import.checking': 'Checking around your gift dates ({done} of {total})...',
+	'import.readingBack': 'Reading your inventory history (back to {date})...',
+	'import.busy': 'Steam is busy. Trying again in {seconds}s...',
 	'import.done': 'Found {count} gifts that name who sent them. Returning to Library...',
 	'import.failed': "Couldn't read your inventory history. Please try again later.",
 

@@ -617,6 +617,35 @@ function GetGiftHistory(steamUserID)
     return json.encode(GiftHistoryStore[steamUserID])
 end
 
+-- How the latest inventory history search is going, kept in memory only. The webkit reports each
+-- step; the frontend watches it to close a background search that finished or stopped making
+-- progress. statusJson: { state = "running" | "done" | "failed", step = string }
+local GiftSearchStatus = {}
+
+function SetGiftSearchStatus(statusJson, steamUserID)
+    assert(type(statusJson) == "string", "statusJson must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    local success, decoded = pcall(json.decode, statusJson)
+    if not success or type(decoded) ~= "table" then
+        return false
+    end
+    local state = decoded.state
+    if state ~= "running" and state ~= "done" and state ~= "failed" then
+        return false
+    end
+    GiftSearchStatus[steamUserID] = {
+        state = state,
+        step = type(decoded.step) == "string" and decoded.step or "",
+        updatedAt = os.time(),
+    }
+    return true
+end
+
+function GetGiftSearchStatus(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    return json.encode(GiftSearchStatus[steamUserID] or {})
+end
+
 function ClearFriendsCache(steamUserID)
     assert(type(steamUserID) == "string", "steamUserID must be a string")
 
