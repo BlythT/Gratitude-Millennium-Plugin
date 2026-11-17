@@ -18,6 +18,11 @@ export function nextLicensePageUrl(href: string): string | null {
 	return url.toString();
 }
 
+// The first licenses page, in English like every later one
+export function firstLicensePageUrl(): string {
+	return `${LICENSES_URL}?l=english`;
+}
+
 // Reads the total from the paginator text, e.g. "Showing 1 - 100 of 1,234" -> 1234. Accepts comma,
 // period, space and non-breaking space thousands separators. Returns 0 when there is no total.
 export function parseLicenseTotal(text: string | null | undefined): number {

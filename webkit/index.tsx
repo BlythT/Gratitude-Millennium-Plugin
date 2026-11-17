@@ -4,8 +4,8 @@ import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
 import {
-	LICENSES_URL,
 	clearResumePoint,
+	firstLicensePageUrl,
 	completedLicenseCount,
 	licenseResumeKey,
 	nextLicensePageUrl,
@@ -258,7 +258,7 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 	// there, so a large library still finishes when Steam keeps cutting a long sync short
 	const resumeKey = licenseResumeKey(steamUserID);
 	const resume = readResumePoint(pageStorage(), resumeKey, Date.now());
-	const startUrl = resume?.url ?? `${LICENSES_URL}?l=english`;
+	const startUrl = resume?.url ?? firstLicensePageUrl();
 	const progress = { url: startUrl, page: resume?.page ?? 1 };
 	let totalLicensesFromPage = 0;
 	let ownedGames = [];

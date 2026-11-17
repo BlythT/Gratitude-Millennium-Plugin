@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { licensePageCount, nextLicensePageUrl, readResumePoint, saveResumePoint, clearResumePoint, RESUME_MAX_AGE_MS, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from './license-sync';
+import { firstLicensePageUrl, licensePageCount, nextLicensePageUrl, readResumePoint, saveResumePoint, clearResumePoint, RESUME_MAX_AGE_MS, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from './license-sync';
+
+describe('firstLicensePageUrl', () => {
+	it('asks for the first licenses page in English, whatever the client language', () => {
+		const url = new URL(firstLicensePageUrl());
+		expect(url.origin + url.pathname).toBe('https://store.steampowered.com/account/licenses/');
+		expect(url.searchParams.get('l')).toBe('english');
+	});
+});
 
 describe('nextLicensePageUrl', () => {
 	it('resolves a query-only href against the licenses page', () => {
