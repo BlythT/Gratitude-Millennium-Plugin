@@ -6,7 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Fixed license syncs on large libraries stopping part way and never finishing. A license page that Steam never answered left the sync waiting forever, and Steam slowing down a long run of requests stopped the sync at about the same page every time. Each page now has a time limit and is retried with longer waits when Steam is busy, the sync overlay says when it's waiting, and a sync that still stops picks up from that page the next time instead of starting over.
+- Fixed the license sync's progress looking stuck part way. It counted licenses against Steam's total, which includes games borrowed through Family Sharing that the licenses page doesn't list, so a finished sync never reached the end. It now shows progress by page.
+- Fixed a license sync waiting forever when Steam never answered a page, and giving up after two quick retries when Steam was busy. Each page now has a time limit and is retried with longer waits, the overlay says when it's waiting, and a sync that still stops picks up from that page next time instead of starting over.
 
 ## v1.3.3 - 2026-11-14
 
