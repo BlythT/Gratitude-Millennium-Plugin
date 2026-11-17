@@ -1,4 +1,5 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
+import { t } from './i18n';
 import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
 import { GiftBadge } from './components/GiftBadge';
@@ -105,8 +106,8 @@ const SettingsContent = () => {
 		<>
 			{hasConsent === false && (
 				<Field
-					label="Plugin Disabled: Data Access Denied"
-					description="Gratitude cannot function without permission to read your Steam license history. Please grant permission to re-enable the plugin."
+					label={t('settings.deniedLabel')}
+					description={t('settings.deniedDescription')}
 					bottomSeparator="standard"
 					childrenLayout="below"
 				>
@@ -120,43 +121,43 @@ const SettingsContent = () => {
 							logError('Error granting consent from settings:', error);
 						}
 					}}>
-						Grant Permission
+						{t('settings.grant')}
 					</DialogButton>
 				</Field>
 			)}
 			<ToggleField
-				label="Show Steam links"
-				description="Show and edit profile links and IDs."
+				label={t('settings.showLinks')}
+				description={t('settings.showLinksDescription')}
 				checked={settings.showFriendPickerSteamUrl}
 				onChange={(checked) => void setSetting('showFriendPickerSteamUrl', checked)}
 				bottomSeparator="standard"
 			/>
 			{isLoading ? (
 				<Field
-					label="Gift History"
-					description="Gift History not initialized! Please visit the Store page and come back."
+					label={t('settings.historyLabel')}
+					description={t('settings.historyNotReady')}
 					bottomSeparator="standard"
 				/>
 			) : (
 				<>
 					<Field
-						label="Scraped Caches"
-						description={`${licenseCount} licenses | ${friendCount} friends`}
+						label={t('settings.cachesLabel')}
+						description={t('settings.cachesCounts', { licenses: licenseCount, friends: friendCount })}
 						bottomSeparator="standard"
 						childrenLayout="below"
 					>
 						<DialogButton onClick={handleClearCache}>
-							Clear Scraped Caches
+							{t('settings.clearCaches')}
 						</DialogButton>
 					</Field>
 					<Field
-						label="Your Data"
-						description={`${giverCount} manually recorded gifts. (This is never cleared automatically).`}
+						label={t('settings.yourData')}
+						description={t('settings.yourDataDescription', { count: giverCount })}
 						bottomSeparator="standard"
 					/>
 					<Field
-						label="Missing something?"
-						description="Newly gifted games might not be detected: try visiting the store or restarting steam before checking your library"
+						label={t('settings.missingLabel')}
+						description={t('settings.missingDescription')}
 						bottomSeparator="standard"
 					/>
 				</>

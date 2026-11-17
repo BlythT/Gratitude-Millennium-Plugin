@@ -47,6 +47,7 @@ import { SELECTORS } from '../frontend/types.ts';
 import { chooseLicenseByDate } from '../lib/license-by-date.ts';
 import { giftVerdictForApp, formatLicenseDate, checkLicensesPrintFormat } from '../lib/client-licenses.ts';
 import { captureLicensesPrint } from './license-list-capture.mjs';
+import { resolveLanguage, translate } from '../lib/i18n/index.ts';
 
 const GIFT = 'Gift/Guest Pass';
 
@@ -428,8 +429,12 @@ function checkGifted(page, license, timing, maxPopinFrames) {
 		problems.push(`popped in ${gap.frames} frame${gap.frames === 1 ? '' : 's'} (${gap.ms}ms) after the stats row (${parts.join(', ')})`);
 	}
 	if (page.badgeCount !== 1) problems.push(`${page.badgeCount} badges shown`);
-	if (!/gifted/i.test(page.badgeText)) problems.push(`no Gifted badge (shows "${page.badgeText || 'nothing'}")`);
-	else if (!page.badgeText.includes(license.date)) problems.push(`date "${page.badgeText}" doesn't match ${license.date}`);
+	// The label and date are in the client's language (license.shownLabel / shownDate)
+	if (!page.badgeText.toLocaleUpperCase().includes(license.shownLabel.toLocaleUpperCase())) {
+		problems.push(`no ${license.shownLabel} badge (shows "${page.badgeText || 'nothing'}")`);
+	} else if (!page.badgeText.includes(license.shownDate)) {
+		problems.push(`date "${page.badgeText}" doesn't match ${license.shownDate}`);
+	}
 	if (page.hasPlaytime && !page.badgeFollowsPlaytime) problems.push('not right after Play Time');
 	if (page.achievementsIconBox && page.iconBox
 		&& !(close(page.iconBox[0], page.achievementsIconBox[0], 0.5) && close(page.iconBox[1], page.achievementsIconBox[1], 0.5))) {
@@ -529,7 +534,7 @@ async function sweep(mode, options, account, licenses, shared, main) {
 		throw new UsageError(`No gifted games with an App ID in the cache for account ${account}; nothing to check.`);
 	}
 	for (const id of options.only ?? giftedIds) {
-		if (byAppId[id]?.acquisition === GIFT) cases.push({ appId: id, kind: 'gifted', license: byAppId[id] });
+		if (byAppId[id]?.acquisition === GIFT) cases.push({ appId: id, kind: 'gifted', license: { ...byAppId[id] } });
 		else cases.push({ appId: id, kind: borrowedSet.has(id) ? 'borrowed' : 'not gifted' });
 	}
 	if (!options.only && options.controls > 0) {
@@ -545,9 +550,24 @@ async function sweep(mode, options, account, licenses, shared, main) {
 		controls.forEach((control, i) => cases.splice(Math.round(i * step) + i, 0, control));
 	}
 
+	// The badge shows its label and date in the Steam client's language. Format the expected dates
+	// with Steam's own Intl, so they match what the plugin renders exactly.
+	const language = resolveLanguage(await shared.evaluate("window.LocalizationManager?.GetPreferredLocales?.()?.[0] ?? document.documentElement.lang"));
+	const gifted = cases.filter((c) => c.license);
+	const shownDates = JSON.parse(await shared.evaluate(`JSON.stringify(${JSON.stringify(gifted.map((c) => c.license.date))}.map((d) => {
+		const time = Date.parse(d + ' UTC');
+		if (Number.isNaN(time)) return d;
+		try { return new Intl.DateTimeFormat(${JSON.stringify(language)}, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(time); } catch { return d; }
+	}))`));
+	gifted.forEach((c, i) => {
+		c.license.shownDate = shownDates[i];
+		c.license.shownLabel = translate(language, 'badge.label');
+	});
+	if (language !== 'en' && !options.json) console.log(`Steam is in ${language}: expecting "${translate(language, 'badge.label')}" badges with dates like ${shownDates[0] ?? '-'}.`);
+
 	const results = [];
 	for (const testCase of cases) {
-		const { opened, page, timing } = await openAndProbe(mode, shared, main, testCase.appId, testCase.license?.date ?? null, options.timeoutMs);
+		const { opened, page, timing } = await openAndProbe(mode, shared, main, testCase.appId, testCase.license?.shownDate ?? null, options.timeoutMs);
 		let status;
 		let problems = [];
 		if (!opened) {

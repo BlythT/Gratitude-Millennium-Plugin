@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { t, giftDate } from '../i18n';
 import { UI_CLASSES, type LicenseMatch } from '../types';
 import { log, logDebug } from '../../lib/logger';
 import confetti from 'canvas-confetti';
@@ -107,7 +108,7 @@ const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: Badge
           onClick={onTextClick}
           style={{ cursor: 'pointer' }}
         >
-          <div className={UI_CLASSES.label}>Gifted</div>
+          <div className={UI_CLASSES.label}>{t('badge.label')}</div>
           <div className={UI_CLASSES.value}>{valueText}</div>
         </div>
       </div>
@@ -220,8 +221,8 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
     return (
       <Badge
         icon={<QuestionIcon />}
-        tooltipText="License data not found. Click to refresh (opens store page)."
-        valueText="Loading..."
+        tooltipText={t('badge.missingTooltip')}
+        valueText={t('badge.loading')}
         onIconClick={handleMissingClick}
         onTextClick={handleMissingClick}
       />
@@ -258,15 +259,18 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
     });
   };
 
-  const tooltipText = giver 
-    ? `Gifted by ${giver.displayName} on ${match.data.date}${giver.notes ? ` - ${giver.notes}` : ''}` 
-    : `Gifted on ${match.data.date} - Click to record gifter info`;
+  const shownDate = giftDate(match.data.date);
+  const tooltipText = giver
+    ? giver.notes
+      ? t('badge.tooltipGiverNote', { name: giver.displayName, date: shownDate, note: giver.notes })
+      : t('badge.tooltipGiver', { name: giver.displayName, date: shownDate })
+    : t('badge.tooltip', { date: shownDate });
 
   return (
     <Badge
       icon={<GiftIcon />}
       tooltipText={tooltipText}
-      valueText={match.data.date}
+      valueText={shownDate}
       onIconClick={handleConfetti}
       onTextClick={handleManageGiver}
     />

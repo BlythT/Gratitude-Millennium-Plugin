@@ -1,4 +1,5 @@
 import { log, logError } from "../../lib/logger";
+import { t } from '../i18n';
 import { loadClientLicenses } from '../injection/clientlicenses';
 import { showModal, ConfirmModal, callable } from "@steambrew/client";
 import type { ModalHandle } from "../utils/showWithRetry";
@@ -18,7 +19,6 @@ const enableConsent = async (steamUserID: string) => {
 
 let consentAnswered = false;
 
-export const CONSENT_MODAL_TITLE = "Gratitude: Local Storage Permission";
 
 export const isConsentAnswered = () => consentAnswered;
 
@@ -44,14 +44,14 @@ export const showConsentModal = (steamUserID: string, mainWindow: Window): Modal
 
         const consentModalWindow = showModal(
             <ConfirmModal
-                strTitle={CONSENT_MODAL_TITLE}
+                strTitle={t('consent.title')}
                 strDescription={
                     <span {...{ [CONSENT_MODAL_MARKER]: "" }}>
-                        This plugin needs to store your Steam license history (acquisition dates and sources) and friends list locally to function. Your data never leaves your computer.
+                        {t('consent.body')}
                     </span>
                 }
-                strOKButtonText="Allow"
-                strCancelButtonText="Deny"
+                strOKButtonText={t('consent.allow')}
+                strCancelButtonText={t('consent.deny')}
                 bAlertDialog={false}
                 bDisableBackgroundDismiss={true}
                 // Allow or Deny are the only ways out, so a closed modal is always an answer

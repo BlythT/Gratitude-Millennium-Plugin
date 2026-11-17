@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Gratitude is now translated into all 30 of Steam's client languages and follows the language Steam is set to. Gift dates show in that language's own format. This covers the Library badge, the gift and giver dialogs, the consent prompt and the settings panel.
 - Gratitude now reads the Steam client's own license list, which says by App ID which of your licenses were gifts, so gifted games are found without matching names. It finds gifts whose package was named nothing like the game, such as ORION: Prelude from the "Orion Dino Horde Gift". The licenses page sync is kept as a fallback for anything the list can't answer. The list is only read for accounts that allowed Gratitude to read their license history, and is kept in memory, not saved.
 
 ### Fixed

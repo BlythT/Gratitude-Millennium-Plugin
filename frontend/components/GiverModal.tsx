@@ -1,4 +1,5 @@
 import { ConfirmModal, DialogLabel, TextField, showModal } from '@steambrew/client';
+import { t, giftDate as formatDate } from '../i18n';
 import React, { useEffect, useState, ReactNode } from 'react';
 import { log, logError } from '../../lib/logger';
 import { friendsCache } from '../injection/friendscache';
@@ -166,7 +167,7 @@ function GiverModalContent({
 
 	const handleSave = async () => {
 		if (!displayName.trim()) {
-			setStatusMessage('Display name is required.');
+			setStatusMessage(t('giver.nameRequired'));
 			return;
 		}
 
@@ -201,10 +202,10 @@ function GiverModalContent({
 			}
 
 			log(`Giver modal save returned false for license ${licenseKey}`);
-			setStatusMessage('Unable to save giver data.');
+			setStatusMessage(t('giver.saveFailed'));
 		} catch (error) {
 			logError('Error saving giver data:', error);
-			setStatusMessage('Unable to save giver data.');
+			setStatusMessage(t('giver.saveFailed'));
 		} finally {
 			setIsSaving(false);
 		}
@@ -228,10 +229,10 @@ function GiverModalContent({
 			}
 
 			log(`Delete giver returned false for ${licenseKey}`);
-			setStatusMessage('Unable to remove giver data.');
+			setStatusMessage(t('giver.removeFailed'));
 		} catch (error) {
 			logError('Error deleting giver data:', error);
-			setStatusMessage('Unable to remove giver data.');
+			setStatusMessage(t('giver.removeFailed'));
 		} finally {
 			setIsSaving(false);
 		}
@@ -270,16 +271,16 @@ function GiverModalContent({
 	const renderDetailView = () => (
 		<div style={{ display: 'grid', gap: '14px', ...modalContentWidthStyle }}>
 			<div style={{ display: 'grid', gap: '4px' }}>
-				<div style={detailLabelStyle}>Game</div>
+				<div style={detailLabelStyle}>{t('giver.game')}</div>
 				<div>{gameTitle}</div>
 			</div>
 			<div style={{ display: 'grid', gap: '10px' }}>
 				<div>
-					<div style={detailLabelStyle}>Gifted On</div>
-					<div>{giftDate}</div>
+					<div style={detailLabelStyle}>{t('giver.giftedOn')}</div>
+					<div>{formatDate(giftDate)}</div>
 				</div>
 				<div>
-					<div style={detailLabelStyle}>Gifted By</div>
+					<div style={detailLabelStyle}>{t('giver.giftedBy')}</div>
 					<div
 						style={{
 							display: 'inline-flex',
@@ -287,7 +288,7 @@ function GiverModalContent({
 							gap: '10px',
 							cursor: linkedProfileUrl ? 'pointer' : 'default',
 						}}
-						title={linkedProfileUrl ? 'Open Steam profile' : undefined}
+						title={linkedProfileUrl ? t('giver.openProfile') : undefined}
 						onClick={handleOpenLinkedProfile}
 					>
 						{linkedFriend?.avatarUrl ? (
@@ -298,7 +299,7 @@ function GiverModalContent({
 							/>
 						) : existingGiver?.displayName ? (
 							<div
-								title="Manual giver entry"
+								title={t('giver.manualEntry')}
 								style={{
 									width: '32px',
 									height: '32px',
@@ -313,17 +314,17 @@ function GiverModalContent({
 									flex: '0 0 auto',
 								}}
 							>
-								<GiftIndicator title="Manual giver entry" />
+								<GiftIndicator title={t('giver.manualEntry')} />
 							</div>
 						) : null}
 						<div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-							<span>{existingGiver?.displayName ?? 'Unknown'}</span>
+							<span>{existingGiver?.displayName ?? t('giver.unknown')}</span>
 						</div>
 					</div>
 				</div>
 				{existingGiver?.notes ? (
 					<div>
-						<div style={detailLabelStyle}>Notes</div>
+						<div style={detailLabelStyle}>{t('giver.notes')}</div>
 						<div>{existingGiver.notes}</div>
 					</div>
 				) : null}
@@ -341,7 +342,7 @@ function GiverModalContent({
 					margin-bottom: 0 !important;
 				}
 			`}</style>
-			<FormGroup label="Game">
+			<FormGroup label={t('giver.game')}>
 				<div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.82)' }}>{gameTitle}</div>
 			</FormGroup>
 			<FriendSelector
@@ -357,7 +358,7 @@ function GiverModalContent({
 				onEmailSearch={handleEmailSearch}
 				onRefreshFriends={handleRefreshFriends}
 			/>
-			<FormGroup label="Notes">
+			<FormGroup label={t('giver.notes')}>
 				<textarea
 					value={notes}
 					onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(event.target.value)}
@@ -382,7 +383,7 @@ function GiverModalContent({
 			</FormGroup>
 			{settings.showFriendPickerSteamUrl ? (
 				<TextField
-					label="Steam Profile URL / ID"
+					label={t('giver.profileField')}
 					value={profileField}
 					onChange={(event) => setProfileField(event.currentTarget.value)}
 				/>
@@ -395,11 +396,11 @@ function GiverModalContent({
 
 	return (
 		<ConfirmModal
-			strTitle={isEditing ? (existingGiver ? 'Edit Giver' : 'Add Giver') : 'Gift Details'}
+			strTitle={isEditing ? (existingGiver ? t('giver.titleEdit') : t('giver.titleAdd')) : t('giver.titleDetails')}
 			strDescription={isEditing ? renderEditorView() : renderDetailView()}
-			strOKButtonText={isEditing ? 'Save' : '✎ Edit'}
-			strCancelButtonText="Cancel"
-			strMiddleButtonText={isEditing && existingGiver ? 'Remove' : undefined}
+			strOKButtonText={isEditing ? t('giver.save') : `✎ ${t('giver.edit')}`}
+			strCancelButtonText={t('giver.cancel')}
+			strMiddleButtonText={isEditing && existingGiver ? t('giver.remove') : undefined}
 			bOKDisabled={isEditing ? isSaving || !displayName.trim() : false}
 			bCancelDisabled={isSaving}
 			bMiddleDisabled={isSaving}
