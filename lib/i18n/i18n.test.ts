@@ -67,8 +67,8 @@ describe('resolveLanguage', () => {
 
 describe('translate', () => {
 	it('fills in placeholders', () => {
-		expect(translate('en', 'badge.tooltipGiver', { name: 'Sam', date: 'Dec 22, 2012' })).toBe('Gifted by Sam on Dec 22, 2012');
-		expect(translate('de', 'badge.tooltipGiver', { name: 'Sam', date: '22.12.2012' })).toBe('Geschenkt von Sam am 22.12.2012');
+		expect(translate('en', 'badge.tooltipFromNote', { name: 'Sam', note: 'Happy birthday' })).toBe('Gifted by Sam - Happy birthday');
+		expect(translate('de', 'badge.tooltipFrom', { name: 'Sam' })).toBe('Geschenkt von Sam');
 	});
 
 	it('falls back to English for a language without a translation', () => {

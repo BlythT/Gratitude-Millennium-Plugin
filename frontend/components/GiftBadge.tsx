@@ -96,6 +96,8 @@ interface BadgeProps {
 // Focusable declares children as required, which this project's JSX typing doesn't count as passed
 const FocusBox = Focusable as unknown as React.FC<Omit<FocusableProps, 'children'> & { children?: React.ReactNode }>;
 
+// The tooltip sits on the label and date, which open the gift details; the icon fires confetti,
+// so it has none
 const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: BadgeProps) => {
   // The badge is a button: a controller can move onto it (Steam's Focusable) and press A, the
   // keyboard can Tab to it and press Enter or Space, and a screen reader reads its tooltip. One
@@ -107,13 +109,12 @@ const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: Badge
     onTextClick();
   };
   return (
-    <SteamTooltip toolTipContent={tooltipText}>
       <FocusBox
         className={`${UI_CLASSES.displayContainer} _3pS8kMrtScuY1Qf-W8tmRV Panel`}
         onActivate={activate}
         role="button"
         tabIndex={0}
-        aria-label={tooltipText}
+        aria-label={`${t('badge.label')}, ${valueText}. ${tooltipText}`}
         lang={uiLanguage()}
         onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -130,16 +131,17 @@ const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: Badge
         >
           {icon}
         </div>
-        <div 
-          className={UI_CLASSES.textContainer} 
-          onClick={onTextClick}
-          style={{ cursor: 'pointer' }}
-        >
-          <div className={UI_CLASSES.label}>{t('badge.label')}</div>
-          <div className={UI_CLASSES.value}>{valueText}</div>
-        </div>
+        <SteamTooltip toolTipContent={tooltipText}>
+          <div 
+            className={UI_CLASSES.textContainer} 
+            onClick={onTextClick}
+            style={{ cursor: 'pointer' }}
+          >
+            <div className={UI_CLASSES.label}>{t('badge.label')}</div>
+            <div className={UI_CLASSES.value}>{valueText}</div>
+          </div>
+        </SteamTooltip>
       </FocusBox>
-    </SteamTooltip>
   );
 };
 
@@ -289,9 +291,9 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
   const shownDate = giftDate(match.data.date);
   const tooltipText = giver
     ? giver.notes
-      ? t('badge.tooltipGiverNote', { name: giver.displayName, date: shownDate, note: giver.notes })
-      : t('badge.tooltipGiver', { name: giver.displayName, date: shownDate })
-    : t('badge.tooltip', { date: shownDate });
+      ? t('badge.tooltipFromNote', { name: giver.displayName, note: giver.notes })
+      : t('badge.tooltipFrom', { name: giver.displayName })
+    : t('badge.tooltipRecord');
 
   return (
     <Badge

@@ -4,9 +4,11 @@
 export const en = {
 	// The badge in a game's stats row
 	'badge.label': 'Gifted',
-	'badge.tooltip': 'Gifted on {date} - Click to record gifter info',
-	'badge.tooltipGiver': 'Gifted by {name} on {date}',
-	'badge.tooltipGiverNote': 'Gifted by {name} on {date} - {note}',
+	// The tooltip on the badge's label and date. The badge already shows that it was a gift and
+	// when, so the tooltip only adds who gave it, or how to record that
+	'badge.tooltipRecord': 'Click to record gifter info',
+	'badge.tooltipFrom': 'Gifted by {name}',
+	'badge.tooltipFromNote': 'Gifted by {name} - {note}',
 	'badge.missingTooltip': 'License data not found. Click to refresh (opens store page).',
 	'badge.loading': 'Loading...',
 
