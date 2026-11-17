@@ -81,7 +81,7 @@ The frontend also reads the Steam client's own license list by running the conso
 5. **Confetti Easter Egg**: Clicking the gift icon fires a confetti animation using `canvas-confetti`.
 
 ### 3.3 Friends Scraping & Giver Association
-1. **Friends Sync**: When webkit runs on `https://steamcommunity.com`, it fetches the user's friend list page (`https://steamcommunity.com/my/friends/`) to scrape SteamID64s, display names, custom aliases, and avatar URLs. This is saved to `gratitude_friends.json`.
+1. **Friends Sync**: The frontend reads friends from the Steam client (`g_FriendsUIApp.FriendStore.all_friends`, mapped in [client-friends.ts](lib/client-friends.ts)) first. As a fallback, and for custom profile links the client doesn't load, when webkit runs on `https://steamcommunity.com`, it fetches the user's friend list page (`https://steamcommunity.com/my/friends/`) to scrape SteamID64s, display names, custom aliases, and avatar URLs. This is saved to `gratitude_friends.json`.
 2. **Giver Dialog**: Clicking the text of the injected Gifted badge opens [GiverModal.tsx](frontend/components/GiverModal.tsx).
 3. **Smart Autocomplete**: The friend input box autocompletes against the cached friends list.
 4. **Annotation Persistence**: Saving details maps the game's license key to the gifter details in `gratitude_givers.json`.
