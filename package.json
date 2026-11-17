@@ -5,6 +5,7 @@
 		"match:licenses": "tsx ./tools/license-match-report.mjs",
 		"test:badges": "tsx ./tools/badge-sweep.mjs",
 		"test:badges:languages": "node ./tools/language-sweep.mjs",
+		"test:license-list": "tsx ./tools/license-list-check.mjs",
 		"release": "node ./tools/release.mjs",
 		"test:lua": "lua tools/test_cache_merger.lua && lua tools/test_browser_hooks.lua",
 		"type-check": "tsc --project frontend/tsconfig.json --noEmit && tsc --project webkit/tsconfig.json --noEmit",

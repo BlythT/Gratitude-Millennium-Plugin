@@ -10,6 +10,8 @@ import { detectGameName, detectAppId } from '../utils/dom';
 import { isBorrowed, ownerAccountIdOf, purchasedTimeOf } from '../utils/ownership';
 import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
 import { chooseLicenseByDate } from '../../lib/license-by-date';
+import { giftVerdictForApp, formatLicenseDate, type ClientLicense } from '../../lib/client-licenses';
+import { getClientLicensesSync, loadClientLicenses, observeClientLicenses } from '../injection/clientlicenses';
 
 import { SteamTooltip } from './SteamTooltip';
 
@@ -138,6 +140,14 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
     });
   }, [steamID]);
 
+  // Steam's own license list, when it could be read; refreshed in the background when it's old
+  const [clientLicenses, setClientLicenses] = useState<ClientLicense[] | null>(() => getClientLicensesSync());
+  useEffect(() => {
+    const stop = observeClientLicenses(setClientLicenses);
+    if (steamID) void loadClientLicenses(steamID);
+    return stop;
+  }, [steamID]);
+
   useEffect(() => {
     if (steamID) {
        giverCache.getAll(steamID).then(() => {
@@ -150,11 +160,6 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
     return null;
   }
 
-  if (!licenseDataMap) {
-    logDebug(`[GiftBadge] Render aborted: Cache data is missing or not yet loaded.`);
-    return null; 
-  }
-
   // A game borrowed through Family Sharing isn't the user's license, so it can't have been gifted
   // to them, and a sync would never find it
   if (appId && isBorrowed(ownerAccountIdOf(appId), steamID)) {
@@ -163,7 +168,29 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
   }
 
   let match: LicenseMatch | null = null;
-  if (appId) {
+
+  // Steam's license list says by App ID whether a license for this game was a gift, with no name
+  // matching. When it can't tell (it couldn't be read, or doesn't list the game), the licenses
+  // page data below decides.
+  const verdict = appId && clientLicenses ? giftVerdictForApp(clientLicenses, appId) : null;
+  if (verdict && !verdict.gifted) {
+    logDebug(`[GiftBadge] Render aborted: Steam's license list has no gift for "${gameName}".`);
+    return null;
+  }
+  if (verdict?.license?.purchasedTime) {
+    match = {
+      licenseKey: String(appId),
+      data: { date: formatLicenseDate(verdict.license.purchasedTime), acquisition: 'Gift/Guest Pass' },
+      matchType: 'client-license',
+    };
+  }
+
+  if (!match && !licenseDataMap) {
+    logDebug(`[GiftBadge] Render aborted: Cache data is missing or not yet loaded.`);
+    return null;
+  }
+
+  if (!match && appId && licenseDataMap) {
     // The sync matched this App ID to a license by name. Steam's own date for when the user got
     // the game checks that, and finds the right license when the name match picked a preview or
     // free weekend. Gift records stay keyed by App ID whichever license is chosen.
@@ -174,7 +201,7 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
       match = { licenseKey: String(appId), data: license, matchType: byDate?.how ?? 'appid-exact' };
     }
   }
-  if (!match) {
+  if (!match && licenseDataMap) {
     const fuzzyMatch = fuzzyMatchLicenseName(licenseDataMap.byName, gameName);
     if (fuzzyMatch) {
       match = { licenseKey: fuzzyMatch.licenseKey, data: fuzzyMatch.data, matchType: fuzzyMatch.matchType };
