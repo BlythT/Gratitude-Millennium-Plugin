@@ -2,6 +2,14 @@
 
 **Gratitude** is a [Millennium](https://steambrew.app/) plugin for your Steam Library that adds a helpful indicator to games you have been gifted.
 
+### Gratitude: Now in 30 languages
+
+<p align="center">
+  <img src="assets/languages.png" width="100%" alt="The Gifted badge in German, French, Spanish, Russian, English, Japanese, Chinese, Korean and Portuguese">
+</p>
+
+Gratitude follows the language your Steam client is set to, in all 30 of Steam's languages, and shows gift dates the way your language writes them.
+
 ## Screenshots
 
 <p align="center">

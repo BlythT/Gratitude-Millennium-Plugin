@@ -1,4 +1,5 @@
 import { DialogButton, Focusable, TextField, type FocusableProps } from '@steambrew/client';
+import { t } from '../i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { friendsCache } from '../injection/friendscache';
 import type { FriendRecord, FriendsCacheSnapshot, GiverSource } from '../types';
@@ -199,16 +200,16 @@ function FriendSuggestionDropdown({
 			<div style={{ display: 'grid', gap: '6px', padding: '8px' }}>
 				{isLoading ? (
 					<div style={{ padding: '12px', fontSize: '12px', opacity: 0.75 }}>
-						Loading friends...
+						{t('friends.loading')}
 					</div>
 				) : !friendsSnapshot ? (
 					<div style={{ display: 'grid', gap: '8px', padding: '8px' }}>
 						<div style={{ fontSize: '12px', opacity: 0.75 }}>
-							No friends list found.
+							{t('friends.noList')}
 						</div>
 						<div style={{ display: 'flex', justifyContent: 'flex-start' }}>
 							<DialogButton onClick={onRefreshFriends}>
-								Fetch Friends
+								{t('friends.fetch')}
 							</DialogButton>
 						</div>
 					</div>
@@ -224,11 +225,11 @@ function FriendSuggestionDropdown({
 				) : (
 					<div style={{ display: 'grid', gap: '8px', padding: '8px' }}>
 						<div style={{ fontSize: '12px', opacity: 0.75 }}>
-							No matching friends found.
+							{t('friends.noMatch')}
 						</div>
 						<div style={{ display: 'flex', justifyContent: 'flex-start' }}>
 							<DialogButton onClick={onRefreshFriends}>
-								Fetch Friends
+								{t('friends.fetch')}
 							</DialogButton>
 						</div>
 					</div>
@@ -376,9 +377,9 @@ export function FriendSelector({
 			<TextField
 				label={(
 					<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-						<span>Display Name</span>
+						<span>{t('friends.displayName')}</span>
 						{isLinkedFriend ? (
-							<LinkIndicator title="Linked to Steam Profile" />
+							<LinkIndicator title={t('friends.linked')} />
 						) : null}
 					</span>
 				)}
@@ -401,7 +402,7 @@ export function FriendSelector({
 						}}
 						style={{ display: 'flex', alignItems: 'center', height: '100%', cursor: 'default' }}
 					>
-						<SteamTooltip toolTipContent="Search Gmail for gift email">
+						<SteamTooltip toolTipContent={t('friends.searchGmail')}>
 							<FocusGroup
 								onActivate={searchEmailOnce}
 								onClick={searchEmailOnce}
@@ -412,7 +413,7 @@ export function FriendSelector({
 									}
 								}}
 								role="button"
-								aria-label="Search Gmail for gift email"
+								aria-label={t('friends.searchGmail')}
 								style={{
 									background: 'none',
 									border: 'none',
