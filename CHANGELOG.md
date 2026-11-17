@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Clicking the gift icon now plays a party popper with the confetti, and a party horn a second later. Turn it off with Party sounds in Gratitude's settings. Both sounds are public domain recordings from Freesound.
+- Gratitude can fill in who gave you older gifts. Steam's inventory history names the sender of gifts received until about 2019. Gratitude reads it once in the background, a couple of minutes after Steam starts, and fills in the gifter for each of those games without replacing any gifter you entered. It only reads the history around the dates of your gifts, so it takes about a minute. A "Find gifters" button in settings searches again.
+- The giver dialog's friend suggestions now come from the Steam client's own friends list, so they're complete and current without visiting your Steam Community friends page first. Custom profile links still come from the Community page when it has been visited.
 - Gratitude is now translated into all 30 of Steam's client languages and follows the language Steam is set to. Gift dates show in that language's own format. This covers the Library badge, the gift and giver dialogs, the consent prompt and the settings panel.
 - The sync overlay on Steam Store and Community pages is translated too, and its titles now read "Syncing Licenses" and "Syncing Friends".
 - The Gifted badge works as a button for keyboards and screen readers: Tab to it and press Enter or Space to open the gift details, and a screen reader reads it as a button with its tooltip. The gift icon is hidden from screen readers.

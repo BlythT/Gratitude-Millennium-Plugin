@@ -259,7 +259,7 @@ function GiverModalContent({
 	const linkedProfileUrl = buildProfileUrl(existingGiver);
 	const linkedFriend = findLinkedFriend(friendsSnapshot, existingGiver);
 
-	const isLinkedFriend = source === 'friend-cache' && Boolean(profileField);
+	const isLinkedFriend = source !== 'manual' && Boolean(profileField);
 	const handleOpenLinkedProfile = () => {
 		if (!linkedProfileUrl) {
 			return;
