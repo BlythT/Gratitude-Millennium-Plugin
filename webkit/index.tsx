@@ -15,8 +15,10 @@ import {
 	saveResumePoint,
 	shouldSkipLicenseSync,
 	withoutExplicitSyncFlag,
+	withoutUrlFlag,
 } from '../lib/license-sync';
 import { fetchTextWithRetry } from '../lib/page-fetch';
+import { isReceivedGiftFrom } from '../lib/gift-history';
 import { resolveLanguage, translate } from '../lib/i18n';
 
 // The sync overlay's text, in the language of the Steam page it runs on (Steam sets the page's
@@ -39,6 +41,7 @@ import {
 const setGameLicenseData = callable('SetGameLicenseData');
 const getCompletedLicenseCount = callable('GetCompletedLicenseCount');
 const setFriendsCache = callable('SetFriendsCache');
+const setGiftHistory = callable('SetGiftHistory');
 const hasUserConsented = callable('HasUserConsented');
 
 // True only when this account allowed local storage. Without it nothing scraped could be saved,
@@ -96,6 +99,110 @@ export default async function WebkitMain() {
 	void maybeSyncFriends(steamUserID).catch((error) => {
 		logError('Unexpected error during friends sync:', error);
 	});
+
+	void maybeImportGifters(steamUserID).catch((error) => {
+		logError('Unexpected error while finding gifters:', error);
+	});
+}
+
+// Gifts received through the Steam inventory (until about 2019) are listed in the Community
+// inventory history as "Received a gift from <name>", with a link to the sender. The settings
+// panel opens the inventory history with this flag; the whole history is read, a page every few
+// seconds so Steam doesn't throttle it, and the gifts that name a sender are saved for the Library
+// to pair with gift licenses (see lib/gift-history.ts).
+const IMPORT_FLAG = 'gratitude_import';
+const HISTORY_URL = 'https://steamcommunity.com/my/inventoryhistory/';
+const HISTORY_PAGE_DELAY_MS = 3000;
+// The inventory history throttles for about a minute at a time
+const HISTORY_RETRY_DELAYS_MS = [5000, 15000, 30000, 60000, 60000];
+
+function historyGiftsFrom(doc) {
+	const gifts = [];
+	for (const row of doc.querySelectorAll('.tradehistoryrow')) {
+		const description = row.querySelector('.tradehistory_event_description');
+		const text = (description?.textContent || '').replace(/\s+/g, ' ').trim();
+		if (!isReceivedGiftFrom(text)) continue;
+		const link = description.querySelector('a[href]');
+		const accountId = Number(link?.getAttribute('data-miniprofile'));
+		gifts.push({
+			date: (row.querySelector('.tradehistory_date')?.textContent || '').replace(/\s+/g, ' ').trim(),
+			senderName: (link?.textContent || text.replace(/^Received a gift from\s*/i, '')).trim(),
+			senderProfileUrl: link?.getAttribute('href') || undefined,
+			senderAccountId: Number.isFinite(accountId) && accountId > 0 ? accountId : undefined,
+			items: [...row.querySelectorAll('.history_item_name')].map((item) => (item.textContent || '').trim()).filter(Boolean),
+		});
+	}
+	return gifts;
+}
+
+async function fetchHistory(url, page) {
+	return fetchTextWithRetry(url, {
+		init: { credentials: 'include' },
+		delaysMs: HISTORY_RETRY_DELAYS_MS,
+		onRetry: (info) => updateSyncOverlay(w('sync.busy', { page, seconds: Math.round(info.waitMs / 1000) })),
+	});
+}
+
+async function maybeImportGifters(steamUserID) {
+	if (window.location.origin !== 'https://steamcommunity.com') return;
+	const cleanUrl = withoutUrlFlag(window.location.href, IMPORT_FLAG);
+	if (cleanUrl === null) return;
+	try {
+		window.history.replaceState(window.history.state, '', cleanUrl);
+	} catch (error) {
+		logError('Could not remove the import flag from the page URL:', error);
+	}
+
+	showSyncOverlay(w('import.title'), w('import.page', { page: 1 }));
+	const parser = new DOMParser();
+	const gifts = [];
+	let page = 1;
+	let complete = false;
+	try {
+		const firstHtml = await fetchHistory(`${HISTORY_URL}?l=english`, page);
+		if (firstHtml) {
+			gifts.push(...historyGiftsFrom(parser.parseFromString(firstHtml, 'text/html')));
+			// The first page carries the cursor for the rest of the history
+			const cursorJson = firstHtml.match(/g_historyCursor\s*=\s*(\{[^;]*?\})\s*;/)?.[1];
+			let cursor = cursorJson ? JSON.parse(cursorJson) : null;
+			complete = true;
+			while (cursor) {
+				page++;
+				updateSyncOverlay(w('import.page', { page }));
+				await new Promise((resolve) => setTimeout(resolve, HISTORY_PAGE_DELAY_MS));
+				const query = new URLSearchParams({ ajax: '1', 'cursor[time]': cursor.time, 'cursor[time_frac]': cursor.time_frac, 'cursor[s]': cursor.s, l: 'english' });
+				const json = await fetchHistory(`${HISTORY_URL}?${query}`, page);
+				const data = json ? JSON.parse(json) : null;
+				if (!data?.success) {
+					complete = false;
+					break;
+				}
+				gifts.push(...historyGiftsFrom(parser.parseFromString(data.html || '', 'text/html')));
+				cursor = data.cursor;
+			}
+		}
+	} catch (error) {
+		logError('Reading the inventory history failed:', error);
+		complete = false;
+	}
+
+	// A history that stopped part way would replace a complete one with fewer gifts, so only a
+	// complete read is saved
+	let saved = false;
+	if (complete) {
+		const result = await setGiftHistory({ historyJson: JSON.stringify(gifts), steamUserID }).catch(() => false);
+		saved = result !== false && result !== 'false';
+	}
+	log(`Inventory history: ${page} pages, ${gifts.length} gifts naming the sender, ${saved ? 'saved' : 'not saved'}.`);
+	if (saved) {
+		updateSyncOverlay(w('import.done', { count: gifts.length }), 100);
+		setTimeout(() => {
+			window.location.href = 'steam://open/games';
+		}, 1500);
+	} else {
+		updateSyncOverlay(w('import.failed'));
+		setTimeout(closeSyncOverlay, 4000);
+	}
 }
 
 async function fetchOwnedGames(doc, priority) {

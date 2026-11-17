@@ -62,6 +62,15 @@ export const en = {
 	'settings.yourDataDescription': 'Manually recorded gifts: {count}. These are never cleared automatically.',
 	'settings.missingLabel': 'Missing something?',
 	'settings.missingDescription': 'Newly gifted games might not be detected: try visiting the Store or restarting Steam before checking your Library.',
+	'settings.importLabel': 'Gifters from your Steam history',
+	'settings.importDescription': "Steam's inventory history names who sent the gifts you received until about 2019. Gratitude can read it and fill those gifters in for you. It never replaces a gifter you entered.",
+	'settings.importButton': 'Find gifters',
+
+	// Finding gifters in the inventory history, on the Community page
+	'import.title': 'Gratitude: Finding Gifters',
+	'import.page': 'Reading your inventory history (page {page})...',
+	'import.done': 'Found {count} gifts that name who sent them. Returning to Library...',
+	'import.failed': "Couldn't read your inventory history. Please try again later.",
 
 	// The sync overlay on Steam Store and Community pages
 	'sync.titleLicenses': 'Gratitude: Syncing Licenses',

@@ -80,6 +80,9 @@ The frontend also reads the Steam client's own license list by running the conso
 4. **Badge Insertion**: If there is a match showing the game was acquired as a `"Gift/Guest Pass"`, the UI builder in [components.ts](frontend/display/components.ts) creates a "Gifted" badge and injects it adjacent to the playtime tooltip element.
 5. **Confetti Easter Egg**: Clicking the gift icon fires a confetti animation using `canvas-confetti`.
 
+### 3.2b Gifters From the Inventory History
+Gifts received until about 2019 went through the Steam inventory, and the Community inventory history lists them as "Received a gift from <name>" with a link to the sender's profile. The settings button opens the inventory history with `?gratitude_import=1`; webkit reads every page (one every 3 seconds, as Steam throttles the history) and saves those gifts with `SetGiftHistory` (`gratitude_gift_history.json`). The frontend ([gifthistory.ts](frontend/injection/gifthistory.ts), [gift-history.ts](lib/gift-history.ts)) pairs each with the gift license added at the same minute (or by package ID for "Unknown package N"), identifies the sender from the profile link and the friends list, and saves a gifter with source `steam-history` for each Library game in that license that has none. A gifter the user entered is never replaced.
+
 ### 3.3 Friends Scraping & Giver Association
 1. **Friends Sync**: The frontend reads friends from the Steam client (`g_FriendsUIApp.FriendStore.all_friends`, mapped in [client-friends.ts](lib/client-friends.ts)) first. As a fallback, and for custom profile links the client doesn't load, when webkit runs on `https://steamcommunity.com`, it fetches the user's friend list page (`https://steamcommunity.com/my/friends/`) to scrape SteamID64s, display names, custom aliases, and avatar URLs. This is saved to `gratitude_friends.json`.
 2. **Giver Dialog**: Clicking the text of the injected Gifted badge opens [GiverModal.tsx](frontend/components/GiverModal.tsx).

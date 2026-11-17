@@ -50,7 +50,8 @@ export type LicenseMatch = {
   matchType?: string;
 };
 
-export type GiverSource = 'manual' | 'friend-cache';
+// manual: typed in; friend-cache: picked from friends; steam-history: found in the Steam inventory history
+export type GiverSource = 'manual' | 'friend-cache' | 'steam-history';
 
 export type GiverData = {
   licenseKey: string;

@@ -1,4 +1,5 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
+import { applyGiftHistory } from './injection/gifthistory';
 import { t, uiLanguage } from './i18n';
 import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
@@ -160,6 +161,16 @@ const SettingsContent = () => {
 						description={t('settings.missingDescription')}
 						bottomSeparator="standard"
 					/>
+					<Field
+						label={t('settings.importLabel')}
+						description={t('settings.importDescription')}
+						bottomSeparator="standard"
+						childrenLayout="below"
+					>
+						<DialogButton onClick={() => window.open('steam://openurl/https://steamcommunity.com/my/inventoryhistory/?l=english&gratitude_import=1')}>
+							{t('settings.importButton')}
+						</DialogButton>
+					</Field>
 				</>
 			)}
 		</>
@@ -234,7 +245,7 @@ async function onPopupCreation(popup: SteamPopup) {
 		const accountID = getCurrentAccountID();
 		if (accountID) {
 			void gameLicenseCache.getData(accountID).catch(() => {});
-			void loadClientLicenses(accountID);
+			void loadClientLicenses(accountID).then(() => applyGiftHistory(accountID));
 			void giverCache.getAll(accountID).catch(() => {});
 		}
 
