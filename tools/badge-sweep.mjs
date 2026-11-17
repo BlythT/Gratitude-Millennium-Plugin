@@ -42,6 +42,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { SELECTORS } from '../frontend/types.ts';
 import { chooseLicenseByDate } from '../lib/license-by-date.ts';
+import { parseLicensesPrint, giftVerdictForApp, formatLicenseDate } from '../lib/client-licenses.ts';
 
 const GIFT = 'Gift/Guest Pass';
 
@@ -460,10 +461,51 @@ function renderSummary(results) {
 	return `Render timing: ${frames}; median ${median}ms, max ${max}ms after the row.`;
 }
 
-// The license each game's badge should show, chosen the way the badge chooses it: the license the
-// sync matched by name, checked against Steam's own date for when the user got the game
+// Reads the Steam client's license list the way Gratitude does: runs licenses_print and collects
+// its console output until it goes quiet. Returns null when it can't be read.
+async function readClientLicenses(shared) {
+	await shared.evaluate(`(() => {
+		const st = window.__gratitudeSweepLicenses = { chunks: [], started: false, last: Date.now(), reg: null };
+		st.reg = window.SteamClient?.Console?.RegisterForSpewOutput?.((s) => {
+			const text = typeof s === 'string' ? s : s?.spew;
+			if (typeof text !== 'string' || s?.spew_type === 'input') return;
+			if (!st.started && !text.includes('License packageID')) return;
+			st.started = true; st.chunks.push(text); st.last = Date.now();
+		});
+		window.SteamClient?.Console?.ExecCommand?.('licenses_print');
+		return true;
+	})()`);
+	const deadline = Date.now() + 15000;
+	try {
+		while (Date.now() < deadline) {
+			await sleep(200);
+			if (await shared.evaluate('window.__gratitudeSweepLicenses.started && Date.now() - window.__gratitudeSweepLicenses.last >= 500')) {
+				const text = await shared.evaluate("window.__gratitudeSweepLicenses.chunks.join('')");
+				const parsed = parseLicensesPrint(text);
+				return parsed.length ? parsed : null;
+			}
+		}
+		return null;
+	} finally {
+		await shared.evaluate('window.__gratitudeSweepLicenses?.reg?.unregister?.(); delete window.__gratitudeSweepLicenses; true').catch(() => {});
+	}
+}
+
+// The license each game's badge should show, chosen the way the badge chooses it: Steam's license
+// list when it can tell, otherwise the license the sync matched by name, checked against Steam's
+// own date for when the user got the game. Games only the license list knows were gifted (their
+// license name looked nothing like the game) are added.
 async function expectedLicenses(shared, licenses) {
+	const client = await readClientLicenses(shared);
 	const ids = Object.keys(licenses.byAppId ?? {});
+	if (client) {
+		const owned = new Set(JSON.parse(await shared.evaluate(`JSON.stringify((window.appStore?.allApps || []).filter((a) => a.app_type === 1 && !a.owner_account_id).map((a) => String(a.appid)))`)));
+		for (const license of client) {
+			if (license.active && !license.borrowed && license.method === 'Guest Pass') {
+				for (const appId of license.appIds) if (owned.has(String(appId)) && !ids.includes(String(appId))) ids.push(String(appId));
+			}
+		}
+	}
 	const overviews = JSON.parse(await shared.evaluate(`JSON.stringify(${JSON.stringify(ids)}.map((id) => {
 		const o = window.appStore?.GetAppOverviewByAppID(Number(id));
 		return [o?.rt_purchased_time ?? null, o?.display_name ?? null];
@@ -473,8 +515,17 @@ async function expectedLicenses(shared, licenses) {
 	ids.forEach((id, i) => {
 		const [purchasedTime, name] = overviews[i];
 		const synced = licenses.byAppId[id];
-		expected[id] = chooseLicenseByDate(purchasedTime, synced, byName, name)?.data ?? synced;
+		const verdict = client ? giftVerdictForApp(client, Number(id)) : null;
+		if (verdict?.gifted && verdict.license.purchasedTime) {
+			expected[id] = { date: formatLicenseDate(verdict.license.purchasedTime), acquisition: GIFT, name };
+		} else if (verdict && !verdict.gifted) {
+			expected[id] = { ...(synced ?? {}), acquisition: 'not a gift (Steam license list)' };
+		} else {
+			const chosen = chooseLicenseByDate(purchasedTime, synced, byName, name)?.data ?? synced;
+			if (chosen) expected[id] = chosen;
+		}
 	});
+	console.log(client ? `Expected badges from Steam's license list (${client.length} licenses), with the licenses page for the rest.` : "Steam's license list couldn't be read; expected badges from the licenses page.");
 	return expected;
 }
 

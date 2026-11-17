@@ -70,6 +70,9 @@ graph TD
    - `acquisition`: Type of acquisition (filtered specifically for `"Gift/Guest Pass"`).
 4. **Persistence**: Webkit invokes the backend callable `SetGameLicenseData` to parse and write this data to `backend/gratitude_cache.json`.
 
+### 3.1b Steam Client License List
+The frontend also reads the Steam client's own license list by running the console command `licenses_print` through `SteamClient.Console` ([clientlicenses.ts](frontend/injection/clientlicenses.ts), parsed by [client-licenses.ts](lib/client-licenses.ts)). Each license has its package ID, state, purchase time, payment method ("Guest Pass" for gifts) and App IDs, so the badge decides gifted by App ID with no name matching. It's console text, not an API: the parser is strict, Steam cuts app lists off at 32, and anything the list can't answer falls back to the licenses page data. Family Sharing licenses are marked "Borrowed" and ignored. It's read only with consent and kept in memory.
+
 ### 3.2 Library UI Injection
 1. **DOM Tracking**: The frontend observer in [observer.ts](frontend/injection/observer.ts) listens to subtree changes.
 2. **Game Detection**: When a game details page is rendered, the active game name (e.g. `"Serious Sam 3: BFE"`) is extracted.

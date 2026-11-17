@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Gratitude now reads the Steam client's own license list, which says by App ID which of your licenses were gifts, so gifted games are found without matching names. It finds gifts whose package was named nothing like the game, such as ORION: Prelude from the "Orion Dino Horde Gift". The licenses page sync is kept as a fallback for anything the list can't answer. The list is only read for accounts that allowed Gratitude to read their license history, and is kept in memory, not saved.
+
 ### Fixed
 
 - Fixed the Gifted badge reading the wrong license for some games, because licenses were matched to games by name. A preview or demo gift could mark a game you later bought as gifted, and a game gifted to you could be matched to an older purchase, free weekend or demo with a similar name instead. The badge now checks the match against the date Steam records for when you got the game, and picks the license from that day.

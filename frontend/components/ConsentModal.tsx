@@ -1,4 +1,5 @@
 import { log, logError } from "../../lib/logger";
+import { loadClientLicenses } from '../injection/clientlicenses';
 import { showModal, ConfirmModal, callable } from "@steambrew/client";
 import type { ModalHandle } from "../utils/showWithRetry";
 
@@ -61,6 +62,7 @@ export const showConsentModal = (steamUserID: string, mainWindow: Window): Modal
                     log("consent modal accepted, redirecting to store page to load cache for the first time");
                     // The Store only syncs once consent is saved, so open it after the save
                     void enableConsent(steamUserID).finally(() => {
+                        void loadClientLicenses(steamUserID, true);
                         window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
                     });
                 }}

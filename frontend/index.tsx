@@ -6,6 +6,7 @@ import { isTruthy } from './utils/truthy';
 import { gameLicenseCache } from './injection/gamelicensecache';
 import { friendsCache } from './injection/friendscache';
 import { giverCache } from './injection/givercache';
+import { loadClientLicenses } from './injection/clientlicenses';
 import { useState, useEffect } from 'react';
 import { showConsentModal, isConsentAnswered, isConsentModalRendered } from './components/ConsentModal';
 import { showWithRetry } from './utils/showWithRetry';
@@ -113,6 +114,7 @@ const SettingsContent = () => {
 						try {
 							await setConsent({ steamUserID, consent: true });
 							setHasConsent(true);
+							void loadClientLicenses(steamUserID, true);
 							window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
 						} catch (error) {
 							logError('Error granting consent from settings:', error);
@@ -231,6 +233,7 @@ async function onPopupCreation(popup: SteamPopup) {
 		const accountID = getCurrentAccountID();
 		if (accountID) {
 			void gameLicenseCache.getData(accountID).catch(() => {});
+			void loadClientLicenses(accountID);
 			void giverCache.getAll(accountID).catch(() => {});
 		}
 
