@@ -14,6 +14,7 @@ local consentStore = JsonStore.new("gratitude_consent.json", "Consent state")
 local giverStore = JsonStore.new("gratitude_givers.json", "Giver store")
 local friendsStore = JsonStore.new("gratitude_friends.json", "Friends cache")
 local settingsStore = JsonStore.new("gratitude_settings.json", "Settings store")
+local giftHistoryStore = JsonStore.new("gratitude_gift_history.json", "Gift history")
 
 -- Global caches (in-memory)
 local GameLicenseCache = {}
@@ -21,6 +22,7 @@ local consentState = {}
 local GiverStore = {}
 local FriendsCacheStore = {}
 local SettingsStore = {}
+local GiftHistoryStore = {}
 
 -- Helper function to count table entries
 local function table_size(t)
@@ -85,6 +87,19 @@ local function load_friends_from_file()
     return false
 end
 
+local function save_gift_history_to_file()
+    return giftHistoryStore:save(GiftHistoryStore)
+end
+
+local function load_gift_history_from_file()
+    local loaded = giftHistoryStore:load(nil)
+    if loaded and next(loaded) ~= nil then
+        GiftHistoryStore = loaded
+        return true
+    end
+    return false
+end
+
 local function save_settings_to_file()
     return settingsStore:save(SettingsStore)
 end
@@ -127,8 +142,8 @@ local function normalize_giver_payload(payload, steamUserID)
         end
     end
 
-    if payload.source ~= "manual" and payload.source ~= "friend-cache" then
-        return nil, "source must be manual or friend-cache"
+    if payload.source ~= "manual" and payload.source ~= "friend-cache" and payload.source ~= "steam-history" then
+        return nil, "source must be manual, friend-cache or steam-history"
     end
 
     local accountStore = ensure_account_store(GiverStore, steamUserID)
@@ -543,6 +558,94 @@ function SetFriendsCache(friendsJson, steamUserID)
     return true
 end
 
+-- Gifts read from the Steam Community inventory history that name their sender, kept so the
+-- frontend can pair them with gift licenses. Only the expected fields are kept.
+local function normalize_history_gifts(decoded)
+    if type(decoded) ~= "table" then
+        return nil, "gift history must decode to a list"
+    end
+    local gifts = {}
+    for _, gift in ipairs(decoded) do
+        if type(gift) == "table" and type(gift.date) == "string" and type(gift.senderName) == "string" and type(gift.items) == "table" then
+            local items = {}
+            for _, item in ipairs(gift.items) do
+                if type(item) == "string" then table.insert(items, item) end
+            end
+            local entry = { date = gift.date, senderName = gift.senderName, items = items }
+            if type(gift.senderProfileUrl) == "string" and gift.senderProfileUrl ~= "" then
+                entry.senderProfileUrl = gift.senderProfileUrl
+            end
+            if type(gift.senderAccountId) == "number" then
+                entry.senderAccountId = gift.senderAccountId
+            end
+            table.insert(gifts, entry)
+        end
+    end
+    return gifts
+end
+
+function SetGiftHistory(historyJson, steamUserID)
+    assert(type(historyJson) == "string", "historyJson must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    if steamUserID == "" then
+        logger:error("No Steam ID provided for gift history")
+        return false
+    end
+    local success, decoded = pcall(json.decode, historyJson)
+    if not success then
+        logger:error("Failed to decode gift history JSON: " .. tostring(decoded))
+        return false
+    end
+    local gifts, errorMessage = normalize_history_gifts(decoded)
+    if not gifts then
+        logger:error("Invalid gift history: " .. tostring(errorMessage))
+        return false
+    end
+    GiftHistoryStore[steamUserID] = { gifts = gifts, updatedAt = os.time() }
+    if not save_gift_history_to_file() then
+        return false
+    end
+    logger:info("Stored " .. tostring(#gifts) .. " history gifts for user " .. steamUserID)
+    return true
+end
+
+function GetGiftHistory(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    if steamUserID == "" or not GiftHistoryStore[steamUserID] then
+        return "{}"
+    end
+    return json.encode(GiftHistoryStore[steamUserID])
+end
+
+-- How the latest inventory history search is going, kept in memory only. The webkit reports each
+-- step; the frontend watches it to close a background search that finished or stopped making
+-- progress. statusJson: { state = "running" | "done" | "failed", step = string }
+local GiftSearchStatus = {}
+
+function SetGiftSearchStatus(statusJson, steamUserID)
+    assert(type(statusJson) == "string", "statusJson must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    local success, decoded = pcall(json.decode, statusJson)
+    if not success or type(decoded) ~= "table" then
+        return false
+    end
+    local state = decoded.state
+    if state ~= "running" and state ~= "done" and state ~= "failed" then
+        return false
+    end
+    GiftSearchStatus[steamUserID] = {
+        state = state,
+        step = type(decoded.step) == "string" and decoded.step or "",
+        updatedAt = os.time(),
+    }
+    return true
+end
+
+function GetGiftSearchStatus(steamUserID)
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    return json.encode(GiftSearchStatus[steamUserID] or {})
+end
+
 function ClearFriendsCache(steamUserID)
     assert(type(steamUserID) == "string", "steamUserID must be a string")
 
@@ -611,6 +714,7 @@ local function on_load()
     load_givers_from_file()
     load_friends_from_file()
     load_settings_from_file()
+    load_gift_history_from_file()
 
     -- Below Millennium 3.3.0, Store and Community pages only get our webkit script when a hook matches
     -- them. From 3.3.0 Millennium injects there itself, and these empty-path hooks would leave those
@@ -636,6 +740,7 @@ local function on_unload()
     save_givers_to_file()
     save_friends_to_file()
     save_settings_to_file()
+    save_gift_history_to_file()
 end
 
 -- Called when the Steam UI has fully loaded.

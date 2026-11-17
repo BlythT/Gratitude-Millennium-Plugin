@@ -337,7 +337,7 @@ export function FriendSelector({
 	const updateDisplayName = (nextValue: string) => {
 		onChangeDisplayName(nextValue);
 		setIsDropdownOpen(true);
-		if (source === 'friend-cache' || profileField) {
+		if (source !== 'manual' || profileField) {
 			onChangeSource('manual');
 			onChangeProfileField('');
 		}

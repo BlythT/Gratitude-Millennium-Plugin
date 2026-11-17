@@ -15,8 +15,11 @@ import {
 	saveResumePoint,
 	shouldSkipLicenseSync,
 	withoutExplicitSyncFlag,
+	withoutUrlFlag,
 } from '../lib/license-sync';
 import { fetchTextWithRetry } from '../lib/page-fetch';
+import { isReceivedGiftFrom } from '../lib/gift-history';
+import { GIFT_HISTORY_CUTOFF, HISTORY_END, giftSearchWindows, mergeHistoryGifts, windowStart } from '../lib/gift-history-search';
 import { resolveLanguage, translate } from '../lib/i18n';
 
 // The sync overlay's text, in the language of the Steam page it runs on (Steam sets the page's
@@ -39,6 +42,10 @@ import {
 const setGameLicenseData = callable('SetGameLicenseData');
 const getCompletedLicenseCount = callable('GetCompletedLicenseCount');
 const setFriendsCache = callable('SetFriendsCache');
+const setGiftHistory = callable('SetGiftHistory');
+const getGiftHistory = callable('GetGiftHistory');
+const getGameLicenseData = callable('GetGameLicenseData');
+const setGiftSearchStatus = callable('SetGiftSearchStatus');
 const hasUserConsented = callable('HasUserConsented');
 
 // True only when this account allowed local storage. Without it nothing scraped could be saved,
@@ -96,6 +103,204 @@ export default async function WebkitMain() {
 	void maybeSyncFriends(steamUserID).catch((error) => {
 		logError('Unexpected error during friends sync:', error);
 	});
+
+	void maybeImportGifters(steamUserID).catch((error) => {
+		logError('Unexpected error while finding gifters:', error);
+	});
+}
+
+// Gifts received through the Steam inventory (until about 2019) are listed in the Community
+// inventory history as "Received a gift from <name>", with a link to the sender. The settings
+// panel opens the inventory history with this flag. The history can be read from any date, so the
+// search reads only the pages around each gift license's date (lib/gift-history-search.ts). When
+// that finds nothing, or there are no license dates to go by, it reads the whole history back from
+// 2020 instead. Pages are read a few seconds apart so Steam doesn't throttle them, and the gifts
+// that name a sender are saved for the Library to pair with gift licenses (lib/gift-history.ts).
+const IMPORT_FLAG = 'gratitude_import';
+// Set when the frontend runs the search in a hidden browser view: no overlay, and progress goes to
+// the backend for the frontend to watch instead
+const BACKGROUND_FLAG = 'gratitude_background';
+const HISTORY_URL = 'https://steamcommunity.com/my/inventoryhistory/';
+const HISTORY_PAGE_DELAY_MS = 3000;
+// The inventory history throttles for about a minute at a time
+const HISTORY_RETRY_DELAYS_MS = [5000, 15000, 30000, 60000, 60000];
+// Steam answers a date before the history begins with a server error, so a jump that fails is
+// retried only briefly before moving on to the next gift
+const HISTORY_JUMP_RETRY_DELAYS_MS = [5000, 15000];
+// A window with more pages than this is a busy trading stretch; stop rather than read on
+const MAX_PAGES_PER_WINDOW = 10;
+
+function historyGiftsFrom(doc) {
+	const gifts = [];
+	for (const row of doc.querySelectorAll('.tradehistoryrow')) {
+		const description = row.querySelector('.tradehistory_event_description');
+		const text = (description?.textContent || '').replace(/\s+/g, ' ').trim();
+		if (!isReceivedGiftFrom(text)) continue;
+		const link = description.querySelector('a[href]');
+		const accountId = Number(link?.getAttribute('data-miniprofile'));
+		gifts.push({
+			date: (row.querySelector('.tradehistory_date')?.textContent || '').replace(/\s+/g, ' ').trim(),
+			senderName: (link?.textContent || text.replace(/^Received a gift from\s*/i, '')).trim(),
+			senderProfileUrl: link?.getAttribute('href') || undefined,
+			senderAccountId: Number.isFinite(accountId) && accountId > 0 ? accountId : undefined,
+			items: [...row.querySelectorAll('.history_item_name')].map((item) => (item.textContent || '').trim()).filter(Boolean),
+		});
+	}
+	return gifts;
+}
+
+// Shows the search's progress: on the overlay, or to the backend in a background search
+let reportImport = (text, percent) => updateSyncOverlay(text, percent);
+// Called after each page read; a background search reports it, so a long stretch of pages in one
+// month still shows the frontend that the search is moving
+let onHistoryPage = () => {};
+
+// One page of history from cursor back: its gifts, and the cursor for the page after it
+// (HISTORY_END at the start of the history). Null when it can't be read.
+async function readHistoryPage(parser, cursor, delaysMs) {
+	await new Promise((resolve) => setTimeout(resolve, HISTORY_PAGE_DELAY_MS));
+	const query = new URLSearchParams({ ajax: '1', 'cursor[time]': cursor.time, 'cursor[time_frac]': cursor.time_frac, 'cursor[s]': cursor.s, l: 'english' });
+	const json = await fetchTextWithRetry(`${HISTORY_URL}?${query}`, {
+		init: { credentials: 'include' },
+		delaysMs,
+		onRetry: (info) => reportImport(w('import.busy', { seconds: Math.round(info.waitMs / 1000) })),
+	});
+	let data = null;
+	try {
+		data = json ? JSON.parse(json) : null;
+	} catch {
+		data = null;
+	}
+	if (!data?.success) return null;
+	onHistoryPage();
+	return {
+		gifts: historyGiftsFrom(parser.parseFromString(data.html || '', 'text/html')),
+		next: data.cursor || HISTORY_END,
+	};
+}
+
+// The pages around each gift license's date. Returns the gifts found and how many pages were read.
+async function searchAroundGifts(parser, windows) {
+	const gifts = [];
+	let pages = 0;
+	let last = null;
+	// An index loop: Community pages load Prototype.js, which replaces Array.prototype.entries
+	for (let index = 0; index < windows.length; index++) {
+		const window = windows[index];
+		reportImport(w('import.checking', { done: index + 1, total: windows.length }), Math.round((index / windows.length) * 100));
+		let cursor = windowStart(window, last);
+		for (let windowPages = 0; cursor && windowPages < MAX_PAGES_PER_WINDOW; windowPages++) {
+			const page = await readHistoryPage(parser, cursor, HISTORY_JUMP_RETRY_DELAYS_MS);
+			if (!page) break;
+			pages++;
+			gifts.push(...page.gifts);
+			last = page.next;
+			cursor = last.time > window.from ? last : null;
+		}
+	}
+	return { gifts, pages };
+}
+
+// The whole history back from the cutoff, for when there are no license dates to go by. Returns
+// the gifts found, or null when it stopped part way.
+async function readWholeHistory(parser) {
+	const gifts = [];
+	const language = resolveLanguage(document.documentElement.lang);
+	let cursor = { time: GIFT_HISTORY_CUTOFF, time_frac: 0, s: 0 };
+	while (cursor.time > 0) {
+		const date = new Date(cursor.time * 1000).toLocaleDateString(language, { year: 'numeric', month: 'long' });
+		reportImport(w('import.readingBack', { date }));
+		const page = await readHistoryPage(parser, cursor, HISTORY_RETRY_DELAYS_MS);
+		if (!page) return null;
+		gifts.push(...page.gifts);
+		cursor = page.next;
+	}
+	return gifts;
+}
+
+async function maybeImportGifters(steamUserID) {
+	if (window.location.origin !== 'https://steamcommunity.com') return;
+	const cleanUrl = withoutUrlFlag(window.location.href, IMPORT_FLAG);
+	if (cleanUrl === null) return;
+	const background = withoutUrlFlag(cleanUrl, BACKGROUND_FLAG) !== null;
+	try {
+		window.history.replaceState(window.history.state, '', withoutUrlFlag(cleanUrl, BACKGROUND_FLAG) ?? cleanUrl);
+	} catch (error) {
+		logError('Could not remove the import flag from the page URL:', error);
+	}
+
+	const setStatus = (state, step = '') =>
+		setGiftSearchStatus({ statusJson: JSON.stringify({ state, step }), steamUserID }).catch(() => false);
+	if (background) {
+		let lastStep = '';
+		let pagesRead = 0;
+		reportImport = (text) => {
+			if (text === lastStep) return;
+			lastStep = text;
+			void setStatus('running', text);
+		};
+		onHistoryPage = () => {
+			pagesRead++;
+			void setStatus('running', `${lastStep} (${pagesRead})`);
+		};
+		await setStatus('running', 'starting');
+	} else {
+		showSyncOverlay(w('import.title'), w('import.starting'));
+	}
+	const parser = new DOMParser();
+	let found = null;
+	try {
+		let windows = [];
+		try {
+			const cache = JSON.parse((await getGameLicenseData({ steamUserID })) || '{}');
+			windows = giftSearchWindows(cache.byName || {});
+		} catch (error) {
+			logError('Could not read the gift license dates:', error);
+		}
+		if (windows.length > 0) {
+			const targeted = await searchAroundGifts(parser, windows);
+			log(`Inventory history: ${targeted.pages} pages around ${windows.length} gift dates, ${targeted.gifts.length} gifts naming the sender.`);
+			// Pages read but no gifts in them: the dates didn't line up, so read everything
+			if (targeted.pages === 0) found = null;
+			else if (targeted.gifts.length > 0) found = targeted.gifts;
+			else found = await readWholeHistory(parser);
+		} else {
+			found = await readWholeHistory(parser);
+		}
+	} catch (error) {
+		logError('Reading the inventory history failed:', error);
+		found = null;
+	}
+
+	// Added to the gifts found before, so a search that missed a page never loses one
+	let saved = false;
+	let total = 0;
+	if (found) {
+		let previous = [];
+		try {
+			previous = JSON.parse((await getGiftHistory({ steamUserID })) || '{}').gifts || [];
+		} catch {
+			previous = [];
+		}
+		const gifts = mergeHistoryGifts(Array.isArray(previous) ? previous : [], found);
+		total = gifts.length;
+		const result = await setGiftHistory({ historyJson: JSON.stringify(gifts), steamUserID }).catch(() => false);
+		saved = result !== false && result !== 'false';
+	}
+	log(`Inventory history: ${total} gifts naming the sender, ${saved ? 'saved' : 'not saved'}.`);
+	if (background) {
+		await setStatus(saved ? 'done' : 'failed', String(total));
+		return;
+	}
+	if (saved) {
+		updateSyncOverlay(w('import.done', { count: total }), 100);
+		setTimeout(() => {
+			window.location.href = 'steam://open/games';
+		}, 1500);
+	} else {
+		updateSyncOverlay(w('import.failed'));
+		setTimeout(closeSyncOverlay, 4000);
+	}
 }
 
 async function fetchOwnedGames(doc, priority) {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { applyGiftHistory } from '../injection/gifthistory';
 import { t, giftDate, uiLanguage } from '../i18n';
 import { Focusable, type FocusableProps } from '@steambrew/client';
 import { UI_CLASSES, type LicenseMatch } from '../types';
@@ -182,6 +183,10 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
     if (steamID) {
        giverCache.getAll(steamID).then(() => {
           setForceRender(n => n + 1); // trigger re-render to pick up new giver data
+       });
+       // Gifters found in the Steam inventory history, filled in where none is saved
+       void applyGiftHistory(steamID).then((added) => {
+          if (added) setForceRender(n => n + 1);
        });
     }
   }, [steamID]);
