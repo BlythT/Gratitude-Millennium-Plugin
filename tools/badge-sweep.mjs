@@ -34,15 +34,19 @@
 //   --big-picture      Check Big Picture mode instead of the desktop Library
 //   --json             Print results as JSON
 //
-// Exit codes: 0 every check passed; 1 a check failed or a page didn't open; 2 the sweep couldn't
-// run (bad arguments, no Steam, nothing to check).
+// Expected badges come from Steam's license list (licenses_print) where it can tell, as in the
+// plugin, and the sweep fails if that list's format looks changed (see npm run test:license-list).
+//
+// Exit codes: 0 every check passed; 1 a check failed, a page didn't open, or the license list's
+// format looks changed; 2 the sweep couldn't run (bad arguments, no Steam, nothing to check).
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { SELECTORS } from '../frontend/types.ts';
 import { chooseLicenseByDate } from '../lib/license-by-date.ts';
-import { parseLicensesPrint, giftVerdictForApp, formatLicenseDate } from '../lib/client-licenses.ts';
+import { giftVerdictForApp, formatLicenseDate, checkLicensesPrintFormat } from '../lib/client-licenses.ts';
+import { captureLicensesPrint } from './license-list-capture.mjs';
 
 const GIFT = 'Gift/Guest Pass';
 
@@ -461,34 +465,14 @@ function renderSummary(results) {
 	return `Render timing: ${frames}; median ${median}ms, max ${max}ms after the row.`;
 }
 
-// Reads the Steam client's license list the way Gratitude does: runs licenses_print and collects
-// its console output until it goes quiet. Returns null when it can't be read.
+// Reads the Steam client's license list the way Gratitude does, and checks its format. Returns
+// the licenses (or null when it couldn't be read) and any format problems, which fail the sweep:
+// expected badges built from a misread list would make the checks meaningless.
 async function readClientLicenses(shared) {
-	await shared.evaluate(`(() => {
-		const st = window.__gratitudeSweepLicenses = { chunks: [], started: false, last: Date.now(), reg: null };
-		st.reg = window.SteamClient?.Console?.RegisterForSpewOutput?.((s) => {
-			const text = typeof s === 'string' ? s : s?.spew;
-			if (typeof text !== 'string' || s?.spew_type === 'input') return;
-			if (!st.started && !text.includes('License packageID')) return;
-			st.started = true; st.chunks.push(text); st.last = Date.now();
-		});
-		window.SteamClient?.Console?.ExecCommand?.('licenses_print');
-		return true;
-	})()`);
-	const deadline = Date.now() + 15000;
-	try {
-		while (Date.now() < deadline) {
-			await sleep(200);
-			if (await shared.evaluate('window.__gratitudeSweepLicenses.started && Date.now() - window.__gratitudeSweepLicenses.last >= 500')) {
-				const text = await shared.evaluate("window.__gratitudeSweepLicenses.chunks.join('')");
-				const parsed = parseLicensesPrint(text);
-				return parsed.length ? parsed : null;
-			}
-		}
-		return null;
-	} finally {
-		await shared.evaluate('window.__gratitudeSweepLicenses?.reg?.unregister?.(); delete window.__gratitudeSweepLicenses; true').catch(() => {});
-	}
+	const text = await captureLicensesPrint((expression) => shared.evaluate(expression));
+	if (text === null) return { client: null, problems: ['licenses_print printed nothing within 15s.'] };
+	const check = checkLicensesPrintFormat(text);
+	return { client: check.licenses.length ? check.licenses : null, problems: check.problems };
 }
 
 // The license each game's badge should show, chosen the way the badge chooses it: Steam's license
@@ -496,7 +480,7 @@ async function readClientLicenses(shared) {
 // own date for when the user got the game. Games only the license list knows were gifted (their
 // license name looked nothing like the game) are added.
 async function expectedLicenses(shared, licenses) {
-	const client = await readClientLicenses(shared);
+	const { client, problems } = await readClientLicenses(shared);
 	const ids = Object.keys(licenses.byAppId ?? {});
 	if (client) {
 		const owned = new Set(JSON.parse(await shared.evaluate(`JSON.stringify((window.appStore?.allApps || []).filter((a) => a.app_type === 1 && !a.owner_account_id).map((a) => String(a.appid)))`)));
@@ -526,11 +510,14 @@ async function expectedLicenses(shared, licenses) {
 		}
 	});
 	console.log(client ? `Expected badges from Steam's license list (${client.length} licenses), with the licenses page for the rest.` : "Steam's license list couldn't be read; expected badges from the licenses page.");
-	return expected;
+	return { expected, formatProblems: problems };
 }
 
 async function sweep(mode, options, account, licenses, shared, main) {
-	const byAppId = await expectedLicenses(shared, licenses);
+	const { expected: byAppId, formatProblems } = await expectedLicenses(shared, licenses);
+	if (formatProblems.length && !options.json) {
+		console.log(`Steam's license list doesn't read as expected (npm run test:license-list for details):\n${formatProblems.map((p) => `  - ${p}`).join('\n')}`);
+	}
 	const borrowed = JSON.parse(await shared.evaluate(`JSON.stringify((window.appStore?.allApps || [])
 		.filter((a) => a.app_type === 1 && a.owner_account_id && String(a.owner_account_id) !== ${JSON.stringify(account)})
 		.map((a) => a.appid))`));
@@ -586,6 +573,10 @@ async function sweep(mode, options, account, licenses, shared, main) {
 		console.log(`\n${count('PASS')} passed, ${count('FAIL')} failed, ${count('SKIP')} skipped in ${mode.label} (${results.length} games; ${giftedIds.length} gifted in cache)`);
 		console.log(renderSummary(results));
 		if (count('SKIP')) console.log('Skipped pages count as a failure: those games were not checked.');
+	}
+	if (formatProblems.length) {
+		console.log("Failing the sweep: Steam's license list format looks changed, so the expected badges can't be trusted.");
+		return 1;
 	}
 	return count('FAIL') || count('SKIP') ? 1 : 0;
 }

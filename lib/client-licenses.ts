@@ -99,3 +99,59 @@ export function formatLicenseDate(seconds: number): string {
 	const month = Object.keys(MONTHS)[date.getMonth()];
 	return `${month} ${date.getDate()}, ${date.getFullYear()}`;
 }
+
+export interface LicenseListCheck {
+	// "License packageID" headers in the output
+	blocks: number;
+	licenses: ClientLicense[];
+	// Anything that suggests Steam changed the format; empty when it reads as expected
+	problems: string[];
+	states: Record<string, number>;
+	methods: Record<string, number>;
+}
+
+const KNOWN_STATES = new Set(['Active', 'Inactive', 'Active, Borrowed', 'Inactive, Borrowed']);
+
+/**
+ * Checks licenses_print output against the format the parser expects, so a change on Steam's side
+ * shows up as a failed check instead of quietly wrong badges. Every license header must parse into
+ * a license with a known state, a readable purchase time, a payment method and an app count that
+ * matches its list (or a list Steam cut off with "...").
+ */
+export function checkLicensesPrintFormat(text: string): LicenseListCheck {
+	const problems: string[] = [];
+	const blocks = (text.match(/License packageID \d+:/g) ?? []).length;
+	const licenses = parseLicensesPrint(text);
+	const states: Record<string, number> = {};
+	const methods: Record<string, number> = {};
+
+	if (!blocks) problems.push('No "License packageID" lines: the command printed nothing recognisable.');
+	if (licenses.length !== blocks) {
+		problems.push(`${blocks - licenses.length} of ${blocks} licenses didn't parse (missing State, Purchased or Apps lines).`);
+	}
+	for (const block of text.split(/(?=License packageID \d+:)/)) {
+		const id = block.match(/^License packageID (\d+):/)?.[1];
+		if (!id) continue;
+		const state = block.match(/State\s*:\s*([^(\n]+?)\s*\(flags/)?.[1]?.trim();
+		if (state) {
+			states[state] = (states[state] ?? 0) + 1;
+			if (!KNOWN_STATES.has(state)) problems.push(`Package ${id} has an unfamiliar state "${state}".`);
+		}
+		const purchased = block.match(/Purchased\s*:\s*(.+?) in "[^"]*",\s*([^\n]+)/);
+		if (purchased) {
+			methods[purchased[2].trim()] = (methods[purchased[2].trim()] ?? 0) + 1;
+			if (parsePurchasedTime(purchased[1]) === null) problems.push(`Package ${id} has an unreadable purchase time "${purchased[1]}".`);
+		}
+		const apps = block.match(/- Apps\s*:([^\n]*)/)?.[1];
+		if (apps !== undefined) {
+			const total = apps.match(/\((\d+) in total\)/);
+			const listed = (apps.split('(')[0].match(/\d+/g) ?? []).length;
+			if (!total) problems.push(`Package ${id}'s app list has no "(N in total)".`);
+			else if (Number(total[1]) !== listed && !apps.includes('...')) {
+				problems.push(`Package ${id} lists ${listed} apps but says ${total[1]} in total.`);
+			}
+		}
+	}
+	// One problem per kind is enough to see what changed; cap the list
+	return { blocks, licenses, problems: problems.slice(0, 20), states, methods };
+}

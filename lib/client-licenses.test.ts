@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseLicensesPrint, parsePurchasedTime, giftVerdictForApp, formatLicenseDate } from './client-licenses';
+import { parseLicensesPrint, parsePurchasedTime, giftVerdictForApp, formatLicenseDate, checkLicensesPrintFormat } from './client-licenses';
 
 // Real licenses_print output, with the original owner's ID replaced
 const OUTPUT = `License packageID 0:
@@ -107,5 +107,36 @@ describe('giftVerdictForApp', () => {
 describe('formatLicenseDate', () => {
 	it('formats like the licenses page', () => {
 		expect(formatLicenseDate(new Date(2012, 11, 22, 23, 4, 12).getTime() / 1000)).toBe('Dec 22, 2012');
+	});
+});
+
+describe('checkLicensesPrintFormat', () => {
+	it('passes real output', () => {
+		const check = checkLicensesPrintFormat(OUTPUT);
+		expect(check.problems).toEqual([]);
+		expect(check.blocks).toBe(8);
+		expect(check.licenses).toHaveLength(8);
+		expect(check.states).toEqual({ Active: 6, Inactive: 1, 'Active, Borrowed': 1 });
+		expect(check.methods['Guest Pass']).toBe(3);
+	});
+
+	it('fails when nothing recognisable was printed', () => {
+		expect(checkLicensesPrintFormat('Unknown command "licenses_print"').problems[0]).toMatch(/printed nothing recognisable/);
+	});
+
+	it('fails when a license is missing a line it needs', () => {
+		const broken = OUTPUT.replace(' - Apps\t: 4000,  (1 in total)\n', '');
+		expect(checkLicensesPrintFormat(broken).problems).toContain("1 of 8 licenses didn't parse (missing State, Purchased or Apps lines).");
+	});
+
+	it('fails on an unfamiliar state, an unreadable time or a short app list', () => {
+		const changed = OUTPUT
+			.replace('State   : Inactive (flags', 'State   : Revoked (flags')
+			.replace('Sat Dec 22 23:04:12 2012', '2012-12-22T23:04:12')
+			.replace('219740, 322330,  (2 in total)', '219740,  (2 in total)');
+		const problems = checkLicensesPrintFormat(changed).problems;
+		expect(problems).toContain('Package 347119 has an unfamiliar state "Revoked".');
+		expect(problems.some((p) => p.includes('unreadable purchase time'))).toBe(true);
+		expect(problems).toContain('Package 27214 lists 1 apps but says 2 in total.');
 	});
 });
