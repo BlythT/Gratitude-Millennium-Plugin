@@ -62,6 +62,15 @@ end
 -- Turns the cache file's contents into the in-memory cache, one entry per account. Keeps the count
 -- from the last completed sync, so an unchanged library isn't fetched again after a restart. The
 -- older totalLicenses count is dropped: a sync that stopped part way could have set it.
+-- Older syncs parsed the licenses table's header row as a license named "Item", dated
+-- "Date" and got by "Acquisition Method". Drop it so it isn't counted or matched as a game.
+local function drop_header_row(byName)
+    local header = byName["Item"]
+    if type(header) == "table" and header.date == "Date" and header.acquisition == "Acquisition Method" then
+        byName["Item"] = nil
+    end
+end
+
 local function normalize_loaded_cache(loadedCache)
     local cache = {}
     if type(loadedCache) ~= "table" then
@@ -84,6 +93,9 @@ local function normalize_loaded_cache(loadedCache)
                     byAppId = {},
                     byName = userCache,
                 }
+            end
+            if type(cache[steamUserID].byName) == "table" then
+                drop_header_row(cache[steamUserID].byName)
             end
         end
     end

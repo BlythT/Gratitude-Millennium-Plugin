@@ -109,13 +109,14 @@ local function run_tests()
     local loaded = cache_merger.normalize_loaded_cache({
         ["111"] = {
             byAppId = { ["10"] = { acquisition = "Gift", date = "Jun 1, 2023" } },
-            byName = {},
+            byName = { ["Item"] = { acquisition = "Acquisition Method", date = "Date" } },
             completedLicenseCount = 42,
             totalLicenses = 42,
         },
         ["222"] = { ["Old Name Only"] = { acquisition = "Gift", date = "Jun 2, 2023" } },
         ["333"] = { byName = {}, completedLicenseCount = "42" },
         ["444"] = "not a table",
+        ["555"] = { byName = { ["Item"] = { acquisition = "Steam Store", date = "Jan 1, 2020" } } },
     })
     assert_equal(42, loaded["111"].completedLicenseCount, "completedLicenseCount should survive a load")
     assert_equal(nil, loaded["111"].totalLicenses, "The old count, which a partial sync could have set, is dropped")
@@ -124,6 +125,8 @@ local function run_tests()
     assert_type("table", loaded["222"].byAppId, "A migrated cache gets an empty byAppId")
     assert_equal(nil, loaded["333"].completedLicenseCount, "A count that isn't a number is dropped")
     assert_equal(nil, loaded["444"], "An account whose cache isn't a table is dropped")
+    assert_equal(nil, loaded["111"].byName["Item"], "The licenses table's header row, saved by older syncs, is dropped")
+    assert_equal("Steam Store", loaded["555"].byName["Item"].acquisition, "A real license named Item is kept")
     assert_equal(nil, next(cache_merger.normalize_loaded_cache(nil) or {}), "A missing file loads as an empty cache")
 
     -- Test 10: Accounts that denied local storage are left out of the file; others are kept
