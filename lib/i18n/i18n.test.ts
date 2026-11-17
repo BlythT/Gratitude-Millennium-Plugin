@@ -23,6 +23,14 @@ describe('translations', () => {
 		expect(extra).toEqual([]);
 	});
 
+	it('keep the name Gratitude wherever the English has it', () => {
+		const named = keys.filter((key) => en[key].includes('Gratitude'));
+		expect(named.length).toBeGreaterThan(0);
+		const renamed = Object.entries(TRANSLATIONS).flatMap(([code, messages]) =>
+			named.filter((key) => !messages[key]?.includes('Gratitude')).map((key) => `${code}: ${key}`));
+		expect(renamed).toEqual([]);
+	});
+
 	it('keep every placeholder, and add none', () => {
 		const wrong = Object.entries(TRANSLATIONS).flatMap(([code, messages]) =>
 			keys.filter((key) => messages[key] && placeholders(messages[key]!).join() !== placeholders(en[key]).join())
