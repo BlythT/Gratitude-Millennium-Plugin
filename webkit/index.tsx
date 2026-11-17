@@ -3,7 +3,7 @@ import { callable } from '@steambrew/webkit';
 import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
-import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from '../lib/license-sync';
+import { firstLicensePageUrl, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from '../lib/license-sync';
 import {
 	FRIENDS_SYNC_INTERVAL_MS,
 	LICENSE_CHECK_INTERVAL_MS,
@@ -236,7 +236,7 @@ async function maybeSyncLicenses(steamUserID) {
 // Fetches and saves every licenses page. Returns true when the sync finished, either because the
 // license count is unchanged or because every page was fetched and saved.
 async function syncLicensePages(steamUserID, isExplicitSync) {
-	const startUrl = `${LICENSES_URL}?l=english`;
+	const startUrl = firstLicensePageUrl();
 	let totalLicensesFromPage = 0;
 	let ownedGames = [];
 	let gamesMap = new Map();
