@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The giver dialog's friend suggestions now come from the Steam client's own friends list, so they're complete and current without visiting your Steam Community friends page first. Custom profile links still come from the Community page when it has been visited.
 - Gratitude is now translated into all 30 of Steam's client languages and follows the language Steam is set to. Gift dates show in that language's own format. This covers the Library badge, the gift and giver dialogs, the consent prompt and the settings panel.
 - The sync overlay on Steam Store and Community pages is translated too, and its titles now read "Syncing Licenses" and "Syncing Friends".
 - The Gifted badge works as a button for keyboards and screen readers: Tab to it and press Enter or Space to open the gift details, and a screen reader reads it as a button with its tooltip. The gift icon is hidden from screen readers.
