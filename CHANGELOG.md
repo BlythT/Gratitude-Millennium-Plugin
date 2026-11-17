@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed the Gifted badge reading the wrong license for some games, because licenses were matched to games by name. A preview or demo gift could mark a game you later bought as gifted, and a game gifted to you could be matched to an older purchase, free weekend or demo with a similar name instead. The badge now checks the match against the date Steam records for when you got the game, and picks the license from that day.
+
 ## v1.3.3 - 2026-11-14
 
 ### Fixed
