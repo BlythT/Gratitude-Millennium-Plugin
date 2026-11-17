@@ -267,6 +267,8 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 	let everyPageSaved = true;
 	let isFirstFetched = true;
 	let totalPages = 0;
+	let pagesThisRun = 0;
+	let brokenLink = false;
 
 	// Steam throttles long runs of requests; say so instead of leaving the overlay spinning
 	const onRetry = isExplicitSync
@@ -322,6 +324,21 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 		}
 
 		const licenses = parseLicenseTable(table);
+		pagesThisRun++;
+		// A page after the first with no licenses is never the end of the list. Steam sends one,
+		// with no next link, when it doesn't accept a page link (a broken continuationToken), and
+		// it shows the requested range in the paginator anyway. Taking it as the last page would
+		// mark the sync complete with pages missing.
+		if (licenses.length === 0 && pageCount > 1) {
+			if (resume && pagesThisRun === 1) {
+				log(`Steam didn't accept the saved link to page ${pageCount}; starting over.`);
+				clearResumePoint(pageStorage(), resumeKey);
+				return syncLicensePages(steamUserID, isExplicitSync);
+			}
+			logError(`Licenses page ${pageCount} came back empty; stopping.`);
+			brokenLink = true;
+			break;
+		}
 		totalParsed += licenses.length;
 		log(`Parsed ${licenses.length} License Data entries from page ${pageCount}`);
 
@@ -396,8 +413,10 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 	}
 
 	log(`License sync stopped before the last page, at page ${progress.page}. Parsed ${totalParsed} licenses.`);
-	// Note where it stopped, unless a page failed to save (it would be skipped on resuming)
-	if (everyPageSaved && progress.page > 1 && totalLicensesFromPage > 0) {
+	// Note where it stopped, unless a page failed to save (it would be skipped on resuming), or a
+	// resumed sync couldn't fetch even its first page (Steam may no longer accept the saved link)
+	const resumeFailedAtOnce = resume && isFirstFetched;
+	if (everyPageSaved && !brokenLink && !resumeFailedAtOnce && progress.page > 1 && totalLicensesFromPage > 0) {
 		saveResumePoint(pageStorage(), resumeKey, {
 			url: progress.url,
 			page: progress.page,
@@ -561,10 +580,16 @@ function parseLicenseTable(table) {
 	const rows = table.querySelectorAll('tbody tr');
 
 	rows.forEach((row) => {
-		const dateCell = row.querySelector('.license_date_col');
+		// The header row uses th cells with the same classes; only td rows are licenses. Taking the
+		// header as a license added a fake "Item" to every sync, and made a page with no licenses
+		// on it look like a page with one.
+		const dateCell = row.querySelector('td.license_date_col');
 		const itemCell = row.children[1];
-		const acquisitionCell = row.querySelector('.license_acquisition_col');
+		const acquisitionCell = row.querySelector('td.license_acquisition_col');
 
+		if (row.querySelector('th') || row.querySelector('td[colspan]')) {
+			return;
+		}
 		if (!dateCell || !itemCell || !acquisitionCell) {
 			logError('Missing expected table cells in row:', row);
 			return;

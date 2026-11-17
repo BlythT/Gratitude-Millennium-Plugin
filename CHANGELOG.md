@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Fixed the license sync's progress looking stuck part way. It counted licenses against Steam's total, which includes games borrowed through Family Sharing that the licenses page doesn't list, so a finished sync never reached the end. It now shows progress by page.
 - Fixed a license sync waiting forever when Steam never answered a page, and giving up after two quick retries when Steam was busy. Each page now has a time limit and is retried with longer waits, the overlay says when it's waiting, and a sync that still stops picks up from that page next time instead of starting over.
+- Fixed every license sync saving the licenses table's header row as a license called "Item", which made the license count in settings one too high. Existing copies are removed when Gratitude loads its cache.
 
 ## v1.3.3 - 2026-11-14
 
