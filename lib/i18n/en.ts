@@ -53,6 +53,8 @@ export const en = {
 	'settings.grant': 'Grant Permission',
 	'settings.showLinks': 'Show Steam links',
 	'settings.showLinksDescription': 'Show and edit profile links and IDs.',
+	'settings.playSound': 'Party sounds',
+	'settings.playSoundDescription': 'Play a popper and party horn with the confetti.',
 	'settings.historyLabel': 'Gift History',
 	'settings.historyNotReady': 'Gift History not initialized! Please visit the Store page and come back.',
 	'settings.cachesLabel': 'Scraped Caches',

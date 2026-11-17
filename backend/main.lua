@@ -212,7 +212,9 @@ local function normalize_settings_payload(decodedPayload)
     end
 
     local normalized = {
-        showFriendPickerSteamUrl = decodedPayload.settings.showFriendPickerSteamUrl == true
+        showFriendPickerSteamUrl = decodedPayload.settings.showFriendPickerSteamUrl == true,
+        -- On unless turned off
+        playSound = decodedPayload.settings.playSound ~= false
     }
 
     return decodedPayload.steamUserID, normalized

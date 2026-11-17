@@ -4,10 +4,12 @@ import { logError } from '../lib/logger';
 
 export type GratitudeSettings = {
 	showFriendPickerSteamUrl: boolean;
+	playSound: boolean;
 };
 
 export const DEFAULT_SETTINGS: GratitudeSettings = {
 	showFriendPickerSteamUrl: false,
+	playSound: true,
 };
 
 const getUiSettings = callable<[{ steamUserID: string }], string>('GetUiSettings');
@@ -32,6 +34,7 @@ function normalizeSettings(payload: unknown): GratitudeSettings {
 			parsed.showFriendPickerSteamUrl,
 			DEFAULT_SETTINGS.showFriendPickerSteamUrl,
 		),
+		playSound: normalizeBooleanSetting(parsed.playSound, DEFAULT_SETTINGS.playSound),
 	};
 }
 
@@ -87,6 +90,11 @@ class SettingsCache {
 }
 
 const settingsCache = new SettingsCache();
+
+/** The settings, loading them from the backend the first time. */
+export function getSettings(steamUserID: string): Promise<GratitudeSettings> {
+	return settingsCache.get(steamUserID);
+}
 
 export function getSettingsSync(steamUserID: string): GratitudeSettings {
 	return settingsCache.getSync(steamUserID);

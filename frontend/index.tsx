@@ -132,6 +132,13 @@ const SettingsContent = () => {
 				onChange={(checked) => void setSetting('showFriendPickerSteamUrl', checked)}
 				bottomSeparator="standard"
 			/>
+			<ToggleField
+				label={t('settings.playSound')}
+				description={t('settings.playSoundDescription')}
+				checked={settings.playSound}
+				onChange={(checked) => void setSetting('playSound', checked)}
+				bottomSeparator="standard"
+			/>
 			{isLoading ? (
 				<Field
 					label={t('settings.historyLabel')}

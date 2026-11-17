@@ -3,6 +3,7 @@ import { europeanLocales } from './locales/european';
 import { easternLocales } from './locales/eastern';
 import { asianLocales } from './locales/asian';
 import { syncLocales } from './locales/sync';
+import { soundLocales } from './locales/sound';
 
 export { en, type MessageKey, type Messages };
 
@@ -42,7 +43,7 @@ export const STEAM_LANGUAGES: { steam: string; code: string; name: string }[] = 
 
 // Each language's phrases, from every locale file (the sync overlay's are kept separately)
 export const TRANSLATIONS: Record<string, Messages> = { en };
-for (const group of [europeanLocales, easternLocales, asianLocales, syncLocales]) {
+for (const group of [europeanLocales, easternLocales, asianLocales, syncLocales, soundLocales]) {
 	for (const [code, messages] of Object.entries(group)) {
 		TRANSLATIONS[code] = { ...TRANSLATIONS[code], ...messages };
 	}
