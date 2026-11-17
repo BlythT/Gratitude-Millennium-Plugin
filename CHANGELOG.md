@@ -7,10 +7,15 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Gratitude is now translated into all 30 of Steam's client languages and follows the language Steam is set to. Gift dates show in that language's own format. This covers the Library badge, the gift and giver dialogs, the consent prompt and the settings panel.
+- The sync overlay on Steam Store and Community pages is translated too, and its titles now read "Syncing Licenses" and "Syncing Friends".
+- The Gifted badge works as a button for keyboards and screen readers: Tab to it and press Enter or Space to open the gift details, and a screen reader reads it as a button with its tooltip. The gift icon is hidden from screen readers.
 - Gratitude now reads the Steam client's own license list, which says by App ID which of your licenses were gifts, so gifted games are found without matching names. It finds gifts whose package was named nothing like the game, such as ORION: Prelude from the "Orion Dino Horde Gift". The licenses page sync is kept as a fallback for anything the list can't answer. The list is only read for accounts that allowed Gratitude to read their license history, and is kept in memory, not saved.
 
 ### Fixed
 
+- Fixed the Gmail search button finding nothing for accounts in other languages: it searched for the English subject of Steam's gift email, which Steam sends in the account's language. It now searches by sender and game name outside English.
+- Fixed the settings counts not using your language's number format.
+- Fixed the confetti playing when your system is set to reduce motion.
 - Fixed the Gifted badge reading the wrong license for some games, because licenses were matched to games by name. A preview or demo gift could mark a game you later bought as gifted, and a game gifted to you could be matched to an older purchase, free weekend or demo with a similar name instead. The badge now checks the match against the date Steam records for when you got the game, and picks the license from that day.
 - Fixed the license sync's progress looking stuck part way. It counted licenses against Steam's total, which includes games borrowed through Family Sharing that the licenses page doesn't list, so a finished sync never reached the end. It now shows progress by page.
 - Fixed a license sync waiting forever when Steam never answered a page, and giving up after two quick retries when Steam was busy. Each page now has a time limit and is retried with longer waits, the overlay says when it's waiting, and a sync that still stops picks up from that page next time instead of starting over.
