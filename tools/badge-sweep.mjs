@@ -41,6 +41,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { SELECTORS } from '../frontend/types.ts';
+import { chooseLicenseByDate } from '../lib/license-by-date.ts';
 
 const GIFT = 'Gift/Guest Pass';
 
@@ -459,7 +460,26 @@ function renderSummary(results) {
 	return `Render timing: ${frames}; median ${median}ms, max ${max}ms after the row.`;
 }
 
-async function sweep(mode, options, account, byAppId, shared, main) {
+// The license each game's badge should show, chosen the way the badge chooses it: the license the
+// sync matched by name, checked against Steam's own date for when the user got the game
+async function expectedLicenses(shared, licenses) {
+	const ids = Object.keys(licenses.byAppId ?? {});
+	const overviews = JSON.parse(await shared.evaluate(`JSON.stringify(${JSON.stringify(ids)}.map((id) => {
+		const o = window.appStore?.GetAppOverviewByAppID(Number(id));
+		return [o?.rt_purchased_time ?? null, o?.display_name ?? null];
+	}))`));
+	const byName = new Map(Object.entries(licenses.byName ?? {}));
+	const expected = {};
+	ids.forEach((id, i) => {
+		const [purchasedTime, name] = overviews[i];
+		const synced = licenses.byAppId[id];
+		expected[id] = chooseLicenseByDate(purchasedTime, synced, byName, name)?.data ?? synced;
+	});
+	return expected;
+}
+
+async function sweep(mode, options, account, licenses, shared, main) {
+	const byAppId = await expectedLicenses(shared, licenses);
 	const borrowed = JSON.parse(await shared.evaluate(`JSON.stringify((window.appStore?.allApps || [])
 		.filter((a) => a.app_type === 1 && a.owner_account_id && String(a.owner_account_id) !== ${JSON.stringify(account)})
 		.map((a) => a.appid))`));
@@ -536,7 +556,7 @@ async function run() {
 	if (!account || !cache[account]) {
 		throw new UsageError(`Pick an account with --account (cache has: ${accounts.join(', ') || 'none'})`);
 	}
-	const byAppId = cache[account].byAppId ?? {};
+	const licenses = { byAppId: cache[account].byAppId ?? {}, byName: cache[account].byName ?? {} };
 
 	const mode = options.bigPicture ? MODES.bigPicture : MODES.desktop;
 	const shared = await connect(await findShared(options.devtools));
@@ -552,7 +572,7 @@ async function run() {
 		}
 		main = await connect(mainTarget);
 		mainConnection = main;
-		return await sweep(mode, options, account, byAppId, shared, main);
+		return await sweep(mode, options, account, licenses, shared, main);
 	} finally {
 		await main?.evaluate(STOP_TIMING).catch(() => {});
 		mainConnection = null;
