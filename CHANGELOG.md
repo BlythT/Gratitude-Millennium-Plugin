@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Fixed the Gifted badge reading the wrong license for some games, because licenses were matched to games by name. A preview or demo gift could mark a game you later bought as gifted, and a game gifted to you could be matched to an older purchase, free weekend or demo with a similar name instead. The badge now checks the match against the date Steam records for when you got the game, and picks the license from that day.
 - Fixed the license sync's progress looking stuck part way. It counted licenses against Steam's total, which includes games borrowed through Family Sharing that the licenses page doesn't list, so a finished sync never reached the end. It now shows progress by page.
 - Fixed a license sync waiting forever when Steam never answered a page, and giving up after two quick retries when Steam was busy. Each page now has a time limit and is retried with longer waits, the overlay says when it's waiting, and a sync that still stops picks up from that page next time instead of starting over.
 - Fixed every license sync saving the licenses table's header row as a license called "Item", which made the license count in settings one too high. Existing copies are removed when Gratitude loads its cache.

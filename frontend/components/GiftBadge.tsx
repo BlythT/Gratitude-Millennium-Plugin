@@ -7,8 +7,9 @@ import { gameLicenseCache, type UserLicenseCache } from '../injection/gamelicens
 import { giverCache } from '../injection/givercache';
 import { getCurrentAccountID } from '../../lib/steamid';
 import { detectGameName, detectAppId } from '../utils/dom';
-import { isBorrowed, ownerAccountIdOf } from '../utils/ownership';
+import { isBorrowed, ownerAccountIdOf, purchasedTimeOf } from '../utils/ownership';
 import { fuzzyMatchLicenseName } from '../../lib/license-matching.js';
+import { chooseLicenseByDate } from '../../lib/license-by-date';
 
 import { SteamTooltip } from './SteamTooltip';
 
@@ -163,9 +164,14 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
 
   let match: LicenseMatch | null = null;
   if (appId) {
-    const license = licenseDataMap.byAppId.get(String(appId));
+    // The sync matched this App ID to a license by name. Steam's own date for when the user got
+    // the game checks that, and finds the right license when the name match picked a preview or
+    // free weekend. Gift records stay keyed by App ID whichever license is chosen.
+    const synced = licenseDataMap.byAppId.get(String(appId));
+    const byDate = chooseLicenseByDate(purchasedTimeOf(appId), synced, licenseDataMap.byName, gameName);
+    const license = byDate?.data ?? synced;
     if (license) {
-      match = { licenseKey: String(appId), data: license, matchType: 'appid-exact' };
+      match = { licenseKey: String(appId), data: license, matchType: byDate?.how ?? 'appid-exact' };
     }
   }
   if (!match) {
