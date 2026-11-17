@@ -76,3 +76,61 @@ export function withoutExplicitSyncFlag(href: string): string | null {
 	url.searchParams.delete('gratitude_sync');
 	return url.toString();
 }
+
+// Where a license sync that stopped part way can pick up again. Pages already fetched were saved,
+// so a large library whose sync keeps stopping at the same page (Steam throttling a long run of
+// requests) still finishes over several visits instead of starting over at page 1 each time.
+export interface LicenseResumePoint {
+	// The licenses page to fetch next
+	url: string;
+	// Its page number, for progress
+	page: number;
+	// Licenses parsed on the pages before it
+	parsed: number;
+	// The license total when it stopped; a different total means pages shifted, so start over
+	total: number;
+	savedAt: number;
+}
+
+export const RESUME_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export const licenseResumeKey = (steamUserID: string) => `gratitude:licenseResume:${steamUserID}`;
+
+interface ResumeStorage {
+	getItem(key: string): string | null;
+	setItem(key: string, value: string): void;
+}
+
+// The saved resume point, or null when there is none, it's older than a day, or it's unreadable
+export function readResumePoint(storage: ResumeStorage | undefined, key: string, nowMs: number): LicenseResumePoint | null {
+	try {
+		const raw = storage?.getItem(key);
+		if (!raw) return null;
+		const point = JSON.parse(raw) as Partial<LicenseResumePoint>;
+		const valid = typeof point.url === 'string'
+			&& nextLicensePageUrl(point.url) !== null
+			&& Number.isInteger(point.page) && (point.page as number) > 1
+			&& Number.isInteger(point.parsed) && (point.parsed as number) >= 0
+			&& Number.isInteger(point.total) && (point.total as number) > 0
+			&& typeof point.savedAt === 'number' && nowMs - point.savedAt <= RESUME_MAX_AGE_MS;
+		return valid ? { ...(point as LicenseResumePoint), url: nextLicensePageUrl(point.url as string) as string } : null;
+	} catch {
+		return null;
+	}
+}
+
+export function saveResumePoint(storage: ResumeStorage | undefined, key: string, point: LicenseResumePoint): void {
+	try {
+		storage?.setItem(key, JSON.stringify(point));
+	} catch {
+		// Without storage the next sync just starts from page 1
+	}
+}
+
+export function clearResumePoint(storage: ResumeStorage | undefined, key: string): void {
+	try {
+		storage?.setItem(key, '');
+	} catch {
+		// Nothing to clear
+	}
+}

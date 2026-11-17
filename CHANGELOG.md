@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed license syncs on large libraries stopping part way and never finishing. A license page that Steam never answered left the sync waiting forever, and Steam slowing down a long run of requests stopped the sync at about the same page every time. Each page now has a time limit and is retried with longer waits when Steam is busy, the sync overlay says when it's waiting, and a sync that still stops picks up from that page the next time instead of starting over.
+
 ## v1.3.3 - 2026-11-14
 
 ### Fixed

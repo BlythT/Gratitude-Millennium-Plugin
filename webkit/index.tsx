@@ -3,7 +3,19 @@ import { callable } from '@steambrew/webkit';
 import { log, logError } from '../lib/logger';
 import { getCurrentAccountID } from '../lib/steamid';
 import { fuzzyMatchLicenseName } from '../lib/license-matching.js';
-import { LICENSES_URL, nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from '../lib/license-sync';
+import {
+	LICENSES_URL,
+	clearResumePoint,
+	completedLicenseCount,
+	licenseResumeKey,
+	nextLicensePageUrl,
+	parseLicenseTotal,
+	readResumePoint,
+	saveResumePoint,
+	shouldSkipLicenseSync,
+	withoutExplicitSyncFlag,
+} from '../lib/license-sync';
+import { fetchTextWithRetry } from '../lib/page-fetch';
 import {
 	FRIENDS_SYNC_INTERVAL_MS,
 	LICENSE_CHECK_INTERVAL_MS,
@@ -141,16 +153,21 @@ async function shouldSkipSync(steamUserID, expectedTotal, isExplicitSync) {
 }
 
 // Yields each licenses page with isLastPage set when it has no next link. Stops early, without a
-// last page, when a page can't be fetched or its next link can't be followed.
-async function* fetchAllLicensePages(startUrl, priority) {
+// last page, when a page can't be fetched or its next link can't be followed. progress always
+// holds the page being fetched, so the caller knows where it stopped. onRetry(page, info) runs
+// before each retry of a page.
+async function* fetchAllLicensePages(startUrl, startPage, priority, onRetry, progress) {
 	let currentUrl = startUrl;
-	let pageCount = 1;
+	let pageCount = startPage;
 	const parser = new DOMParser();
 
-	log(`Fetching Steam Licenses HTML (l=english, offset=0)`);
+	log(`Fetching Steam licenses from page ${startPage} (l=english)`);
 
 	while (currentUrl) {
-		const html = await fetchPage(currentUrl, priority);
+		progress.url = currentUrl;
+		progress.page = pageCount;
+		const page = pageCount;
+		const html = await fetchPage(currentUrl, priority, (info) => onRetry?.(page, info));
 		if (!html) {
 			log(`Failed to fetch Steam Licenses at page ${pageCount}.`);
 			return;
@@ -236,26 +253,51 @@ async function maybeSyncLicenses(steamUserID) {
 // Fetches and saves every licenses page. Returns true when the sync finished, either because the
 // license count is unchanged or because every page was fetched and saved.
 async function syncLicensePages(steamUserID, isExplicitSync) {
-	const startUrl = `${LICENSES_URL}?l=english`;
+	// A sync that stopped part way left its pages saved and noted where it stopped; carry on from
+	// there, so a large library still finishes when Steam keeps cutting a long sync short
+	const resumeKey = licenseResumeKey(steamUserID);
+	const resume = readResumePoint(pageStorage(), resumeKey, Date.now());
+	const startUrl = resume?.url ?? `${LICENSES_URL}?l=english`;
+	const progress = { url: startUrl, page: resume?.page ?? 1 };
 	let totalLicensesFromPage = 0;
 	let ownedGames = [];
 	let gamesMap = new Map();
-	let totalParsed = 0;
+	let totalParsed = resume?.parsed ?? 0;
 	let everyPageSaved = true;
+	let isFirstFetched = true;
+
+	// Steam throttles long runs of requests; say so instead of leaving the overlay spinning
+	const onRetry = isExplicitSync
+		? (page, info) => updateSyncOverlay(`Steam is busy. Trying page ${page} again in ${Math.round(info.waitMs / 1000)}s...`)
+		: undefined;
 
 	const priority = syncPriority(isExplicitSync);
-	for await (const { doc, pageCount, isLastPage } of fetchAllLicensePages(startUrl, priority)) {
-		// 1. If we are on page 1, fetch ownedGames so we have them, and check cache optimization
-		if (pageCount === 1) {
+	for await (const { doc, pageCount, isLastPage } of fetchAllLicensePages(startUrl, progress.page, priority, onRetry, progress)) {
+		// 1. On the first page fetched, read the total, fetch ownedGames, and check cache optimization
+		if (isFirstFetched) {
+			isFirstFetched = false;
 			// Extract total licenses from paginator
 			totalLicensesFromPage = parseLicenseTotal(doc.querySelector('.license_paginator_ctn span')?.textContent);
 
-			if (isExplicitSync) {
-				updateSyncOverlay(`Syncing licenses...`, 10);
-			}
+			if (resume) {
+				// A new or removed license shifts every page, so the saved position no longer lines up
+				if (totalLicensesFromPage !== resume.total) {
+					log(`License total changed since the sync stopped (${resume.total} -> ${totalLicensesFromPage}); starting over.`);
+					clearResumePoint(pageStorage(), resumeKey);
+					return syncLicensePages(steamUserID, isExplicitSync);
+				}
+				log(`Resuming the license sync at page ${pageCount}.`);
+				if (isExplicitSync) {
+					updateSyncOverlay(`Picking up where the last sync stopped (page ${pageCount})...`, 10);
+				}
+			} else {
+				if (isExplicitSync) {
+					updateSyncOverlay(`Syncing licenses...`, 10);
+				}
 
-			if (await shouldSkipSync(steamUserID, totalLicensesFromPage, isExplicitSync)) {
-				return true;
+				if (await shouldSkipSync(steamUserID, totalLicensesFromPage, isExplicitSync)) {
+					return true;
+				}
 			}
 
 			ownedGames = await fetchOwnedGames(doc, priority);
@@ -341,11 +383,24 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 
 		if (isLastPage) {
 			log(`Finished fetching pages. Total parsed licenses: ${totalParsed}`);
+			clearResumePoint(pageStorage(), resumeKey);
 			return everyPageSaved;
 		}
 	}
 
-	log(`License sync stopped before the last page. Parsed ${totalParsed} licenses.`);
+	log(`License sync stopped before the last page, at page ${progress.page}. Parsed ${totalParsed} licenses.`);
+	// Note where it stopped, unless a page failed to save (it would be skipped on resuming)
+	if (everyPageSaved && progress.page > 1 && totalLicensesFromPage > 0) {
+		saveResumePoint(pageStorage(), resumeKey, {
+			url: progress.url,
+			page: progress.page,
+			parsed: totalParsed,
+			total: totalLicensesFromPage,
+			savedAt: Date.now(),
+		});
+	} else {
+		clearResumePoint(pageStorage(), resumeKey);
+	}
 	return false;
 }
 
@@ -481,28 +536,17 @@ function closeSyncOverlay() {
 	}
 }
 
-// priority is a Fetch Priority hint: 'low' lets the page's own requests go first
-async function fetchPage(url, priority = 'auto', retries = 3, delayMs = 1000) {
-	for (let i = 0; i < retries; i++) {
-		try {
-			const response = await fetch(url, {
-				credentials: 'include',
-				priority,
-			});
-			if (response.ok) {
-				return await response.text();
-			}
-			logError(`Failed to fetch ${url}:`, response.status);
-		} catch (error) {
-			logError(`Fetch attempt ${i + 1} failed for ${url}:`, error);
-		}
-
-		if (i < retries - 1) {
-			await new Promise((resolve) => setTimeout(resolve, delayMs * (i + 1)));
-		}
-	}
-
-	return null;
+// priority is a Fetch Priority hint: 'low' lets the page's own requests go first. Each request
+// has a time limit and is retried with growing waits (see page-fetch.ts); onRetry runs before each
+// retry. Returns null when the page couldn't be fetched.
+async function fetchPage(url, priority = 'auto', onRetry) {
+	return fetchTextWithRetry(url, {
+		init: { credentials: 'include', priority },
+		onRetry: (info) => {
+			logError(`Fetching ${url} failed (${info.reason}); retry ${info.retry} in ${Math.round(info.waitMs / 1000)}s.`);
+			onRetry?.(info);
+		},
+	});
 }
 
 function parseLicenseTable(table) {

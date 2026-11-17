@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nextLicensePageUrl, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from './license-sync';
+import { nextLicensePageUrl, readResumePoint, saveResumePoint, clearResumePoint, RESUME_MAX_AGE_MS, shouldSkipLicenseSync, completedLicenseCount, parseLicenseTotal, withoutExplicitSyncFlag } from './license-sync';
 
 describe('nextLicensePageUrl', () => {
 	it('resolves a query-only href against the licenses page', () => {
@@ -89,5 +89,54 @@ describe('withoutExplicitSyncFlag', () => {
 		expect(withoutExplicitSyncFlag('https://store.steampowered.com/')).toBeNull();
 		expect(withoutExplicitSyncFlag('https://store.steampowered.com/?gratitude_sync=0')).toBeNull();
 		expect(withoutExplicitSyncFlag('not a url')).toBeNull();
+	});
+});
+
+describe('resume points', () => {
+	const memory = () => {
+		const map = new Map<string, string>();
+		return { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v) };
+	};
+	const point = { url: 'https://store.steampowered.com/account/licenses/?start=1800&l=english', page: 19, parsed: 1409, total: 1902, savedAt: 1_000 };
+
+	it('saves and reads back where a sync stopped', () => {
+		const storage = memory();
+		saveResumePoint(storage, 'k', point);
+		expect(readResumePoint(storage, 'k', 2_000)).toEqual(point);
+	});
+
+	it('forgets a resume point after a day', () => {
+		const storage = memory();
+		saveResumePoint(storage, 'k', point);
+		expect(readResumePoint(storage, 'k', point.savedAt + RESUME_MAX_AGE_MS + 1)).toBeNull();
+	});
+
+	it('is gone once cleared', () => {
+		const storage = memory();
+		saveResumePoint(storage, 'k', point);
+		clearResumePoint(storage, 'k');
+		expect(readResumePoint(storage, 'k', 2_000)).toBeNull();
+	});
+
+	it('rejects a resume point that would leave the licenses page or is malformed', () => {
+		const storage = memory();
+		storage.setItem('k', JSON.stringify({ ...point, url: 'https://example.com/account/licenses/?start=1' }));
+		expect(readResumePoint(storage, 'k', 2_000)).toBeNull();
+		storage.setItem('k', '{not json');
+		expect(readResumePoint(storage, 'k', 2_000)).toBeNull();
+		storage.setItem('k', JSON.stringify({ ...point, page: 1 }));
+		expect(readResumePoint(storage, 'k', 2_000)).toBeNull();
+	});
+
+	it('keeps the resumed page in English', () => {
+		const storage = memory();
+		saveResumePoint(storage, 'k', { ...point, url: 'https://store.steampowered.com/account/licenses/?start=1800&l=italian' });
+		expect(new URL(readResumePoint(storage, 'k', 2_000)!.url).searchParams.get('l')).toBe('english');
+	});
+
+	it('copes with storage that throws', () => {
+		const broken = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
+		expect(() => saveResumePoint(broken, 'k', point)).not.toThrow();
+		expect(readResumePoint(broken, 'k', 2_000)).toBeNull();
 	});
 });
