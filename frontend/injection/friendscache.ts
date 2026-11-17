@@ -24,6 +24,8 @@ function normalizeSnapshot(payload: string): FriendsCacheSnapshot | null {
 	};
 }
 
+const CLIENT_RETRY_MS = 30 * 1000;
+
 // The Steam client's own friends list, or an empty list before it has loaded
 function clientFriends(): ClientFriend[] {
 	try {
@@ -47,6 +49,9 @@ export const friendsCache = new CacheManager<FriendsCacheSnapshot>(
 			log(`Friends from the Steam client: ${fromClient.length}`);
 			return { friends: fromClient as FriendRecord[], updatedAt: Date.now() };
 		}
+		// The client's list isn't loaded yet (Steam is still starting): use the scraped one for
+		// now, and read the client's again on the next request a little later
+		setTimeout(() => friendsCache.invalidate(steamUserID), CLIENT_RETRY_MS);
 		return scraped;
 	},
 	async (steamUserID) => {
