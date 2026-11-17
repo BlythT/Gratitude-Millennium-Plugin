@@ -9,6 +9,7 @@ import {
 	completedLicenseCount,
 	licenseResumeKey,
 	nextLicensePageUrl,
+	licensePageCount,
 	parseLicenseTotal,
 	readResumePoint,
 	saveResumePoint,
@@ -265,6 +266,7 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 	let totalParsed = resume?.parsed ?? 0;
 	let everyPageSaved = true;
 	let isFirstFetched = true;
+	let totalPages = 0;
 
 	// Steam throttles long runs of requests; say so instead of leaving the overlay spinning
 	const onRetry = isExplicitSync
@@ -277,7 +279,9 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 		if (isFirstFetched) {
 			isFirstFetched = false;
 			// Extract total licenses from paginator
-			totalLicensesFromPage = parseLicenseTotal(doc.querySelector('.license_paginator_ctn span')?.textContent);
+			const paginatorText = doc.querySelector('.license_paginator_ctn span')?.textContent;
+			totalLicensesFromPage = parseLicenseTotal(paginatorText);
+			totalPages = licensePageCount(paginatorText, pageCount);
 
 			if (resume) {
 				// A new or removed license shifts every page, so the saved position no longer lines up
@@ -322,11 +326,14 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 		log(`Parsed ${licenses.length} License Data entries from page ${pageCount}`);
 
 		if (isExplicitSync) {
-			const progressPercent = totalLicensesFromPage > 0 
-				? Math.min(95, Math.round((totalParsed / totalLicensesFromPage) * 100)) 
+			// By page: the license total counts Family Sharing games the pages don't list, so a count
+			// of licenses never reaches it and a finished sync would look stuck part way
+			const pages = Math.max(totalPages, pageCount);
+			const progressPercent = totalPages > 0
+				? Math.min(95, Math.round((pageCount / pages) * 100))
 				: Math.min(95, 10 + pageCount * 15);
 			updateSyncOverlay(
-				`Syncing licenses (Page ${pageCount}, items ${totalParsed}${totalLicensesFromPage ? ` of ${totalLicensesFromPage}` : ''})...`,
+				totalPages > 0 ? `Syncing licenses (page ${pageCount} of ${pages})...` : `Syncing licenses (page ${pageCount})...`,
 				progressPercent
 			);
 		}

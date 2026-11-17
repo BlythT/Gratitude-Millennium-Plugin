@@ -29,6 +29,20 @@ export function parseLicenseTotal(text: string | null | undefined): number {
 	return Number.isFinite(total) ? total : 0;
 }
 
+// How many licenses pages there are, from the paginator text on page currentPage, e.g. "Showing
+// licenses 101-200 of 912" -> 10. The total counts games borrowed through Family Sharing, which
+// the pages don't list, so the number of licenses parsed never reaches it; the page count is the
+// honest measure of progress. Returns 0 when the text has no range.
+export function licensePageCount(text: string | null | undefined, currentPage: number): number {
+	const match = text?.match(/(\d[\d,.\s  ]*)\s*-\s*(\d[\d,.\s  ]*)\s+of\s+(\d[\d,.\s  ]*)/i);
+	if (!match) return 0;
+	const [first, last, total] = match.slice(1, 4).map((n) => parseInt(n.replace(/\D/g, ''), 10));
+	if (![first, last, total].every(Number.isFinite) || last < first) return 0;
+	// On the last page the range is short, so it can't give the page size
+	if (last >= total) return currentPage;
+	return Math.ceil(total / (last - first + 1));
+}
+
 // A sync is skipped only when the user didn't ask for it and the last sync that finished and saved
 // every page saw the same number of licenses. completedCount is that sync's count from the backend.
 export function shouldSkipLicenseSync(
