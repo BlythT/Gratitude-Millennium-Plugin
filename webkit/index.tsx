@@ -151,6 +151,9 @@ function historyGiftsFrom(doc) {
 
 // Shows the search's progress: on the overlay, or to the backend in a background search
 let reportImport = (text, percent) => updateSyncOverlay(text, percent);
+// Called after each page read; a background search reports it, so a long stretch of pages in one
+// month still shows the frontend that the search is moving
+let onHistoryPage = () => {};
 
 // One page of history from cursor back: its gifts, and the cursor for the page after it
 // (HISTORY_END at the start of the history). Null when it can't be read.
@@ -169,6 +172,7 @@ async function readHistoryPage(parser, cursor, delaysMs) {
 		data = null;
 	}
 	if (!data?.success) return null;
+	onHistoryPage();
 	return {
 		gifts: historyGiftsFrom(parser.parseFromString(data.html || '', 'text/html')),
 		next: data.cursor || HISTORY_END,
@@ -229,10 +233,15 @@ async function maybeImportGifters(steamUserID) {
 		setGiftSearchStatus({ statusJson: JSON.stringify({ state, step }), steamUserID }).catch(() => false);
 	if (background) {
 		let lastStep = '';
+		let pagesRead = 0;
 		reportImport = (text) => {
 			if (text === lastStep) return;
 			lastStep = text;
 			void setStatus('running', text);
+		};
+		onHistoryPage = () => {
+			pagesRead++;
+			void setStatus('running', `${lastStep} (${pagesRead})`);
 		};
 		await setStatus('running', 'starting');
 	} else {
