@@ -96,3 +96,5 @@ A special thanks to **[HLTB for Millennium](https://github.com/jcdoll/hltb-mille
 
 This project uses the **IoGiftSharp** icon from **[Ionicons](https://ionic.io/ionicons)** via **[react-icons](https://react-icons.github.io/react-icons/)**.  
 Ionicons and react-icons are licensed under the **MIT License**.
+
+The party popper and party horn sounds are from **[Freesound](https://freesound.org)**: [Balloon Pop / Christmas cracker / Confetti Cannon](https://freesound.org/people/Breviceps/sounds/458398/) by Breviceps and [Party horn.wav](https://freesound.org/people/audiosmedia/sounds/170583/) by audiosmedia, both released into the public domain (CC0).
