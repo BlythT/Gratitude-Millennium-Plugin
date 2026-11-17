@@ -10,6 +10,8 @@
 
 Gratitude follows the language your Steam client is set to, in all 30 of Steam's languages, and shows gift dates the way your language writes them.
 
+Spotted something that reads wrong in your language? The phrases live in [`lib/i18n/locales`](lib/i18n/locales), and corrections are very welcome.
+
 ## Screenshots
 
 <p align="center">

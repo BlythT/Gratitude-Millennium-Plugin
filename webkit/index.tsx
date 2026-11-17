@@ -17,6 +17,13 @@ import {
 	withoutExplicitSyncFlag,
 } from '../lib/license-sync';
 import { fetchTextWithRetry } from '../lib/page-fetch';
+import { resolveLanguage, translate } from '../lib/i18n';
+
+// The sync overlay's text, in the language of the Steam page it runs on (Steam sets the page's
+// lang to the client's language)
+function w(key, vars) {
+	return translate(resolveLanguage(document.documentElement.lang), key, vars);
+}
 import {
 	FRIENDS_SYNC_INTERVAL_MS,
 	LICENSE_CHECK_INTERVAL_MS,
@@ -197,13 +204,13 @@ async function* fetchAllLicensePages(startUrl, startPage, priority, onRetry, pro
 // otherwise a message, so a failed sync is never reported as complete.
 function finishExplicitSync(completed) {
 	if (completed) {
-		updateSyncOverlay('Sync complete! Returning to Library...', 100);
+		updateSyncOverlay(w('sync.complete'), 100);
 		setTimeout(() => {
 			window.location.href = 'steam://open/games';
 		}, 1000);
 		return;
 	}
-	updateSyncOverlay("Sync didn't finish, so some gift data may be missing. Please try again later.");
+	updateSyncOverlay(w('sync.incomplete'));
 	setTimeout(closeSyncOverlay, 4000);
 }
 
@@ -233,7 +240,7 @@ async function maybeSyncLicenses(steamUserID) {
 	const storageKey = licenseCheckKey(steamUserID);
 
 	if (isExplicitSync) {
-		showSyncOverlay('Gratitude: Sync Licenses', 'Connecting to Steam store...');
+		showSyncOverlay(w('sync.titleLicenses'), w('sync.connecting'));
 	} else if (!(await readyForBackgroundSync('license check', storageKey, LICENSE_CHECK_INTERVAL_MS))) {
 		return;
 	}
@@ -272,7 +279,7 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 
 	// Steam throttles long runs of requests; say so instead of leaving the overlay spinning
 	const onRetry = isExplicitSync
-		? (page, info) => updateSyncOverlay(`Steam is busy. Trying page ${page} again in ${Math.round(info.waitMs / 1000)}s...`)
+		? (page, info) => updateSyncOverlay(w('sync.busy', { page, seconds: Math.round(info.waitMs / 1000) }))
 		: undefined;
 
 	const priority = syncPriority(isExplicitSync);
@@ -294,11 +301,11 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 				}
 				log(`Resuming the license sync at page ${pageCount}.`);
 				if (isExplicitSync) {
-					updateSyncOverlay(`Picking up where the last sync stopped (page ${pageCount})...`, 10);
+					updateSyncOverlay(w('sync.resuming', { page: pageCount }), 10);
 				}
 			} else {
 				if (isExplicitSync) {
-					updateSyncOverlay(`Syncing licenses...`, 10);
+					updateSyncOverlay(w('sync.licenses'), 10);
 				}
 
 				if (await shouldSkipSync(steamUserID, totalLicensesFromPage, isExplicitSync)) {
@@ -350,7 +357,7 @@ async function syncLicensePages(steamUserID, isExplicitSync) {
 				? Math.min(95, Math.round((pageCount / pages) * 100))
 				: Math.min(95, 10 + pageCount * 15);
 			updateSyncOverlay(
-				totalPages > 0 ? `Syncing licenses (page ${pageCount} of ${pages})...` : `Syncing licenses (page ${pageCount})...`,
+				totalPages > 0 ? w('sync.licensesPage', { page: pageCount, pages }) : w('sync.licensesPageOnly', { page: pageCount }),
 				progressPercent
 			);
 		}
@@ -440,7 +447,7 @@ async function maybeSyncFriends(steamUserID) {
 	const isExplicitSync = takeExplicitSyncFlag();
 	const storageKey = friendsSyncKey(steamUserID);
 	if (isExplicitSync) {
-		showSyncOverlay('Gratitude: Sync Friends', 'Fetching friends list from Steam...');
+		showSyncOverlay(w('sync.titleFriends'), w('sync.friendsFetching'));
 	} else if (!(await readyForBackgroundSync('friends sync', storageKey, FRIENDS_SYNC_INTERVAL_MS))) {
 		return;
 	}
@@ -449,7 +456,7 @@ async function maybeSyncFriends(steamUserID) {
 	if (!html) {
 		log('Failed to fetch Steam friends page.');
 		if (isExplicitSync) {
-			updateSyncOverlay('Failed to fetch friends list.');
+			updateSyncOverlay(w('sync.friendsFailed'));
 			setTimeout(closeSyncOverlay, 2000);
 		}
 		return;
@@ -461,14 +468,14 @@ async function maybeSyncFriends(steamUserID) {
 	if (!friendList) {
 		log('friends_list not found in the HTML.');
 		if (isExplicitSync) {
-			updateSyncOverlay('No friends list found.');
+			updateSyncOverlay(w('sync.friendsNone'));
 			setTimeout(closeSyncOverlay, 2000);
 		}
 		return;
 	}
 
 	if (isExplicitSync) {
-		updateSyncOverlay('Parsing friends list...', 50);
+		updateSyncOverlay(w('sync.friendsReading'), 50);
 	}
 
 	const friends = parseFriendsList(friendList);
@@ -483,7 +490,7 @@ async function maybeSyncFriends(steamUserID) {
 		log('Friends cache sent to backend successfully.');
 		recordRun(pageStorage(), storageKey, Date.now());
 		if (isExplicitSync) {
-			updateSyncOverlay('Sync complete! Returning to Library...', 100);
+			updateSyncOverlay(w('sync.complete'), 100);
 			setTimeout(() => {
 				window.location.href = 'steam://open/games';
 			}, 1000);
@@ -491,7 +498,7 @@ async function maybeSyncFriends(steamUserID) {
 	} catch (error) {
 		logError('Error sending friends cache to backend:', error);
 		if (isExplicitSync) {
-			updateSyncOverlay('Error saving friends cache.');
+			updateSyncOverlay(w('sync.friendsSaveFailed'));
 			setTimeout(closeSyncOverlay, 2000);
 		}
 	}

@@ -4,9 +4,11 @@
 export const en = {
 	// The badge in a game's stats row
 	'badge.label': 'Gifted',
-	'badge.tooltip': 'Gifted on {date} - Click to record gifter info',
-	'badge.tooltipGiver': 'Gifted by {name} on {date}',
-	'badge.tooltipGiverNote': 'Gifted by {name} on {date} - {note}',
+	// The tooltip on the badge's label and date. The badge already shows that it was a gift and
+	// when, so the tooltip only adds who gave it, or how to record that
+	'badge.tooltipRecord': 'Click to record gifter info',
+	'badge.tooltipFrom': 'Gifted by {name}',
+	'badge.tooltipFromNote': 'Gifted by {name} - {note}',
 	'badge.missingTooltip': 'License data not found. Click to refresh (opens store page).',
 	'badge.loading': 'Loading...',
 
@@ -60,6 +62,23 @@ export const en = {
 	'settings.yourDataDescription': 'Manually recorded gifts: {count}. These are never cleared automatically.',
 	'settings.missingLabel': 'Missing something?',
 	'settings.missingDescription': 'Newly gifted games might not be detected: try visiting the Store or restarting Steam before checking your Library.',
+
+	// The sync overlay on Steam Store and Community pages
+	'sync.titleLicenses': 'Gratitude: Syncing Licenses',
+	'sync.titleFriends': 'Gratitude: Syncing Friends',
+	'sync.connecting': 'Connecting to the Steam Store...',
+	'sync.licenses': 'Syncing licenses...',
+	'sync.licensesPage': 'Syncing licenses (page {page} of {pages})...',
+	'sync.licensesPageOnly': 'Syncing licenses (page {page})...',
+	'sync.resuming': 'Picking up where the last sync stopped (page {page})...',
+	'sync.busy': 'Steam is busy. Trying page {page} again in {seconds}s...',
+	'sync.complete': 'Sync complete! Returning to Library...',
+	'sync.incomplete': "Sync didn't finish, so some gift data may be missing. Please try again later.",
+	'sync.friendsFetching': 'Fetching friends list from Steam...',
+	'sync.friendsFailed': "Couldn't fetch your friends list.",
+	'sync.friendsNone': 'No friends list found.',
+	'sync.friendsReading': 'Reading friends list...',
+	'sync.friendsSaveFailed': "Couldn't save your friends list.",
 } as const;
 
 export type MessageKey = keyof typeof en;

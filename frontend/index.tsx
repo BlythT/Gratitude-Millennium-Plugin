@@ -1,5 +1,5 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
-import { t } from './i18n';
+import { t, uiLanguage } from './i18n';
 import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
 import { GiftBadge } from './components/GiftBadge';
@@ -142,7 +142,7 @@ const SettingsContent = () => {
 				<>
 					<Field
 						label={t('settings.cachesLabel')}
-						description={t('settings.cachesCounts', { licenses: licenseCount, friends: friendCount })}
+						description={t('settings.cachesCounts', { licenses: licenseCount.toLocaleString(uiLanguage()), friends: friendCount.toLocaleString(uiLanguage()) })}
 						bottomSeparator="standard"
 						childrenLayout="below"
 					>
@@ -152,7 +152,7 @@ const SettingsContent = () => {
 					</Field>
 					<Field
 						label={t('settings.yourData')}
-						description={t('settings.yourDataDescription', { count: giverCount })}
+						description={t('settings.yourDataDescription', { count: giverCount.toLocaleString(uiLanguage()) })}
 						bottomSeparator="standard"
 					/>
 					<Field

@@ -1,5 +1,5 @@
 import { ConfirmModal, DialogLabel, TextField, showModal } from '@steambrew/client';
-import { t, giftDate as formatDate } from '../i18n';
+import { t, giftDate as formatDate, uiLanguage } from '../i18n';
 import React, { useEffect, useState, ReactNode } from 'react';
 import { log, logError } from '../../lib/logger';
 import { friendsCache } from '../injection/friendscache';
@@ -244,7 +244,10 @@ function GiverModalContent({
 	};
 
 	const handleEmailSearch = () => {
-		const query = encodeURIComponent(`from:noreply@steampowered.com subject:"You've received a gift copy of the game" "${gameTitle}"`);
+		// Steam sends the gift email in the account's language, so the English subject only helps an
+		// English client; elsewhere the sender and the game's name find it
+		const subject = uiLanguage() === 'en' ? ` subject:"You've received a gift copy of the game"` : '';
+		const query = encodeURIComponent(`from:noreply@steampowered.com${subject} "${gameTitle}"`);
 		window.open(`steam://openurl/https://mail.google.com/mail/u/0/#search/${query}`);
 	};
 

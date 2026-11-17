@@ -23,6 +23,14 @@ describe('translations', () => {
 		expect(extra).toEqual([]);
 	});
 
+	it('keep the name Gratitude wherever the English has it', () => {
+		const named = keys.filter((key) => en[key].includes('Gratitude'));
+		expect(named.length).toBeGreaterThan(0);
+		const renamed = Object.entries(TRANSLATIONS).flatMap(([code, messages]) =>
+			named.filter((key) => !messages[key]?.includes('Gratitude')).map((key) => `${code}: ${key}`));
+		expect(renamed).toEqual([]);
+	});
+
 	it('keep every placeholder, and add none', () => {
 		const wrong = Object.entries(TRANSLATIONS).flatMap(([code, messages]) =>
 			keys.filter((key) => messages[key] && placeholders(messages[key]!).join() !== placeholders(en[key]).join())
@@ -59,8 +67,8 @@ describe('resolveLanguage', () => {
 
 describe('translate', () => {
 	it('fills in placeholders', () => {
-		expect(translate('en', 'badge.tooltipGiver', { name: 'Sam', date: 'Dec 22, 2012' })).toBe('Gifted by Sam on Dec 22, 2012');
-		expect(translate('de', 'badge.tooltipGiver', { name: 'Sam', date: '22.12.2012' })).toBe('Geschenkt von Sam am 22.12.2012');
+		expect(translate('en', 'badge.tooltipFromNote', { name: 'Sam', note: 'Happy birthday' })).toBe('Gifted by Sam - Happy birthday');
+		expect(translate('de', 'badge.tooltipFrom', { name: 'Sam' })).toBe('Geschenkt von Sam');
 	});
 
 	it('falls back to English for a language without a translation', () => {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { t, giftDate } from '../i18n';
+import { t, giftDate, uiLanguage } from '../i18n';
+import { Focusable, type FocusableProps } from '@steambrew/client';
 import { UI_CLASSES, type LicenseMatch } from '../types';
 import { log, logDebug } from '../../lib/logger';
 import confetti from 'canvas-confetti';
@@ -19,6 +20,8 @@ import { SteamTooltip } from './SteamTooltip';
 let confettiTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function fireConfetti(doc: Document) {
+  // No confetti for people who have asked their system to reduce motion
+  if (doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
   log("fired confetti!");
 
   const CANVAS_ID = 'gratitude-confetti-canvas';
@@ -86,33 +89,59 @@ interface BadgeProps {
   icon: React.ReactNode;
   tooltipText: string;
   valueText: string;
-  onIconClick: (e: React.MouseEvent) => void;
-  onTextClick: (e: React.MouseEvent) => void;
+  onIconClick: (e?: React.SyntheticEvent) => void;
+  onTextClick: (e?: React.SyntheticEvent) => void;
 }
 
+// Focusable declares children as required, which this project's JSX typing doesn't count as passed
+const FocusBox = Focusable as unknown as React.FC<Omit<FocusableProps, 'children'> & { children?: React.ReactNode }>;
+
+// The tooltip sits on the label and date, which open the gift details; the icon fires confetti,
+// so it has none
 const Badge = ({ icon, tooltipText, valueText, onIconClick, onTextClick }: BadgeProps) => {
+  // The badge is a button: a controller can move onto it (Steam's Focusable) and press A, the
+  // keyboard can Tab to it and press Enter or Space, and a screen reader reads its tooltip. One
+  // press can arrive as both a key and an A, so it only acts once.
+  const lastActivated = React.useRef(0);
+  const activate = () => {
+    if (Date.now() - lastActivated.current < 500) return;
+    lastActivated.current = Date.now();
+    onTextClick();
+  };
   return (
-    <SteamTooltip toolTipContent={tooltipText}>
-      <div 
+      <FocusBox
         className={`${UI_CLASSES.displayContainer} _3pS8kMrtScuY1Qf-W8tmRV Panel`}
+        onActivate={activate}
+        role="button"
+        tabIndex={0}
+        aria-label={`${t('badge.label')}, ${valueText}. ${tooltipText}`}
+        lang={uiLanguage()}
+        onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activate();
+          }
+        }}
       >
         <div 
           className={UI_CLASSES.iconContainer} 
           onClick={onIconClick}
+          aria-hidden="true"
           style={{ cursor: 'pointer', margin: STAT_ICON_BOX_MARGIN }}
         >
           {icon}
         </div>
-        <div 
-          className={UI_CLASSES.textContainer} 
-          onClick={onTextClick}
-          style={{ cursor: 'pointer' }}
-        >
-          <div className={UI_CLASSES.label}>{t('badge.label')}</div>
-          <div className={UI_CLASSES.value}>{valueText}</div>
-        </div>
-      </div>
-    </SteamTooltip>
+        <SteamTooltip toolTipContent={tooltipText}>
+          <div 
+            className={UI_CLASSES.textContainer} 
+            onClick={onTextClick}
+            style={{ cursor: 'pointer' }}
+          >
+            <div className={UI_CLASSES.label}>{t('badge.label')}</div>
+            <div className={UI_CLASSES.value}>{valueText}</div>
+          </div>
+        </SteamTooltip>
+      </FocusBox>
   );
 };
 
@@ -211,9 +240,9 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
 
   if (!match) {
     logDebug(`[GiftBadge] Rendering Question icon because no cache match was found for "${gameName}".`);
-    const handleMissingClick = (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+    const handleMissingClick = (e?: React.SyntheticEvent) => {
+      e?.preventDefault();
+      e?.stopPropagation();
       gameLicenseCache.invalidate(steamID);
       window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
     };
@@ -238,15 +267,15 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
 
   logDebug(`[GiftBadge] Rendering Gift icon for "${gameName}".`);
 
-  const handleConfetti = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleConfetti = (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     fireConfetti(doc);
   };
 
-  const handleManageGiver = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleManageGiver = (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     showGiverModal({
       parentWindow: doc.defaultView ?? window,
       steamUserID: steamID,
@@ -262,9 +291,9 @@ export const GiftBadge: React.FC<{ doc: Document }> = ({ doc }) => {
   const shownDate = giftDate(match.data.date);
   const tooltipText = giver
     ? giver.notes
-      ? t('badge.tooltipGiverNote', { name: giver.displayName, date: shownDate, note: giver.notes })
-      : t('badge.tooltipGiver', { name: giver.displayName, date: shownDate })
-    : t('badge.tooltip', { date: shownDate });
+      ? t('badge.tooltipFromNote', { name: giver.displayName, note: giver.notes })
+      : t('badge.tooltipFrom', { name: giver.displayName })
+    : t('badge.tooltipRecord');
 
   return (
     <Badge
