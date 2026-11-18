@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v1.4.0 - 2026-11-18
+
 ### Added
 
 - Clicking the gift icon now plays a party popper with the confetti, and a party horn a second later. Turn it off with Party sounds in Gratitude's settings. Both sounds are public domain recordings from Freesound.
@@ -14,6 +16,11 @@ All notable changes to this project will be documented in this file.
 - The Gifted badge works as a button for keyboards and screen readers: Tab to it and press Enter or Space to open the gift details, and a screen reader reads it as a button with its tooltip. The gift icon is hidden from screen readers.
 - The badge's tooltip no longer repeats the gift date the badge already shows: it reads "Click to record gifter info" until a gifter is saved, then who gave it and your note. It shows over the label and date, not the gift icon, since clicking the icon fires confetti.
 - Gratitude now reads the Steam client's own license list, which says by App ID which of your licenses were gifts, so gifted games are found without matching names. It finds gifts whose package was named nothing like the game, such as ORION: Prelude from the "Orion Dino Horde Gift". The licenses page sync is kept as a fallback for anything the list can't answer. The list is only read for accounts that allowed Gratitude to read their license history, and is kept in memory, not saved.
+
+### Changed
+
+- The consent prompt now says Gratitude also stores who sent your older gifts, from your inventory history.
+- The README describes the gifter search, sounds and controller support, and its FAQ is up to date.
 
 ### Fixed
 
