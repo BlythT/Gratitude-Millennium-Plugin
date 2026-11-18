@@ -88,6 +88,9 @@ export default async function WebkitMain() {
 	const steamUserID = getCurrentAccountID();
 	if (!steamUserID || steamUserID === '') {
 		logError('Could not get current Steam User ID.');
+		// A gifter search page signed out (Steam's web sign-in can lag just after it starts):
+		// tell the frontend straight away, with the account it passed, so it can try again later
+		await reportSignedOutSearch();
 		return;
 	}
 
@@ -147,6 +150,20 @@ function historyGiftsFrom(doc) {
 		});
 	}
 	return gifts;
+}
+
+// The account a background search was started for, passed by the frontend in the page address
+const SEARCH_USER_PARAM = 'gratitude_user';
+
+async function reportSignedOutSearch() {
+	try {
+		const url = new URL(window.location.href);
+		const account = url.searchParams.get(SEARCH_USER_PARAM);
+		if (!url.searchParams.has(IMPORT_FLAG) || !account || !/^\d+$/.test(account)) return;
+		await setGiftSearchStatus({ statusJson: JSON.stringify({ state: 'failed', step: 'signed out' }), steamUserID: account });
+	} catch (error) {
+		logError('Could not report the signed-out gifter search:', error);
+	}
 }
 
 // Shows the search's progress: on the overlay, or to the backend in a background search
@@ -253,7 +270,9 @@ async function maybeImportGifters(steamUserID) {
 	if (cleanUrl === null) return;
 	const background = withoutUrlFlag(cleanUrl, BACKGROUND_FLAG) !== null;
 	try {
-		window.history.replaceState(window.history.state, '', withoutUrlFlag(cleanUrl, BACKGROUND_FLAG) ?? cleanUrl);
+		const url = new URL(withoutUrlFlag(cleanUrl, BACKGROUND_FLAG) ?? cleanUrl);
+		url.searchParams.delete(SEARCH_USER_PARAM);
+		window.history.replaceState(window.history.state, '', url.toString());
 	} catch (error) {
 		logError('Could not remove the import flag from the page URL:', error);
 	}
