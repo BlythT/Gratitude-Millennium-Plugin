@@ -32,6 +32,12 @@ interface SearchStatus {
 }
 
 let started = false;
+let running = false;
+
+/** True while a background search is open, so the settings button doesn't start a second one. */
+export function isGifterSearchRunning(): boolean {
+	return running;
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -80,6 +86,7 @@ export async function runHiddenGifterSearch(steamUserID: string): Promise<boolea
 	}
 	let lastStep = '';
 	let lastChange = Date.now();
+	running = true;
 	try {
 		hidden.view.LoadURL(SEARCH_URL);
 		log('Gifter search: started in the background.');
@@ -101,6 +108,7 @@ export async function runHiddenGifterSearch(steamUserID: string): Promise<boolea
 			}
 		}
 	} finally {
+		running = false;
 		try {
 			hidden.destroy();
 		} catch (error) {
