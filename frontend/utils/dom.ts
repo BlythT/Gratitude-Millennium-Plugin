@@ -95,6 +95,12 @@ function getAppName(appId: number): string | null {
   }
 }
 
+// Titles compared with spacing tidied, as Steam's page and its app overview can space them differently
+function sameTitle(a: string | null | undefined, b: string): boolean {
+  const tidy = (text: string) => text.replace(/\s+/g, ' ').trim();
+  return typeof a === 'string' && tidy(a) === tidy(b);
+}
+
 // This runs on every page change, so only log when the answer changes
 let lastLogged = '';
 function logDetected(appId: number | null, source: string) {
@@ -119,7 +125,7 @@ export function detectAppId(doc: Document): number | null {
 
   const fromRoute = getAppIdFromRoute(doc);
   const title = detectGameName(doc);
-  if (fromRoute !== null && title !== null && getAppName(fromRoute) === title) {
+  if (fromRoute !== null && title !== null && sameTitle(getAppName(fromRoute), title)) {
     logDetected(fromRoute, 'route');
     return fromRoute;
   }

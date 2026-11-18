@@ -37,6 +37,17 @@ class GiverCache {
 		return giver;
 	}
 
+	/** A gifter saved for a game with this title under any key (older records used the license's name). */
+	findByTitleSync(steamUserID: string, title: string): GiverData | null {
+		const entries = this.getAllSync(steamUserID);
+		if (!entries) return null;
+		const wanted = title.trim().toLowerCase();
+		for (const giver of entries.values()) {
+			if (giver.libraryTitle?.trim().toLowerCase() === wanted) return giver;
+		}
+		return null;
+	}
+
 	async upsert(steamUserID: string, giverData: Omit<GiverData, 'createdAt' | 'updatedAt'>): Promise<boolean> {
 		try {
 			log(`Upserting giver data for user ${steamUserID} and license ${giverData.licenseKey}`);

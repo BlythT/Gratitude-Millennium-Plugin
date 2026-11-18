@@ -13,8 +13,13 @@ import { applyGiftHistory } from './gifthistory';
 const getGiftHistory = callable<[{ steamUserID: string }], string>('GetGiftHistory');
 const getGiftSearchStatus = callable<[{ steamUserID: string }], string>('GetGiftSearchStatus');
 const hasUserConsented = callable<[{ steamUserID: string }], boolean | string>('HasUserConsented');
+const setGiftSearchStatus = callable<[{ statusJson: string; steamUserID: string }], boolean | string>('SetGiftSearchStatus');
 
 const SEARCH_URL = 'https://steamcommunity.com/my/inventoryhistory/?l=english&gratitude_import=1&gratitude_background=1';
+// A search that failed (the page was signed out, Steam was busy) is tried again this much later,
+// this many more times in a session
+const RETRY_DELAY_MS = 10 * 60 * 1000;
+const MAX_ATTEMPTS = 3;
 // Steam's own start-up goes first
 export const START_DELAY_MS = 2 * 60 * 1000;
 const POLL_MS = 15 * 1000;
@@ -29,9 +34,17 @@ interface BrowserView {
 interface SearchStatus {
 	state?: 'running' | 'done' | 'failed';
 	step?: string;
+	// Seconds, when the backend last heard from the search
+	updatedAt?: number;
 }
 
 let started = false;
+let running = false;
+
+/** True while a background search is open, so the settings button doesn't start a second one. */
+export function isGifterSearchRunning(): boolean {
+	return running;
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -43,14 +56,22 @@ async function readStatus(steamUserID: string): Promise<SearchStatus> {
 	}
 }
 
-// True when the history has been searched before, so the gifts it names are already saved
+// True when a search has finished before, so the gifts it names are already saved. A whole-history
+// read that was cut short (it saved a resume point) hasn't finished.
 async function searchedBefore(steamUserID: string): Promise<boolean> {
 	try {
 		const raw = await getGiftHistory({ steamUserID });
-		return !!(raw && raw !== '{}' && (JSON.parse(raw) as { updatedAt?: number }).updatedAt);
+		const saved = raw && raw !== '{}' ? (JSON.parse(raw) as { updatedAt?: number; resumeTime?: number }) : null;
+		return !!saved?.updatedAt && !saved.resumeTime;
 	} catch {
 		return false;
 	}
+}
+
+// True when a search (the settings button's, in a visible page) reported in the last minute
+async function searchInProgress(steamUserID: string): Promise<boolean> {
+	const status = await readStatus(steamUserID);
+	return status.state === 'running' && typeof status.updatedAt === 'number' && Date.now() / 1000 - status.updatedAt < 60;
 }
 
 // Gift licenses old enough to have gone through the inventory, so the history may name a sender
@@ -80,8 +101,11 @@ export async function runHiddenGifterSearch(steamUserID: string): Promise<boolea
 	}
 	let lastStep = '';
 	let lastChange = Date.now();
+	running = true;
 	try {
-		hidden.view.LoadURL(SEARCH_URL);
+		// Clears the last search's result, so it isn't read as this one's
+		await setGiftSearchStatus({ statusJson: JSON.stringify({ state: 'running', step: 'opening' }), steamUserID }).catch(() => false);
+		hidden.view.LoadURL(`${SEARCH_URL}&gratitude_user=${encodeURIComponent(steamUserID)}`);
 		log('Gifter search: started in the background.');
 		// No limit on the total time; only a search that stops making progress is given up on
 		for (;;) {
@@ -101,6 +125,7 @@ export async function runHiddenGifterSearch(steamUserID: string): Promise<boolea
 			}
 		}
 	} finally {
+		running = false;
 		try {
 			hidden.destroy();
 		} catch (error) {
@@ -118,10 +143,17 @@ export function startBackgroundGifterSearch(steamUserID: string) {
 	started = true;
 	void (async () => {
 		await sleep(START_DELAY_MS);
-		const consented = await hasUserConsented({ steamUserID }).catch(() => false);
-		if (consented !== true && consented !== 'true') return;
-		if (await searchedBefore(steamUserID)) return;
-		if (!(await hasOldGifts(steamUserID))) return;
-		if (await runHiddenGifterSearch(steamUserID)) await applyGiftHistory(steamUserID);
+		for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+			if (attempt > 1) await sleep(RETRY_DELAY_MS);
+			const consented = await hasUserConsented({ steamUserID }).catch(() => false);
+			if (consented !== true && consented !== 'true') return;
+			if (await searchedBefore(steamUserID)) return;
+			if (await searchInProgress(steamUserID)) continue;
+			if (!(await hasOldGifts(steamUserID))) return;
+			if (await runHiddenGifterSearch(steamUserID)) {
+				await applyGiftHistory(steamUserID);
+				return;
+			}
+		}
 	})().catch((error) => logError('Gifter search failed:', error));
 }

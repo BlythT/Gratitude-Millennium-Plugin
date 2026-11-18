@@ -598,17 +598,65 @@ function SetGiftHistory(historyJson, steamUserID)
         logger:error("Failed to decode gift history JSON: " .. tostring(decoded))
         return false
     end
-    local gifts, errorMessage = normalize_history_gifts(decoded)
+    -- { gifts = [...], resumeTime = number|nil }, or a plain list of gifts from older versions
+    local giftList = decoded
+    local resumeTime = nil
+    if type(decoded) == "table" and type(decoded.gifts) == "table" then
+        giftList = decoded.gifts
+        if type(decoded.resumeTime) == "number" and decoded.resumeTime > 0 then
+            resumeTime = decoded.resumeTime
+        end
+    end
+    local gifts, errorMessage = normalize_history_gifts(giftList)
     if not gifts then
         logger:error("Invalid gift history: " .. tostring(errorMessage))
         return false
     end
-    GiftHistoryStore[steamUserID] = { gifts = gifts, updatedAt = os.time() }
+    -- The games already filled in from the history are kept across searches, so a gifter the
+    -- user deleted isn't filled in again
+    local previous = GiftHistoryStore[steamUserID]
+    GiftHistoryStore[steamUserID] = {
+        gifts = gifts,
+        updatedAt = os.time(),
+        resumeTime = resumeTime,
+        filled = previous and previous.filled or nil,
+    }
     if not save_gift_history_to_file() then
         return false
     end
     logger:info("Stored " .. tostring(#gifts) .. " history gifts for user " .. steamUserID)
     return true
+end
+
+-- Records the App IDs the frontend has filled in a gifter for from the history, so each is filled
+-- at most once. appIdsJson: a JSON list of App IDs.
+function MarkGiftHistoryFilled(appIdsJson, steamUserID)
+    assert(type(appIdsJson) == "string", "appIdsJson must be a string")
+    assert(type(steamUserID) == "string", "steamUserID must be a string")
+    local store = GiftHistoryStore[steamUserID]
+    if steamUserID == "" or not store then
+        return false
+    end
+    local success, decoded = pcall(json.decode, appIdsJson)
+    if not success or type(decoded) ~= "table" then
+        return false
+    end
+    local seen = {}
+    local filled = {}
+    for _, appId in ipairs(store.filled or {}) do
+        if type(appId) == "number" and not seen[appId] then
+            seen[appId] = true
+            table.insert(filled, appId)
+        end
+    end
+    for _, appId in ipairs(decoded) do
+        if type(appId) == "number" and not seen[appId] then
+            seen[appId] = true
+            table.insert(filled, appId)
+        end
+    end
+    store.filled = filled
+    return save_gift_history_to_file()
 end
 
 function GetGiftHistory(steamUserID)

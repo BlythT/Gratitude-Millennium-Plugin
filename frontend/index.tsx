@@ -1,6 +1,6 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
 import { applyGiftHistory } from './injection/gifthistory';
-import { startBackgroundGifterSearch } from './injection/historysearch';
+import { isGifterSearchRunning, startBackgroundGifterSearch } from './injection/historysearch';
 import { t, uiLanguage } from './i18n';
 import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
@@ -175,7 +175,14 @@ const SettingsContent = () => {
 						bottomSeparator="standard"
 						childrenLayout="below"
 					>
-						<DialogButton onClick={() => window.open('steam://openurl/https://steamcommunity.com/my/inventoryhistory/?l=english&gratitude_import=1')}>
+						<DialogButton
+							disabled={isGifterSearchRunning()}
+							onClick={() => {
+								// The background search may have started since the panel was drawn
+								if (isGifterSearchRunning()) return;
+								window.open('steam://openurl/https://steamcommunity.com/my/inventoryhistory/?l=english&gratitude_import=1');
+							}}
+						>
 							{t('settings.importButton')}
 						</DialogButton>
 					</Field>

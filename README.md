@@ -21,7 +21,7 @@ _Now in 30 languages!_
 
 ### Big Picture Mode
 
-Gratitude also works in Big Picture mode, providing the same gift information when browsing your library on the big screen.
+Gratitude also works in Big Picture mode, providing the same gift information when browsing your library on the big screen. The Gifted badge works with a controller and keyboard too, and screen readers read it as a button.
 
 <p align="center">
   <img src="assets/bigpicturemode.png" width="80%" alt="Big Picture Mode Integration">
@@ -38,11 +38,17 @@ Ever forgotten who gave you a game?
 
 | | |
 |:---|:---:|
-| Click the Gifted label on any gifted game to open a details panel where you can record the gifter and add a personal note. (Clicking the gift icon itself has a little surprise.) | <a href="assets/gift-details.png"><img src="assets/gift-details.png" width="250" alt="Gift details panel"></a> |
-| <a href="assets/edit-giver.png"><img src="assets/edit-giver.png" width="250" alt="Edit giver dialog"></a> | The gifter field suggests people from your Steam friends list as you type, so you can find the right person without typing their full name. Not sure who it was? The Gmail button searches your inbox for Steam's gift email. |
+| Click the Gifted label on any gifted game to open a details panel where you can record the gifter and add a personal note. (Clicking the gift icon itself has a little surprise, so turn your sound on.) | <a href="assets/gift-details.png"><img src="assets/gift-details.png" width="250" alt="Gift details panel"></a> |
+| <a href="assets/edit-giver.png"><img src="assets/edit-giver.png" width="250" alt="Edit giver dialog"></a> | The gifter field suggests people from your Steam friends list as you type, so you can find the right person without typing their full name. Not sure who it was? The Gmail button opens Gmail in Steam's browser with a search for Steam's gift email already typed in. Gratitude only fills in the search box: it can't read your email, and you see the results yourself. |
 | Once saved, the gifter's name shows up right in the tooltip so you never forget again! | <a href="assets/gifter-tooltip.png"><img src="assets/gifter-tooltip.png" width="420" alt="Gifter shown on hover"></a> |
 
-### Language Support
+### Gifters Filled In For You ![NEW!](https://img.shields.io/badge/-NEW!-FFB347)
+
+Gifts you received before about 2019 went through your Steam inventory, and Steam's inventory history still records who sent each one. Gratitude reads it once, in the background, a couple of minutes after Steam starts, and fills in the gifter for each of those games. It only looks around the dates of your older gifts, so it usually takes about a minute and you won't notice it running. It never replaces a gifter you entered, and if you delete one it filled in, it stays deleted. The **Find gifters** button in Gratitude's settings searches again.
+
+Steam stopped recording the sender for newer gifts, so for those, the details panel above is the way to record who gave it.
+
+### Language Support ![NEW!](https://img.shields.io/badge/-NEW!-FFB347)
 
 Gratitude follows the language your Steam client is set to, in all 30 of Steam's languages, and shows gift dates the way your language writes them.
 
@@ -86,10 +92,16 @@ A: Using Millennium to customize your client is safe. As noted on the [Official 
 A: Yes! Gratitude fully supports both the standard Steam library and Big Picture mode.
 
 **Q: Why isn't the gift display loading or isn't showing for a game I was just gifted?**  
-A: Gratitude picks up new gifts from the Steam Store, so open the Store in the Steam client, wait a moment, then go back to your Library.
+A: Gratitude reads your licenses from the Steam client and checks them again every 10 minutes, so a new gift shows up by itself after a little while, or straight away after restarting Steam. For anything the client's list can't answer, it falls back to your licenses page on the Steam Store: open the Store in the Steam client, wait a moment, then go back to your Library.
 
 **Q: Can it show who gifted me the game?**  
-A: Yes, with a little help from you! Steam doesn't store sender information in a way the client can retrieve, but you can label it yourself. Click the `Gifted` label on any gifted game in your Library to open the details panel, where you can select the gifter from your Steam friends list and add a personal note. Once saved, the gifter's name will appear in the tooltip.
+A: Yes. For gifts received before about 2019, Gratitude fills in the gifter for you from your Steam inventory history (see Gifters Filled In For You above). For newer gifts Steam doesn't keep the sender anywhere Gratitude can read, but you can label them yourself: click the `Gifted` label on any gifted game in your Library to open the details panel, where you can pick the gifter from your Steam friends list and add a personal note. Once saved, the gifter's name appears in the tooltip.
+
+**Q: Does the background search slow Steam down?**  
+A: Not noticeably. It runs once, opens one hidden Steam web page for about a minute, and reads a page of your inventory history every few seconds. In testing it used about 40 MB of memory and under 1% CPU, and Store and Community pages loaded just as fast while it ran. Accounts with no gifts from before 2020 skip it entirely.
+
+**Q: Can I turn the sound off?**  
+A: Yes: turn off **Party sounds** in Gratitude's settings. The confetti stays.
 
 ## Acknowledgments
 

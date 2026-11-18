@@ -43,7 +43,7 @@ export const en = {
 
 	// The consent prompt
 	'consent.title': 'Gratitude: Local Storage Permission',
-	'consent.body': 'This plugin needs to store your Steam license history (acquisition dates and sources) and friends list locally to function. Your data never leaves your computer.',
+	'consent.body': 'This plugin needs to store your Steam license history (acquisition dates and sources), your friends list and who sent your older gifts (from your inventory history) locally to function. Your data never leaves your computer.',
 	'consent.allow': 'Allow',
 	'consent.deny': 'Deny',
 
@@ -71,7 +71,7 @@ export const en = {
 	// Finding gifters in the inventory history, on the Community page
 	'import.title': 'Gratitude: Finding Gifters',
 	'import.starting': 'Getting ready...',
-	'import.checking': 'Checking around your gift dates ({done} of {total})...',
+	'import.checking': 'Looking for older gifts in your inventory history ({done} of {total})...',
 	'import.readingBack': 'Reading your inventory history (back to {date})...',
 	'import.busy': 'Steam is busy. Trying again in {seconds}s...',
 	'import.done': 'Found {count} gifts that name who sent them. Returning to Library...',

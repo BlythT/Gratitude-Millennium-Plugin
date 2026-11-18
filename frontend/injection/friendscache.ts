@@ -25,6 +25,8 @@ function normalizeSnapshot(payload: string): FriendsCacheSnapshot | null {
 }
 
 const CLIENT_RETRY_MS = 30 * 1000;
+const CLIENT_RETRY_LIMIT = 4;
+const clientRetries = new Map<string, number>();
 
 // The Steam client's own friends list, or an empty list before it has loaded
 function clientFriends(): ClientFriend[] {
@@ -51,7 +53,12 @@ export const friendsCache = new CacheManager<FriendsCacheSnapshot>(
 		}
 		// The client's list isn't loaded yet (Steam is still starting): use the scraped one for
 		// now, and read the client's again on the next request a little later
-		setTimeout(() => friendsCache.invalidate(steamUserID), CLIENT_RETRY_MS);
+		// (a few times: an account with no friends never has a list)
+		const retries = clientRetries.get(steamUserID) ?? 0;
+		if (retries < CLIENT_RETRY_LIMIT) {
+			clientRetries.set(steamUserID, retries + 1);
+			setTimeout(() => friendsCache.invalidate(steamUserID), CLIENT_RETRY_MS);
+		}
 		return scraped;
 	},
 	async (steamUserID) => {
