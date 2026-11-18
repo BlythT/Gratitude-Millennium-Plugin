@@ -157,7 +157,11 @@ const SEARCH_USER_PARAM = 'gratitude_user';
 
 async function reportSignedOutSearch() {
 	try {
-		const url = new URL(window.location.href);
+		// A signed-out page may have been sent to the login page, which keeps the search's address
+		// in its goto parameter
+		let url = new URL(window.location.href);
+		const target = url.searchParams.get('goto');
+		if (!url.searchParams.has(IMPORT_FLAG) && target) url = new URL(target, 'https://steamcommunity.com');
 		const account = url.searchParams.get(SEARCH_USER_PARAM);
 		if (!url.searchParams.has(IMPORT_FLAG) || !account || !/^\d+$/.test(account)) return;
 		await setGiftSearchStatus({ statusJson: JSON.stringify({ state: 'failed', step: 'signed out' }), steamUserID: account });
