@@ -43,7 +43,7 @@ export const en = {
 
 	// The consent prompt
 	'consent.title': 'Gratitude: Local Storage Permission',
-	'consent.body': 'This plugin needs to store your Steam license history (acquisition dates and sources) and friends list locally to function. Your data never leaves your computer.',
+	'consent.body': 'This plugin needs to store your Steam license history (acquisition dates and sources), your friends list and who sent your older gifts (from your inventory history) locally to function. Your data never leaves your computer.',
 	'consent.allow': 'Allow',
 	'consent.deny': 'Deny',
 
