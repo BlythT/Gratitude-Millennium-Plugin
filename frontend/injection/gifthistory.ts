@@ -56,6 +56,17 @@ export function applyGiftHistory(steamUserID: string): Promise<number> {
 			const licenses = await loadClientLicenses(steamUserID);
 			if (!licenses) return 0;
 			const givers = await giverCache.getAll(steamUserID, true);
+			// Gifters filled in from the history before the filled list was kept count as filled too,
+			// so deleting one of those also sticks
+			const unrecorded: number[] = [];
+			for (const [key, giver] of givers) {
+				const appId = Number(key);
+				if (giver.source === 'steam-history' && Number.isInteger(appId) && appId > 0 && !filledBefore.has(appId)) {
+					filledBefore.add(appId);
+					unrecorded.push(appId);
+				}
+			}
+			if (unrecorded.length) await markGiftHistoryFilled({ appIdsJson: JSON.stringify(unrecorded), steamUserID }).catch(() => false);
 			const friends = (await friendsCache.getData(steamUserID).catch(() => null))?.friends ?? [];
 			const friendById = new Map(friends.map((f) => [f.steamID64, f]));
 			const friendByProfile = new Map(friends.filter((f) => f.profileUrl).map((f) => [normalizeProfileUrl(f.profileUrl), f]));
