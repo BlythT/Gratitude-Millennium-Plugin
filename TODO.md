@@ -8,7 +8,7 @@
 - [x] Fix functionality for non-english steam clients
   - License data has non-english "acquired" method field ![todo image 1](./assets/todo1.png)
   - License data has english game name but non-english library game name ![todo image 2](./assets/todo2.png)
-- [ ] Gifted tooltip doesn't show until you've played a game (because of Last Played selector)
+- [x] Gifted tooltip doesn't show until you've played a game (because of Last Played selector)
 
 # Long term
 - [x] Add Gift Labeling (allow people to assign manually who gave them the game with optional notes)
