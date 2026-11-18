@@ -1,16 +1,11 @@
 # Gratitude - Gifted Games Reminder
-
-**Gratitude** is a [Millennium](https://steambrew.app/) plugin for your Steam Library that adds a helpful indicator to games you have been gifted.
-
-### Gratitude: Now in 30 languages
+_Now in 30 languages!_
 
 <p align="center">
   <img src="assets/languages.png" width="100%" alt="The Gifted badge in German, French, Spanish, Russian, English, Japanese, Chinese, Korean and Portuguese">
 </p>
 
-Gratitude follows the language your Steam client is set to, in all 30 of Steam's languages, and shows gift dates the way your language writes them.
-
-Spotted something that reads wrong in your language? The phrases live in [`lib/i18n/locales`](lib/i18n/locales), and corrections are very welcome.
+**Gratitude** is a [Millennium](https://steambrew.app/) plugin for your Steam Library that adds a helpful indicator to games you have been gifted.
 
 ## Screenshots
 
@@ -46,6 +41,12 @@ Ever forgotten who gave you a game?
 | Click the Gifted label on any gifted game to open a details panel where you can record the gifter and add a personal note. (Clicking the gift icon itself has a little surprise.) | <a href="assets/gift-details.png"><img src="assets/gift-details.png" width="250" alt="Gift details panel"></a> |
 | <a href="assets/edit-giver.png"><img src="assets/edit-giver.png" width="250" alt="Edit giver dialog"></a> | The gifter field suggests people from your Steam friends list as you type, so you can find the right person without typing their full name. Not sure who it was? The Gmail button searches your inbox for Steam's gift email. |
 | Once saved, the gifter's name shows up right in the tooltip so you never forget again! | <a href="assets/gifter-tooltip.png"><img src="assets/gifter-tooltip.png" width="420" alt="Gifter shown on hover"></a> |
+
+### Language Support
+
+Gratitude follows the language your Steam client is set to, in all 30 of Steam's languages, and shows gift dates the way your language writes them.
+
+Spotted something that reads wrong in your language? The phrases live in [`lib/i18n/locales`](lib/i18n/locales), and corrections are very welcome.
 
 ## 🛠 Installation
 
