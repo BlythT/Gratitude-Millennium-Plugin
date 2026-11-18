@@ -11,6 +11,14 @@ import { getFriendDisplayLabel } from '../components/FriendSelector';
 // get one, so the user's own entries are never replaced.
 
 const getGiftHistory = callable<[{ steamUserID: string }], string>('GetGiftHistory');
+const markGiftHistoryFilled = callable<[{ appIdsJson: string; steamUserID: string }], boolean | string>('MarkGiftHistoryFilled');
+
+interface SavedHistory {
+	gifts?: HistoryGift[];
+	updatedAt?: number;
+	// App IDs a gifter was filled in for before: never filled again, so a deleted gifter stays deleted
+	filled?: number[];
+}
 
 interface AppOverview {
 	app_type?: number;
@@ -39,8 +47,11 @@ export function applyGiftHistory(steamUserID: string): Promise<number> {
 	running = (async () => {
 		try {
 			const raw = await getGiftHistory({ steamUserID });
-			const history = raw && raw !== '{}' ? (JSON.parse(raw) as { gifts?: HistoryGift[]; updatedAt?: number }) : null;
-			if (!history?.gifts?.length || applied.get(steamUserID) === history.updatedAt) return 0;
+			const history = raw && raw !== '{}' ? (JSON.parse(raw) as SavedHistory) : null;
+			// Lua sends an empty list back as {}, so lists are checked
+			const gifts = Array.isArray(history?.gifts) ? history.gifts.map((g) => ({ ...g, items: Array.isArray(g.items) ? g.items : [] })) : [];
+			if (!history || !gifts.length || applied.get(steamUserID) === history.updatedAt) return 0;
+			const filledBefore = new Set(Array.isArray(history.filled) ? history.filled : []);
 
 			const licenses = await loadClientLicenses(steamUserID);
 			if (!licenses) return 0;
@@ -49,15 +60,16 @@ export function applyGiftHistory(steamUserID: string): Promise<number> {
 			const friendById = new Map(friends.map((f) => [f.steamID64, f]));
 			const friendByProfile = new Map(friends.filter((f) => f.profileUrl).map((f) => [normalizeProfileUrl(f.profileUrl), f]));
 
-			// A game has a gifter when one is saved under its App ID, or under its name (older
-			// records were keyed by name)
+			// A game has a gifter when one is saved under its App ID, or under its name or for its title
+			// (older records were keyed by the game's or the license's name). A game filled in before
+			// counts too, even if the user has since deleted that gifter.
 			const hasGifter = (appId: number) => {
-				if (givers.has(String(appId))) return true;
+				if (filledBefore.has(appId) || givers.has(String(appId))) return true;
 				const name = appOverview(appId)?.display_name;
-				return !!name && givers.has(name);
+				return !!name && (givers.has(name) || giverCache.findByTitleSync(steamUserID, name) !== null);
 			};
 			const assignments = gifterAssignments(
-				history.gifts,
+				gifts,
 				licenses,
 				(appId) => appOverview(appId)?.app_type === 1,
 				hasGifter,
@@ -73,7 +85,11 @@ export function applyGiftHistory(steamUserID: string): Promise<number> {
 			);
 
 			let added = 0;
+			const filledNow: number[] = [];
 			for (const assignment of assignments) {
+				// The user may have saved a gifter for this game while earlier ones were being saved
+				const name = appOverview(assignment.appId)?.display_name;
+				if (giverCache.getEntrySync(steamUserID, String(assignment.appId), name) || (name && giverCache.findByTitleSync(steamUserID, name))) continue;
 				const saved = await giverCache.upsert(steamUserID, {
 					licenseKey: String(assignment.appId),
 					libraryTitle: appOverview(assignment.appId)?.display_name ?? String(assignment.appId),
@@ -82,10 +98,14 @@ export function applyGiftHistory(steamUserID: string): Promise<number> {
 					profileUrl: assignment.profileUrl,
 					source: 'steam-history',
 				});
-				if (saved) added++;
+				if (saved) {
+					added++;
+					filledNow.push(assignment.appId);
+				}
 			}
+			if (filledNow.length) await markGiftHistoryFilled({ appIdsJson: JSON.stringify(filledNow), steamUserID }).catch(() => false);
 			applied.set(steamUserID, history.updatedAt ?? 0);
-			log(`Gift history: ${history.gifts.length} gifts, ${added} gifters filled in.`);
+			log(`Gift history: ${gifts.length} gifts, ${added} gifters filled in.`);
 			return added;
 		} catch (error) {
 			logError('Applying the gift history failed:', error);

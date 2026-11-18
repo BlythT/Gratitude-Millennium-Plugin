@@ -201,12 +201,16 @@ async function searchAroundGifts(parser, windows) {
 	return { gifts, pages };
 }
 
-// The whole history back from the cutoff, for when there are no license dates to go by. Returns
-// the gifts found, or null when it stopped part way.
-async function readWholeHistory(parser) {
+// The whole history back from startTime, for when the pages around the gift dates found nothing.
+// Every CHECKPOINT_PAGES pages it saves what it has found with the point it reached, so a search
+// cut short (Steam closed) carries on from there next time. Returns the gifts found, or null when
+// a page couldn't be read.
+const CHECKPOINT_PAGES = 20;
+async function readWholeHistory(parser, startTime, checkpoint) {
 	const gifts = [];
 	const language = resolveLanguage(document.documentElement.lang);
-	let cursor = { time: GIFT_HISTORY_CUTOFF, time_frac: 0, s: 0 };
+	let cursor = { time: startTime, time_frac: 0, s: 0 };
+	let pages = 0;
 	while (cursor.time > 0) {
 		const date = new Date(cursor.time * 1000).toLocaleDateString(language, { year: 'numeric', month: 'long' });
 		reportImport(w('import.readingBack', { date }));
@@ -214,8 +218,33 @@ async function readWholeHistory(parser) {
 		if (!page) return null;
 		gifts.push(...page.gifts);
 		cursor = page.next;
+		pages++;
+		if (cursor.time > 0 && pages % CHECKPOINT_PAGES === 0) await checkpoint(gifts, cursor.time);
 	}
 	return gifts;
+}
+
+// The saved history: its gifts (always a list; Lua can send an empty one back as {}) and, when
+// a whole-history read was cut short, the time it reached
+async function readSavedHistory(steamUserID) {
+	try {
+		const saved = JSON.parse((await getGiftHistory({ steamUserID })) || '{}');
+		return {
+			gifts: Array.isArray(saved.gifts) ? saved.gifts.map((g) => ({ ...g, items: Array.isArray(g.items) ? g.items : [] })) : [],
+			resumeTime: typeof saved.resumeTime === 'number' && saved.resumeTime > 0 ? saved.resumeTime : null,
+		};
+	} catch {
+		return { gifts: [], resumeTime: null };
+	}
+}
+
+// Saves the gifts found added to those saved before, with the point a cut-short read reached
+// (null once the search finished). Returns how many gifts are saved, or null when saving failed.
+async function saveHistory(steamUserID, found, resumeTime) {
+	const previous = await readSavedHistory(steamUserID);
+	const gifts = mergeHistoryGifts(previous.gifts, found);
+	const result = await setGiftHistory({ historyJson: JSON.stringify({ gifts, resumeTime }), steamUserID }).catch(() => false);
+	return result !== false && result !== 'false' ? gifts.length : null;
 }
 
 async function maybeImportGifters(steamUserID) {
@@ -229,69 +258,65 @@ async function maybeImportGifters(steamUserID) {
 		logError('Could not remove the import flag from the page URL:', error);
 	}
 
+	// Both kinds of search report their status, so the frontend doesn't start a background search
+	// while one runs here
 	const setStatus = (state, step = '') =>
 		setGiftSearchStatus({ statusJson: JSON.stringify({ state, step }), steamUserID }).catch(() => false);
+	let lastStep = '';
+	let pagesRead = 0;
+	onHistoryPage = () => {
+		pagesRead++;
+		void setStatus('running', `${lastStep} (${pagesRead})`);
+	};
 	if (background) {
-		let lastStep = '';
-		let pagesRead = 0;
 		reportImport = (text) => {
 			if (text === lastStep) return;
 			lastStep = text;
 			void setStatus('running', text);
 		};
-		onHistoryPage = () => {
-			pagesRead++;
-			void setStatus('running', `${lastStep} (${pagesRead})`);
-		};
-		await setStatus('running', 'starting');
 	} else {
+		reportImport = (text, percent) => {
+			lastStep = text;
+			updateSyncOverlay(text, percent);
+		};
 		showSyncOverlay(w('import.title'), w('import.starting'));
 	}
+	await setStatus('running', 'starting');
+
 	const parser = new DOMParser();
-	let found = null;
+	let total = null;
 	try {
-		let windows = [];
-		try {
-			const cache = JSON.parse((await getGameLicenseData({ steamUserID })) || '{}');
-			windows = giftSearchWindows(cache.byName || {});
-		} catch (error) {
-			logError('Could not read the gift license dates:', error);
-		}
-		if (windows.length > 0) {
-			const targeted = await searchAroundGifts(parser, windows);
-			log(`Inventory history: ${targeted.pages} pages around ${windows.length} gift dates, ${targeted.gifts.length} gifts naming the sender.`);
-			// Pages read but no gifts in them: the dates didn't line up, so read everything
-			if (targeted.pages === 0) found = null;
-			else if (targeted.gifts.length > 0) found = targeted.gifts;
-			else found = await readWholeHistory(parser);
+		const saved = await readSavedHistory(steamUserID);
+		const checkpoint = (gifts, time) => saveHistory(steamUserID, gifts, time);
+		let found = null;
+		if (saved.resumeTime) {
+			// A whole-history read was cut short last time: carry on from where it got to
+			log(`Inventory history: carrying on from ${new Date(saved.resumeTime * 1000).toISOString().slice(0, 10)}.`);
+			found = await readWholeHistory(parser, saved.resumeTime, checkpoint);
 		} else {
-			found = await readWholeHistory(parser);
+			let windows = [];
+			try {
+				const cache = JSON.parse((await getGameLicenseData({ steamUserID })) || '{}');
+				windows = giftSearchWindows(cache.byName || {});
+			} catch (error) {
+				logError('Could not read the gift license dates:', error);
+			}
+			const targeted = windows.length > 0 ? await searchAroundGifts(parser, windows) : { gifts: [], pages: 0 };
+			log(`Inventory history: ${targeted.pages} pages around ${windows.length} gift dates, ${targeted.gifts.length} gifts naming the sender.`);
+			// Nothing found around the gift dates (none to go by, the dates didn't line up, or every
+			// jump failed): read the whole history instead
+			found = targeted.gifts.length > 0 ? targeted.gifts : await readWholeHistory(parser, GIFT_HISTORY_CUTOFF, checkpoint);
 		}
+		if (found) total = await saveHistory(steamUserID, found, null);
 	} catch (error) {
 		logError('Reading the inventory history failed:', error);
-		found = null;
+		total = null;
 	}
 
-	// Added to the gifts found before, so a search that missed a page never loses one
-	let saved = false;
-	let total = 0;
-	if (found) {
-		let previous = [];
-		try {
-			previous = JSON.parse((await getGiftHistory({ steamUserID })) || '{}').gifts || [];
-		} catch {
-			previous = [];
-		}
-		const gifts = mergeHistoryGifts(Array.isArray(previous) ? previous : [], found);
-		total = gifts.length;
-		const result = await setGiftHistory({ historyJson: JSON.stringify(gifts), steamUserID }).catch(() => false);
-		saved = result !== false && result !== 'false';
-	}
-	log(`Inventory history: ${total} gifts naming the sender, ${saved ? 'saved' : 'not saved'}.`);
-	if (background) {
-		await setStatus(saved ? 'done' : 'failed', String(total));
-		return;
-	}
+	const saved = total !== null;
+	log(`Inventory history: ${total ?? 0} gifts naming the sender, ${saved ? 'saved' : 'not saved'}.`);
+	await setStatus(saved ? 'done' : 'failed', String(total ?? 0));
+	if (background) return;
 	if (saved) {
 		updateSyncOverlay(w('import.done', { count: total }), 100);
 		setTimeout(() => {
@@ -902,7 +927,8 @@ function getFriendAlias(row, displayName, profileUrl) {
 		return undefined;
 	}
 
-	return Array.from(aliases).join(' | ');
+	// Spread, not Array.from: Community pages load Prototype.js, whose Array.from drops a Set's items
+	return [...aliases].join(' | ');
 }
 
 function getProfileSlug(profileUrl) {
