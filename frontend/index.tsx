@@ -1,6 +1,7 @@
 import { IconsModule, definePlugin, Field, DialogButton, ToggleField, callable } from '@steambrew/client';
 import { applyGiftHistory } from './injection/gifthistory';
 import { isGifterSearchRunning, startBackgroundGifterSearch } from './injection/historysearch';
+import { openInMainWindow } from './utils/openInSteam';
 import { t, uiLanguage } from './i18n';
 import { log, logError, logDebug } from '../lib/logger';
 import { injectionEngine } from './lib/framework/InjectionEngine';
@@ -29,6 +30,7 @@ const SettingsContent = () => {
 	const [licenseCount, setLicenseCount] = useState(0);
 	const [friendCount, setFriendCount] = useState(0);
 	const [giverCount, setGiverCount] = useState(0);
+	const [historyGiverCount, setHistoryGiverCount] = useState(0);
 	const [hasConsent, setHasConsent] = useState<boolean | null>(true);
 	const [settings, setSetting] = useSettings(steamUserID);
 
@@ -66,6 +68,7 @@ const SettingsContent = () => {
 
 			const giversData = await giverCache.getAll(steamID);
 			setGiverCount(giversData?.size || 0);
+			setHistoryGiverCount(giversData ? [...giversData.values()].filter((giver) => giver.source === 'steam-history').length : 0);
 		} catch (error) {
 			logError('Error fetching cache entry count:', error);
 		}
@@ -113,12 +116,13 @@ const SettingsContent = () => {
 					bottomSeparator="standard"
 					childrenLayout="below"
 				>
-					<DialogButton onClick={async () => {
+					<DialogButton onClick={async (event: React.MouseEvent<HTMLElement>) => {
+						const button = event.currentTarget;
 						try {
 							await setConsent({ steamUserID, consent: true });
 							setHasConsent(true);
 							void loadClientLicenses(steamUserID, true);
-							window.open("steam://openurl/https://store.steampowered.com/?gratitude_sync=1");
+							openInMainWindow('https://store.steampowered.com/?gratitude_sync=1', button);
 						} catch (error) {
 							logError('Error granting consent from settings:', error);
 						}
@@ -161,7 +165,7 @@ const SettingsContent = () => {
 					</Field>
 					<Field
 						label={t('settings.yourData')}
-						description={t('settings.yourDataDescription', { count: giverCount.toLocaleString(uiLanguage()) })}
+						description={t('settings.yourDataDescription', { count: giverCount.toLocaleString(uiLanguage()), history: historyGiverCount.toLocaleString(uiLanguage()) })}
 						bottomSeparator="standard"
 					/>
 					<Field
@@ -177,10 +181,10 @@ const SettingsContent = () => {
 					>
 						<DialogButton
 							disabled={isGifterSearchRunning()}
-							onClick={() => {
+							onClick={(event: React.MouseEvent<HTMLElement>) => {
 								// The background search may have started since the panel was drawn
 								if (isGifterSearchRunning()) return;
-								window.open('steam://openurl/https://steamcommunity.com/my/inventoryhistory/?l=english&gratitude_import=1');
+								openInMainWindow('https://steamcommunity.com/my/inventoryhistory/?l=english&gratitude_import=1', event.currentTarget);
 							}}
 						>
 							{t('settings.importButton')}

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed the Find gifters and Grant Permission buttons in settings opening their page behind Millennium's settings sidebar, where it stayed black until the sidebar was closed by hand. The sidebar now closes first.
+- The settings no longer call every saved gifter "manually recorded": they show how many gifters are saved and how many of those were found in your Steam history.
+
 ## v1.4.0 - 2026-11-18
 
 ### Added

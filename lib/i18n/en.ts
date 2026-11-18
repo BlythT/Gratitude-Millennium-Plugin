@@ -61,7 +61,7 @@ export const en = {
 	'settings.cachesCounts': 'Licenses: {licenses} | Friends: {friends}',
 	'settings.clearCaches': 'Clear Scraped Caches',
 	'settings.yourData': 'Your Data',
-	'settings.yourDataDescription': 'Manually recorded gifts: {count}. These are never cleared automatically.',
+	'settings.yourDataDescription': 'Saved gifters: {count}. Found in your Steam history: {history}. These are never cleared automatically.',
 	'settings.missingLabel': 'Missing something?',
 	'settings.missingDescription': 'Newly gifted games might not be detected: try visiting the Store or restarting Steam before checking your Library.',
 	'settings.importLabel': 'Gifters from your Steam history',
