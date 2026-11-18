@@ -30,6 +30,7 @@ const SettingsContent = () => {
 	const [licenseCount, setLicenseCount] = useState(0);
 	const [friendCount, setFriendCount] = useState(0);
 	const [giverCount, setGiverCount] = useState(0);
+	const [historyGiverCount, setHistoryGiverCount] = useState(0);
 	const [hasConsent, setHasConsent] = useState<boolean | null>(true);
 	const [settings, setSetting] = useSettings(steamUserID);
 
@@ -67,6 +68,7 @@ const SettingsContent = () => {
 
 			const giversData = await giverCache.getAll(steamID);
 			setGiverCount(giversData?.size || 0);
+			setHistoryGiverCount(giversData ? [...giversData.values()].filter((giver) => giver.source === 'steam-history').length : 0);
 		} catch (error) {
 			logError('Error fetching cache entry count:', error);
 		}
@@ -163,7 +165,7 @@ const SettingsContent = () => {
 					</Field>
 					<Field
 						label={t('settings.yourData')}
-						description={t('settings.yourDataDescription', { count: giverCount.toLocaleString(uiLanguage()) })}
+						description={t('settings.yourDataDescription', { count: giverCount.toLocaleString(uiLanguage()), history: historyGiverCount.toLocaleString(uiLanguage()) })}
 						bottomSeparator="standard"
 					/>
 					<Field
